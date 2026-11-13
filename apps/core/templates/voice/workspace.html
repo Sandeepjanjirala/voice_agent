@@ -1,0 +1,28 @@
+{% extends 'voice/base.html' %}{% load static %}
+{% block content %}
+<div id="voice-app" data-token-url="{% url 'voice-token' %}">
+  <section class="intro"><div><p class="eyebrow">A CONVERSATION STARTS HERE</p><h1>Your voice. Your language.</h1><p class="muted">Meet your Telugu AI assistant. Speak naturally, and follow the conversation as it happens.</p></div><span class="phase">BROWSER VOICE · PHASE 1.5</span></section>
+  <div class="studio-grid">
+    <section class="card conversation" aria-label="Conversation controls">
+      <div class="card-heading"><span>Live conversation</span><span id="connection" class="pill">Not connected</span></div>
+      <div class="voice-center"><div id="orb" class="orb" data-state="ready" aria-hidden="true"><div class="bars"><i></i><i></i><i></i><i></i><i></i></div></div>
+        <h2 id="status" role="status" aria-live="polite">Ready when you are</h2><p id="hint" class="muted">Start a conversation and allow microphone access.</p>
+        <p class="telugu" lang="te">నమస్తే! మాట్లాడదామా?</p>
+      </div>
+      <div class="controls"><button id="start" class="primary">Start Conversation</button><button id="end" class="danger" disabled>End Conversation</button></div>
+      <div class="secondary-controls"><button id="mic" disabled aria-pressed="false">Mute microphone</button><button id="audio" hidden>Enable speaker audio</button></div>
+      <p id="notice" class="error" role="alert" hidden></p>
+      <div class="session-note">Use headphones for clearer audio. Speak in Telugu, English, or a mix of both.</div>
+    </section>
+    <section class="card transcript-card" aria-labelledby="transcript-title"><div class="card-heading"><h2 id="transcript-title">Conversation transcript</h2><span class="live-label">LIVE</span></div>
+      <div id="transcript" role="log" aria-live="polite" aria-relevant="additions text"><div id="empty" class="empty"><span aria-hidden="true">“</span><h3>A little hello goes a long way.</h3><p>Your words and the assistant’s replies<br>will appear here in real time.</p></div></div>
+      <div class="transcript-footer">Visible for this session · Cleared when you start again</div>
+    </section>
+  </div>
+  <div class="info-grid"><section><span class="step">01</span><h3>Make it a real conversation</h3><p>Try everyday questions, short replies, and Telugu-English mixed speech.</p></section><section><span class="step">02</span><h3>Stay in control</h3><p>Mute your microphone at any time. End the conversation when you’re done.</p></section><section><span class="step">03</span><h3>A space to test</h3><p>This is a browser conversation. Phone calls and appointment booking come later.</p></section></div>
+  <p class="privacy">Audio is processed by LiveKit and the configured AI providers. Worker logs may retain transcripts under your existing settings.</p>
+  <form hidden>{% csrf_token %}</form>
+</div>
+<noscript><p class="error">Enable JavaScript to use browser voice conversations.</p></noscript>
+{% endblock %}
+{% block scripts %}<script defer src="{% static 'voice/vendor/livekit-client.umd.js' %}"></script><script defer src="{% static 'voice/studio.js' %}"></script>{% endblock %}

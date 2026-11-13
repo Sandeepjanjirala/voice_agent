@@ -5,28 +5,73 @@ Machine: Windows 10 Pro, Python 3.12.10, livekit-agents 1.8.10, LiveKit region I
 
 ## Summary
 
-Everything that can be checked without a person at a microphone has now been run against
-the live services, and it works: the worker registers with LiveKit Cloud, Sarvam
-recognises and speaks Telugu, English and mixed speech, the LLM replies in the right
-language, and all five conversation simulations pass.
-
-**Phase 1 is not yet accepted.** Two of the seven acceptance items need a human voice and
-ears: spoken turns through a real microphone, and interruption. Those are sections B to E
-below, about 30 minutes.
-
-Three problems were found and fixed during this round (see "Failures found").
+**Core acceptance: PASS. Extended speech-quality verification: INCOMPLETE.**
+On 13 November 2026 the owner confirmed all ten Django Voice Studio checklist items:
+login, connection, audible greeting, Telugu, mixed Telugu-English, interruption,
+mute/unmute, end with microphone release, restart, and temporary-network recovery.
+These are manual observations, not independently measured stop/recovery timings.
+The original 74 tests and five successful simulations are preserved; the expanded
+suite now passes 92 tests. No voice worker, prompt, model or endpointing change was made.
+Remaining controlled tests are listed below and are not marked passed.
 
 ## Acceptance gate (brief, section 11)
 
 | # | Item | Status | Evidence |
 | :--- | :--- | :--- | :--- |
 | 1 | An independent worker starts | **Pass** | `registered worker`, agent `telugu-agent`, region India South |
-| 2 | Telugu and Tenglish spoken turns through a real microphone | **Waiting on you** | Full audio pipeline passes with synthetic speech; no human speech yet |
-| 3 | Interruption testing | **Waiting on you** | Cannot be automated with the tools available |
+| 2 | Telugu and Tenglish spoken turns through a real microphone | **Pass (owner)** | Telugu and Telugu-English mixed speech confirmed in Django Voice Studio |
+| 3 | Interruption testing | **Pass (owner, functional)** | Owner can interrupt while AI speaks; exact stop latency, false interruptions and response correctness under repeated interruption remain unmeasured |
 | 4 | Selected models and test results logged | **Pass** | This document; models logged at each session start |
 | 5 | Django health endpoint runs | **Pass** | `GET /api/health/` returned 200 on a running server |
-| 6 | Tests pass | **Pass** | 74 unit tests; 5 of 5 simulations |
+| 6 | Tests pass | **Pass** | 92 tests now pass, including the original 74; earlier 5 of 5 simulations preserved, not rerun |
 | 7 | Unverified performance and cost claims labelled | **Pass** | `docs/AUDIT.md`; latency below is measured, with its limits stated |
+
+## Earlier Cloud real-microphone update - 13 November 2026
+
+Evidence: owner-reported LiveKit Cloud Console session and dashboard readings. Four
+screenshots were mentioned, but image attachments were not available in this coding
+session; no independent screenshot inspection is claimed.
+
+| Cloud session metric | Value |
+| :--- | :--- |
+| Turns / STT audio | 10 / 22 seconds |
+| Interrupted / backchannel rate | 40% / 10% |
+| Average reply latency | approximately 1,575 ms |
+| STT delay / EOT | 538 ms / 47 ms |
+| LLM TTFT (Gemma 4 31B) / TTS TTFB (bulbul:v3) | 478 ms / 217 ms |
+| bulbul:v3 P50 / P95 | 198 ms / 215 ms |
+| Gemma 4 31B P50 / P95 | 361 ms / 686 ms |
+
+Local `scripts/latency_report.py` was independently rerun during this update and
+matches the owner's report: 28 sessions, 165 logged turns, 4/97 agent turns interrupted.
+
+| Local stage | Samples | P50 | P90 |
+| :--- | ---: | ---: | ---: |
+| End-of-turn detection | 21 | 0.723 s | 0.835 s |
+| STT transcription delay | 21 | 0.723 s | 0.833 s |
+| LLM TTFT | 68 | 0.370 s | 0.772 s |
+| TTS TTFB | 25 | 0.194 s | 0.213 s |
+| Perceived e2e latency | 21 | 1.496 s | 2.251 s |
+
+Safe interpretation: the local report aggregates different sessions and includes only
+rows containing each metric; 165 rows are not 165 audio latency samples. Its interruption
+denominator differs from the single Cloud session. P90 is not P95, and a median is not
+an average. Do not sum stage percentiles or count overlapping STT/turn-detection delays
+twice. Cloud's listed components sum to 1,280 ms, not 1,575 ms; the available summary
+cannot attribute the difference. Do not infer an exact critical-path breakdown.
+The earlier claim that a particular share is solely endpointing is a hypothesis,
+not a conclusion established by these aggregates. Keep all model, voice, prompt and
+endpointing settings unchanged until controlled paired tests establish an improvement.
+
+| Remaining criterion | Status / evidence needed |
+| :--- | :--- |
+| Telugu microphone connection and response | Owner-confirmed pass |
+| Naturalness, accents, fast speech | Pending structured listening/transcript review; mixed Telugu-English now owner-confirmed |
+| Barge-in stops promptly and answers the new turn | Functional interruption owner-confirmed; stop latency and repeated-interruption response correctness not measured |
+| Backchannels and noise do not falsely interrupt | Pending; rate alone is insufficient |
+| Mid-sentence pauses and short replies | Pending controlled tests C |
+| VAD/STT/LiveKit mode comparisons | Pending controlled tests D |
+| Network drop and recovery | Owner-confirmed pass after temporary interruption; outage length and recovery timing unspecified |
 
 ## Configuration check
 
@@ -161,15 +206,15 @@ conversation; see failure 3.
 | 5 | `lk agent ...` reports "livekit-agents is not installed" | `uv` is not on PATH (it was installed with pip under Python 3.12) | **Action for you**: `winget install astral-sh.uv`, then reopen PowerShell |
 | 6 | Event loop blocked 120 to 320 ms at session start | Windows certificate store loading inside the SDK, once per process | Not ours; noted |
 
-## Not executed
+## Outstanding or partially executed checks (updated after owner feedback)
 
 | Item | Why |
 | :--- | :--- |
-| Human speech: accents, speed, background noise | Needs you |
-| Interruption (barge-in), backchannels, thinking pauses | Needs you |
+| Controlled human speech: accents, speed, background noise | Basic Telugu microphone conversation confirmed; these variants remain pending |
+| Backchannels, thinking pauses, noise and timed barge-in | Functional barge-in passed by owner; these controlled variants remain pending |
 | Voice naturalness by ear | Needs you |
 | `TURN_DETECTION=stt` and `livekit` comparison | Needs you (test D) |
-| Network drop mid-conversation | Needs you (test E) |
+| Network drop mid-conversation | Owner reports recovery works; exact ten-second test, repeatability and elapsed recovery not documented |
 | `SARVAM_STT_MODE=realtime` | Not tried; plan access unknown |
 | Audio-mode simulations (`lk agent simulate audio`) | Not run; text mode and the audio debugger covered the same ground at lower cost |
 | PostgreSQL, Docker build, GitHub Actions | Outside Phase 1's local scope |
@@ -178,12 +223,12 @@ conversation; see failure 3.
 
 About 30 minutes. Use headphones so the agent does not hear itself.
 
-First, once: `winget install astral-sh.uv`, then reopen PowerShell (failure 5).
+For direct Windows execution, use the existing virtual environment; global uv is not required.
 
 ```powershell
 cd C:\Users\Sandeep.J\Documents\agent
 $env:PYTHONUTF8 = "1"
-lk agent console voice_agent/agent.py --record
+.\.venv\Scripts\python.exe -m voice_agent.agent console --record
 ```
 
 Keys: `m` mutes, `Ctrl+T` switches to typing, `q` quits.
@@ -224,12 +269,12 @@ continues.
 **F. Latency.** After at least 15 turns, in a second window:
 
 ```powershell
-uv run python scripts/latency_report.py
+.\.venv\Scripts\python.exe scripts/latency_report.py
 ```
 
 **G. Optional.** Other voices: `SARVAM_TTS_SPEAKER=pooja`, `kavya`, `shubh`.
 
-### Results (to be filled in)
+### Detailed controlled-test worksheet (unfilled items remain incomplete)
 
 | Item | Result |
 | :--- | :--- |
@@ -262,3 +307,42 @@ uv run python scripts/latency_report.py
 - **Parallel sessions failed to connect on this Windows machine** (failure 3).
 - **Tool launchers vanish on this machine**: `pytest.exe` and `ruff.exe` are deleted from
   `.venv\Scripts` shortly after running. Workaround in the README.
+
+## Final review evidence - 13 November 2026
+
+Manual source: the owner's ten-item response in this conversation, all checked working.
+No failures, device/browser details or exact outage duration were reported. This closes
+basic Telugu/Tenglish, functional interruption and browser-network-recovery checks;
+it does not supply a voice-naturalness rating or results for pauses/backchannels/modes.
+
+Available local evidence before this review's synthetic smoke test:
+`logs/turn_metrics.jsonl`, 184 rows, 32 sessions, 9/108 assistant turns marked interrupted.
+Snapshot SHA256: `083db234186d1f0745db8edd9bc05122b3f1f1b57033b52dc3c0a6a03372c04b`.
+This is a historical snapshot; subsequent smoke tests append metrics normally.
+
+| Aggregate stage | Samples | P50 seconds | P90 seconds |
+| :--- | ---: | ---: | ---: |
+| End-of-turn | 29 | 0.731 | 0.901 |
+| STT transcription | 29 | 0.730 | 0.899 |
+| LLM TTFT | 75 | 0.372 | 0.772 |
+| TTS TTFB | 36 | 0.193 | 0.209 |
+| Perceived e2e | 28 | 1.511 | 2.024 |
+
+Two later browser sessions contain user turns (times in Asia/Kolkata):
+
+| First logged turn | Rows / user / assistant | Interrupted assistant turns | e2e samples / P50 / P90 |
+| :--- | :--- | :--- | :--- |
+| 15:59:51 | 10 / 5 / 5 | 1/5 | 4 / 1.611 s / 1.908 s |
+| 16:01:19 | 7 / 3 / 4 | 2/4 | 3 / 1.527 s / 1.669 s |
+
+These likely correspond to the owner's tests, but no explicit session mapping was
+provided. The metrics contain character counts, not transcript text, raw audio,
+connection events or mute events. They cannot diagnose a mistranscribed Telugu word,
+rate naturalness, establish intended versus false barge-in, or prove network recovery.
+Interrupted flags also occur when a test ends during a greeting. No Telugu engine bug
+is confirmed by these records, so the working engine and configuration remain unchanged.
+
+Browser edge-case fixes and security results are in PHASE1_5_VERIFICATION.md.
+**Stop before Phase 2 for owner review.** Naturalness, accents/noise, pauses, short-reply
+accuracy, backchannels, comparative turn modes and timed/repeated failure testing remain
+incomplete. No claim of a full production or audio-quality certification is made.

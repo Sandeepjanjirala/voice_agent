@@ -45,4 +45,4 @@ jobs:
       run: curl -sSL https://get.livekit.io/cli | bash
 
     - name: Run simulations
-      run: lk agent simulate text --scenarios scenarios.yaml voice_agent/agent.py
+      run: lk agent simulate text --scenarios scenarios.yaml --concurrency 1 voice_agent/agent.py

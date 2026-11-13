@@ -3,13 +3,17 @@
 A voice agent that converses in Telugu, English and mixed Telugu-English, built for
 inbound and outbound calls on Indian (+91) numbers.
 
-**Status: Phase 1, local prototype.** The voice loop runs against your microphone
-and has been verified against live LiveKit and Sarvam services with synthetic speech;
-human microphone tests are pending (see the verification report).
-There is no telephony, database schema, dashboard or deployment yet.
+**Status: Phase 1.5, local Django voice studio implemented.** The owner confirmed
+real Telugu microphone conversation through LiveKit Cloud Console. The new Django
+interface passed browser UI checks and a live greeting check with a synthetic microphone.
+The owner also confirmed the Django manual checklist. Core Phase 1 and local Phase 1.5
+checks pass; extended speech-quality and production verification remain incomplete.
+No telephony, call-record schema or deployment has started.
 
 | Document | What it covers |
 | :--- | :--- |
+| [docs/PHASE1_5_VERIFICATION.md](docs/PHASE1_5_VERIFICATION.md) | Run the Django voice studio and review browser verification |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Full incoming/outgoing calling roadmap, Phases 1?5 |
 | [docs/AUDIT.md](docs/AUDIT.md) | What the implementation brief got right and wrong against current SDKs |
 | [docs/PHASE1_VERIFICATION.md](docs/PHASE1_VERIFICATION.md) | What was tested, what was not, and the microphone tests you need to run |
 | [docs/adr/0001-two-process-boundary.md](docs/adr/0001-two-process-boundary.md) | Why the voice worker and Django are separate processes |
@@ -21,7 +25,7 @@ Two processes that are started and deployed separately:
 | Process | Code | Does |
 | :--- | :--- | :--- |
 | Voice worker | `voice_agent/` | LiveKit Agents: Sarvam STT, LLM, Sarvam TTS, turn-taking |
-| Django backend | `config/`, `apps/` | Django + DRF: a health endpoint for now; data, auth and dashboard later |
+| Django backend | `config/`, `apps/` | Django + DRF: authenticated voice studio, secure room tokens and health API; business dashboard later |
 
 The worker never imports Django and Django never imports the voice stack. A test
 enforces this.
@@ -111,24 +115,39 @@ After a conversation, summarise the measured latency:
 uv run python scripts/latency_report.py
 ```
 
-## Run the Django backend
+## Run your Django voice studio
 
-In a second PowerShell window:
+Use the existing virtual environment directly; global `uv` is not needed to run it.
+In PowerShell from this repository:
 
 ```powershell
-uv run python manage.py migrate
-uv run python manage.py runserver
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py createsuperuser
+.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
 ```
 
-Then open <http://127.0.0.1:8000/api/health/>. Expected response:
+Skip `createsuperuser` if you already have a Django account. In another window,
+start the existing worker if it is not already connected:
 
-```json
-{"status": "ok", "service": "django", "database": "ok"}
+```powershell
+$env:PYTHONUTF8 = "1"
+.\.venv\Scripts\python.exe -m voice_agent.agent dev
 ```
 
-`.env.example` ships with `DJANGO_DEBUG=true`, which lets Django start without a secret
-key and use a local SQLite file. Set `DATABASE_URL=postgres://...` to use PostgreSQL;
-it becomes mandatory in Phase 4.
+Open <http://127.0.0.1:8000/>, sign in, choose **Start Conversation**, and allow the
+microphone. Use headphones. **End Conversation** stops capture and disconnects.
+The page shows user and agent transcripts and the assistant's current state.
+Microphone access requires localhost or HTTPS. No React, build step or CDN is needed.
+
+Both processes use the existing `.env.local`. Django needs `LIVEKIT_URL`,
+`LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and the same `AGENT_NAME` as the worker.
+API secrets stay on the server. Each start creates an isolated room with a
+five-minute microphone-only join token and dispatches `telugu-agent`.
+
+The health API remains at <http://127.0.0.1:8000/api/health/>.
+Django's existing SQLite fallback stores login/session data locally. PostgreSQL and
+business records remain Phase 4. See [the verification and testing guide](docs/PHASE1_5_VERIFICATION.md)
+for exact browser coverage and pending human checks.
 
 ## Change the voice, model or language
 
@@ -153,9 +172,9 @@ The prompt is in `voice_agent/prompts/__init__.py` and the Telugu style sheet in
 ## Tests and linting
 
 ```powershell
-uv run python -m pytest
-uv run ruff check .
-uv run ruff format .
+.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m ruff format .
 ```
 
 The tests need no API keys and no network.
@@ -212,7 +231,7 @@ voice_agent/          LiveKit worker (separate process)
   observability.py    logging, per-turn latency, spoken error fallback
   prompts/  grammar/  system prompt and Telugu style sheet
 config/               Django project (settings, urls, asgi)
-apps/core/            health endpoint
+apps/core/            health API, voice views, templates and static assets
 scripts/              latency_report.py, llm_bakeoff.py
 tests/                django/, voice/, test_process_boundary.py
 scenarios.yaml        LiveKit simulation scenarios

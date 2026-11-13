@@ -106,6 +106,18 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "voice"
+LOGOUT_REDIRECT_URL = "login"
+
+# Server-only credentials; never included in template context.
+LIVEKIT_URL = os.environ.get("LIVEKIT_URL", "").strip()
+LIVEKIT_API_KEY = os.environ.get("LIVEKIT_API_KEY", "").strip()
+LIVEKIT_API_SECRET = os.environ.get("LIVEKIT_API_SECRET", "").strip()
+LIVEKIT_AGENT_NAME = (
+    os.environ.get("AGENT_NAME", "telugu-agent").strip() or "telugu-agent"
+)
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Closed by default: every API view must opt in to wider access explicitly.

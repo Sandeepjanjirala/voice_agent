@@ -14,6 +14,7 @@ dependencies = [
     "livekit-plugins-ai-coustics~=0.3",
     "python-dotenv",
     # --- Django backend (config/, apps/) ---
+    "livekit-api~=1.2",
     "django~=5.2",
     "djangorestframework~=3.16",
     "dj-database-url~=3.0",

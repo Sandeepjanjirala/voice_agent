@@ -37,3 +37,6 @@ db.sqlite3
 logs/
 console-recordings/
 staticfiles/
+.test-tmp/
+node_modules/
+browser-artifacts/
