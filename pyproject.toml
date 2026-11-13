@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "telugu-ai-calling-agent"
+version = "0.1.0"
+description = "Telugu AI calling agent: LiveKit Agents voice worker + Django backend (separate processes)"
+requires-python = ">=3.11, <3.14"
+
+dependencies = [
+    # --- voice worker (voice_agent/) ---
+    "livekit-agents[sarvam,openai]~=1.8",
+    "livekit-plugins-ai-coustics~=0.3",
+    "python-dotenv",
+    # --- Django backend (config/, apps/) ---
+    "django~=5.2",
+    "djangorestframework~=3.16",
+    "dj-database-url~=3.0",
+    "psycopg[binary]~=3.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-django",
+    "ruff",
+]
+
+[tool.uv]
+# yarl 1.24.1 was published with only a cp310 wheel and no sdist, so it can't
+# install on Python 3.11+. Remove this once upstream uploads the remaining wheels.
+constraint-dependencies = ["yarl<1.24"]
+
+[tool.setuptools.packages.find]
+include = ["voice_agent*", "apps*", "config*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+DJANGO_SETTINGS_MODULE = "tests.django_settings"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+extend-exclude = ["apps/*/migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "B", "A", "C4", "UP", "SIM", "RUF"]
+ignore = [
+    "E501",    # Line too long (handled by formatter)
+    "RUF001",  # Telugu text in prompts trips the ambiguous-character checks
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
