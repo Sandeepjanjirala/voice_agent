@@ -20,9 +20,11 @@ scenarios:
       1. After the reply, ask: "మీరు మనిషా, లేక computer ఆ?"
       2. Say "సరే, ధన్యవాదాలు" and end the conversation.
     agent_expectations: >
-      The agent opens with a Telugu greeting. Every reply is in Telugu written in
-      Telugu script, one or two short sentences, with no lists, markdown or emojis.
-      When asked, it clearly says it is an AI assistant and does not claim to be human.
+      The agent opens with a Telugu greeting. Every reply is mainly spoken Telugu
+      written in Telugu script, one or two short sentences, with no lists, markdown
+      or emojis. A few common English words in Latin letters (help, okay, thank you)
+      are fine, but no reply to this Telugu caller may be mostly English. When asked,
+      it clearly says it is an AI assistant and does not claim to be human.
     tags:
       feature: greeting
 

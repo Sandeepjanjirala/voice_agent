@@ -56,6 +56,11 @@ class TurnMetricsWriter:
             logger.exception("could not write turn metrics")
 
 
+def events_log_path(metrics_path: Path | None) -> Path | None:
+    """Timing events sit next to the turn metrics, and are off when they are."""
+    return None if metrics_path is None else metrics_path.with_name("call_events.jsonl")
+
+
 def turn_row(item: Any) -> dict[str, Any] | None:
     """Reduce a chat item to a metrics row, or None if it is not a spoken turn."""
     if getattr(item, "type", None) != "message":
@@ -144,13 +149,50 @@ def attach_session_observers(
         if row is None:
             return
         writer.write(row)
+        events.write(
+            {
+                "event": "turn",
+                "role": row.get("role"),
+                "chars": row.get("chars"),
+                "interrupted": row.get("interrupted"),
+            }
+        )
         extra = dict(row)
         if settings.log_transcripts:
             extra["text"] = ev.item.text_content
         logger.info("turn completed", extra=extra)
 
+    # Timing-only event trail for diagnosing broken-up speech: when the agent
+    # and caller start and stop talking, and every overlap the interruption
+    # logic acted on. Never contains what was said.
+    events = TurnMetricsWriter(events_log_path(settings.metrics_log_path), session_id)
+
+    @session.on("agent_state_changed")
+    def _on_agent_state(ev: Any) -> None:
+        events.write({"event": "agent_state", "old": ev.old_state, "new": ev.new_state})
+
+    @session.on("user_state_changed")
+    def _on_user_state(ev: Any) -> None:
+        events.write({"event": "user_state", "old": ev.old_state, "new": ev.new_state})
+
+    @session.on("speech_created")
+    def _on_speech_created(ev: Any) -> None:
+        events.write({"event": "speech_created", "source": ev.source})
+
+    @session.on("overlapping_speech")
+    def _on_overlap(ev: Any) -> None:
+        events.write(
+            {
+                "event": "overlapping_speech",
+                "is_interruption": ev.is_interruption,
+                "agent_ended": getattr(ev, "agent_ended", None),
+                "total_duration": round(getattr(ev, "total_duration", 0.0), 3),
+            }
+        )
+
     @session.on("agent_false_interruption")
     def _on_false_interruption(ev: Any) -> None:
+        events.write({"event": "false_interruption", "resumed": ev.resumed})
         logger.info("false interruption", extra={"resumed": ev.resumed})
 
     @session.on("close")

@@ -36,7 +36,7 @@ DEFAULT_LLM_MODELS = {
     "openai": "gpt-4.1-mini",
 }
 
-DEFAULT_GREETING = "నమస్తే! నేను మీ AI సహాయకురాలిని. మీకు ఏ విధంగా సహాయం చేయగలను?"
+DEFAULT_GREETING = "హలో అండి! నేను మీ AI assistant ని. మీకు ఏం help కావాలి?"
 DEFAULT_FALLBACK_MESSAGE = "క్షమించండి, ప్రస్తుతం చిన్న సాంకేతిక సమస్య ఉంది. దయచేసి మళ్ళీ చెప్పగలరా?"
 
 

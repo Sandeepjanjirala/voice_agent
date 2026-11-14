@@ -1,0 +1,112 @@
+# Conversation-quality scenarios, written from the first real phone call
+# (14 Nov 2026): the agent repeated one formal stock question, used bookish
+# Telugu, answered English in Telugu, invented "network problems" as the cause
+# of bad audio, and could not hang up when asked.
+#
+# They use the end-call tool, so run them with the flag on:
+#
+#   $env:AGENT_CAN_END_CALL = "true"
+#   lk agent simulate text --yes --scenarios scenarios/conversation_quality.yaml --concurrency 1 voice_agent/agent.py
+#
+# Text simulations judge wording only. Voice, pacing and interruptions need a
+# real call and a person listening.
+id: SCNG_GRrxZygfHpX6
+name: Telugu calling agent - conversation quality
+scenarios:
+  - id: SCN_wTiJSJmwS4WH
+    label: Sounds like everyday Tenglish, not formal Telugu
+    instructions: |
+      PERSONA: A caller from Vijayawada speaking casual Telugu with English words.
+      OPENING LINE: "హలో, మీరు ఎవరండి?"
+      DO, IN ORDER:
+      1. Ask: "మీరు ఏం చేయగలరు?"
+      2. Say: "నాకు రేపు ఒక appointment కావాలి అండి."
+      3. Say "సరే అండి, thank you" and say nothing more.
+    agent_expectations: >
+      Replies are short everyday spoken Telugu mixed naturally with common
+      English words, ending politely with "అండి". The agent never uses bookish
+      words such as సహాయం, సమాచారం, సందేహం, క్షమించండి or సెలవు, and never
+      says "మీకు ఏ విధంగా సహాయం చేయగలను". It does not claim it can book the
+      appointment; it says office people will confirm.
+    tags:
+      feature: tenglish
+
+  - id: SCN_buCaN4j6PBTX
+    label: Does not repeat its introduction or the same question
+    instructions: |
+      PERSONA: A caller who answers briefly.
+      OPENING LINE: "హలో."
+      DO, IN ORDER:
+      1. Say only: "చెప్పండి."
+      2. Say only: "ఆ, వింటున్నాను."
+      3. Say: "నాకు office timings కావాలి."
+      4. Say "సరే" and say nothing more.
+    agent_expectations: >
+      The agent introduces itself at most once in the whole conversation and
+      never asks the same question twice in the same words. It does not invent
+      office timings; it says office people will confirm.
+    tags:
+      feature: repetition
+
+  - id: SCN_PbERDJZy2Kog
+    label: Switches to English when the caller does, and back
+    instructions: |
+      PERSONA: A caller who starts in Telugu and switches language mid-call.
+      OPENING LINE: "హలో అండి."
+      DO, IN ORDER:
+      1. Say in English: "Okay, can I speak with you in English?"
+      2. Say in English: "What can you help me with?"
+      3. Switch back: "సరే, ఇప్పుడు తెలుగులో చెప్పండి, మీ office ఎక్కడ ఉంది?"
+      4. Say "thank you, bye" and say nothing more.
+    agent_expectations: >
+      After each English message the agent replies fully in English. After the
+      caller switches back to Telugu the agent replies in spoken Telugu-English.
+      It does not invent an office address.
+    tags:
+      feature: language-switch
+
+  - id: SCN_8tpvt3n7gHjL
+    label: Does not invent a cause when the caller reports bad audio
+    instructions: |
+      PERSONA: A caller annoyed by audio quality. Say the lines verbatim.
+      OPENING LINE: "When I am talking with you, you are not speaking well, some buffering issues are coming."
+      DO, IN ORDER:
+      1. Ask: "Why is it happening?"
+      2. Say "okay" and say nothing more.
+    agent_expectations: >
+      The agent apologises briefly in English and does not state or guess a
+      cause such as network problems, since it cannot know. It does not claim to
+      have fixed or checked anything.
+    tags:
+      feature: grounding
+
+  - id: SCN_8T3REP3Fk5FB
+    label: Hangs up when told to cut the phone
+    instructions: |
+      PERSONA: A caller who wants to end the call. Say the lines verbatim.
+      OPENING LINE: "హలో, నా మాట వినపడుతుందా?"
+      DO, IN ORDER:
+      1. Say: "Phone cut చేసేయ్."
+      2. Say nothing more.
+    agent_expectations: >
+      After "Phone cut చేసేయ్" the agent gives exactly one short friendly
+      goodbye in spoken Telugu (not "సెలవు") and ends the call with the
+      end_call tool. It asks no further question.
+    tags:
+      feature: call-end
+
+  - id: SCN_Gc4Sg5YfMUJ4
+    label: Keeps context across turns
+    instructions: |
+      PERSONA: A caller arranging a visit, giving details across turns.
+      OPENING LINE: "నాకు రేపు రావాలని ఉంది."
+      DO, IN ORDER:
+      1. When asked or after the reply, say: "morning పది గంటలకి."
+      2. Ask: "ఎప్పుడు రమ్మన్నాను నేను, గుర్తుందా?"
+      3. Say "సరే అండి, ఉంటాను" and say nothing more.
+    agent_expectations: >
+      When asked what was said, the agent correctly recalls tomorrow morning at
+      ten, in words. It does not ask again for the day or time already given and
+      does not claim the visit is booked.
+    tags:
+      feature: context
