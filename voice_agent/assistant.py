@@ -5,13 +5,19 @@ from __future__ import annotations
 from livekit.agents import Agent, AgentSession
 from livekit.agents.voice import SpeechHandle
 
+from .call_end import end_call_tools
 from .config import VoiceSettings
 from .prompts import build_instructions
 
 
 class TeluguAssistant(Agent):
     def __init__(self, settings: VoiceSettings) -> None:
-        super().__init__(instructions=build_instructions(settings.business_name))
+        super().__init__(
+            instructions=build_instructions(
+                settings.business_name, can_end_call=settings.can_end_call
+            ),
+            tools=end_call_tools(settings),
+        )
 
 
 def greet(session: AgentSession, settings: VoiceSettings) -> SpeechHandle:

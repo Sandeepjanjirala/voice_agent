@@ -1,8 +1,7 @@
-"""Offline telephony foundation: settings, plan, read-only status and refusals.
+"""Inbound telephony: settings, plan, status, apply and teardown.
 
 Nothing here touches LiveKit or a provider. The LiveKit client is replaced by a
-fake that records every call and fails the test if anything other than a list
-call is attempted.
+fake that records every call, so each test can assert exactly what was sent.
 """
 
 import io
@@ -16,7 +15,7 @@ from django.core.management.base import CommandError
 from google.protobuf.duration_pb2 import Duration
 from livekit import api
 
-from apps.telephony import livekit_gateway, providers, reconcile
+from apps.telephony import livekit_gateway, providers, provisioning, reconcile
 from apps.telephony.conf import TelephonyConfigError, load_telephony_settings
 from apps.telephony.masking import mask_phone, mask_phones_in
 from apps.telephony.planning import (
@@ -27,6 +26,7 @@ from apps.telephony.planning import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
+COMMAND = "apps.telephony.management.commands.telephony"
 
 NUMBER = "+918045550123"
 PASSWORD = "s3cret-Trunk-pass!"
@@ -38,6 +38,7 @@ READY_ENV = {
     "TELEPHONY_PROVIDER": "plivo",
     "TELEPHONY_INBOUND_NUMBER": NUMBER,
     "LIVEKIT_SIP_SUBDOMAIN": "abc123def45",
+    "SIP_INBOUND_AUTH_MODE": "digest",
     "SIP_INBOUND_AUTH_USERNAME": "lkinbound",
     "SIP_INBOUND_AUTH_PASSWORD": PASSWORD,
     "TELEPHONY_CONFIRMED": ALL_CONFIRMED,
@@ -102,6 +103,16 @@ def test_indian_providers_default_to_the_india_sip_region() -> None:
         load_telephony_settings({"TELEPHONY_PROVIDER": "vobiz"}).sip_region == "india"
     )
     assert load_telephony_settings({}).sip_region == "global"
+
+
+def test_auth_mode_defaults_to_what_the_provider_documents() -> None:
+    assert (
+        load_telephony_settings({"TELEPHONY_PROVIDER": "plivo"}).auth_mode == "digest"
+    )
+    assert (
+        load_telephony_settings({"TELEPHONY_PROVIDER": "vobiz"}).auth_mode
+        == "ip_allowlist"
+    )
 
 
 @pytest.mark.parametrize(
@@ -308,10 +319,57 @@ def test_dispatch_rule_is_never_a_wildcard() -> None:
 
 
 class _FakeSip:
-    """Stands in for LiveKitAPI.sip. Anything except a list call fails the test."""
+    """Stands in for LiveKitAPI.sip and records every call in order.
+
+    Read-only tests assert that only the two list calls were made. Update and
+    transfer calls do not exist here, so using one fails the test.
+    """
 
     def __init__(self, owner) -> None:
         self._owner = owner
+
+    def _record(self, name: str) -> None:
+        self._owner.calls.append(name)
+        if name == self._owner.fail_on:
+            raise ConnectionError(f"boom for {NUMBER} with {PASSWORD}")
+
+    async def create_inbound_trunk(self, request):
+        self._record("create_inbound_trunk")
+        trunk = api.SIPInboundTrunkInfo()
+        trunk.CopyFrom(request.trunk)
+        trunk.sip_trunk_id = "ST_new"
+        if self._owner.drop_auth:
+            trunk.auth_username = ""
+            del trunk.allowed_addresses[:]
+        self._owner.trunks.append(trunk)
+        return trunk
+
+    async def create_dispatch_rule(self, request):
+        self._record("create_dispatch_rule")
+        rule = api.SIPDispatchRuleInfo(
+            sip_dispatch_rule_id="SDR_new",
+            name=request.name,
+            trunk_ids=request.trunk_ids,
+            hide_phone_number=request.hide_phone_number,
+            rule=request.rule,
+            room_config=request.room_config,
+        )
+        self._owner.rules.append(rule)
+        return rule
+
+    async def delete_dispatch_rule(self, request):
+        self._record("delete_dispatch_rule")
+        self._owner.rules[:] = [
+            r
+            for r in self._owner.rules
+            if r.sip_dispatch_rule_id != request.sip_dispatch_rule_id
+        ]
+
+    async def delete_trunk(self, request):
+        self._record("delete_trunk")
+        self._owner.trunks[:] = [
+            t for t in self._owner.trunks if t.sip_trunk_id != request.sip_trunk_id
+        ]
 
     async def list_inbound_trunk(self, request):
         self._owner.calls.append("list_inbound_trunk")
@@ -324,12 +382,15 @@ class _FakeSip:
         return api.ListSIPDispatchRuleResponse(items=self._owner.rules)
 
     def __getattr__(self, name):
-        raise AssertionError(f"mutating or unexpected SIP call attempted: {name}")
+        raise AssertionError(f"unexpected SIP call attempted: {name}")
 
 
 class FakeLiveKit:
-    def __init__(self, trunks=(), rules=(), *, fail=False) -> None:
+    def __init__(
+        self, trunks=(), rules=(), *, fail=False, fail_on="", drop_auth=False
+    ) -> None:
         self.trunks, self.rules, self.fail = list(trunks), list(rules), fail
+        self.fail_on, self.drop_auth = fail_on, drop_auth
         self.calls: list[str] = []
         self.closed = False
         self.sip = _FakeSip(self)
@@ -417,19 +478,24 @@ async def test_gateway_errors_are_sanitised_and_the_client_is_closed() -> None:
     assert raised.value.__cause__ is None
 
 
-def test_gateway_has_no_way_to_change_livekit() -> None:
-    source = "".join(
-        path.read_text(encoding="utf-8")
-        for path in (ROOT / "apps" / "telephony").rglob("*.py")
-    )
+def test_only_provisioning_can_change_livekit_and_nothing_can_update() -> None:
+    app = ROOT / "apps" / "telephony"
+    sources = {
+        path.name: path.read_text(encoding="utf-8") for path in app.rglob("*.py")
+    }
 
-    # Request builders exist for a future apply; nothing may send them yet.
-    assert re.findall(r"\.sip\.(\w+)\(", source) == [
+    assert re.findall(r"\.sip\.(\w+)\(", sources["livekit_gateway.py"]) == [
         "list_inbound_trunk",
         "list_dispatch_rule",
     ]
-    for forbidden in ("create_", "update_", "delete_", "transfer_", "requests."):
-        assert f".{forbidden}" not in source.replace("api.Create", "")
+    for name, source in sources.items():
+        # Only provisioning.py may hold a LiveKit client's SIP service.
+        if name not in ("provisioning.py", "livekit_gateway.py"):
+            assert "client.sip" not in source and "_call(" not in source, name
+        # Existing resources are never modified, and no provider API is called.
+        assert "update_" not in source, name
+        assert "transfer_" not in source, name
+        assert "requests." not in source, name
 
 
 # --- reconcile: routing, duplicates, drift ----------------------------------
@@ -556,22 +622,19 @@ def no_network(monkeypatch):
         raise AssertionError("this command must not contact LiveKit")
 
     monkeypatch.setattr(livekit_gateway.api, "LiveKitAPI", refuse)
-    monkeypatch.setattr(
-        "apps.telephony.management.commands.telephony.ReadOnlySipGateway", refuse
-    )
+    for name in ("ReadOnlySipGateway", "SipProvisioner"):
+        monkeypatch.setattr(f"{COMMAND}.{name}", refuse)
 
 
 @pytest.fixture
 def fake_livekit(monkeypatch):
     def install(fake: FakeLiveKit) -> FakeLiveKit:
-        real = livekit_gateway.ReadOnlySipGateway
+        for real in (livekit_gateway.ReadOnlySipGateway, provisioning.SipProvisioner):
 
-        def build(**kwargs):
-            return real(**kwargs, api_factory=fake.factory)
+            def build(_real=real, **kwargs):
+                return _real(**kwargs, api_factory=fake.factory)
 
-        monkeypatch.setattr(
-            "apps.telephony.management.commands.telephony.ReadOnlySipGateway", build
-        )
+            monkeypatch.setattr(f"{COMMAND}.{real.__name__}", build)
         return fake
 
     return install
@@ -665,19 +728,237 @@ def test_apply_needs_the_typed_number_and_the_explicit_flag(env, no_network) -> 
         run("apply", "--confirm-number", NUMBER)
 
 
-def test_apply_is_disabled_even_when_fully_confirmed(env, no_network) -> None:
-    env(**READY_ENV)
-
-    with pytest.raises(CommandError, match="not included in this build"):
-        run("apply", "--confirm-number", NUMBER, "--yes-change-livekit")
-
-
-def test_teardown_needs_confirmation_and_is_disabled(env, no_network) -> None:
+def test_teardown_needs_the_trunk_id_and_the_explicit_flag(env, no_network) -> None:
     env(**READY_ENV)
 
     with pytest.raises(CommandError, match="--confirm-trunk-id"):
         run("teardown", "--yes-delete-from-livekit")
     with pytest.raises(CommandError, match="--yes-delete-from-livekit"):
         run("teardown", "--confirm-trunk-id", "ST_abc")
-    with pytest.raises(CommandError, match="not included in this build"):
-        run("teardown", "--confirm-trunk-id", "ST_abc", "--yes-delete-from-livekit")
+
+
+# --- apply and teardown against a fake LiveKit ------------------------------
+
+APPLY = ("apply", "--confirm-number", NUMBER, "--yes-change-livekit")
+LISTS = ["list_inbound_trunk", "list_dispatch_rule"]
+
+
+def test_apply_dry_run_reads_and_changes_nothing(env, fake_livekit) -> None:
+    env(**READY_ENV)
+    fake = fake_livekit(FakeLiveKit())
+
+    output = run("apply", "--dry-run")
+
+    assert fake.calls == LISTS
+    assert "nothing was changed" in output
+    assert "create_trunk, create_dispatch_rule" in output
+
+
+def test_apply_creates_an_authenticated_trunk_then_a_bound_rule(
+    env, fake_livekit
+) -> None:
+    env(**READY_ENV)
+    fake = fake_livekit(FakeLiveKit())
+
+    output = run(*APPLY)
+
+    assert fake.calls == [
+        *LISTS,
+        "create_inbound_trunk",
+        "create_dispatch_rule",
+        *LISTS,
+    ]
+    trunk, rule = fake.trunks[0], fake.rules[0]
+    assert trunk.auth_username == "lkinbound"
+    assert trunk.media_encryption == api.SIPMediaEncryption.SIP_MEDIA_ENCRYPT_REQUIRE
+    assert list(rule.trunk_ids) == ["ST_new"]
+    assert [a.agent_name for a in rule.room_config.agents] == ["telugu-agent"]
+    assert "ST_new" in output and "SDR_new" in output
+    assert PASSWORD not in output and NUMBER not in output
+    assert "transport=tls" in output
+
+
+def test_apply_twice_creates_nothing_the_second_time(env, fake_livekit) -> None:
+    env(**READY_ENV)
+    fake = fake_livekit(FakeLiveKit())
+    run(*APPLY)
+    fake.calls.clear()
+
+    output = run(*APPLY)
+
+    assert fake.calls == LISTS
+    assert "Nothing to do" in output
+    assert (len(fake.trunks), len(fake.rules)) == (1, 1)
+
+
+def test_apply_only_adds_the_missing_rule_to_an_existing_trunk(
+    env, fake_livekit
+) -> None:
+    env(**READY_ENV)
+    fake = fake_livekit(FakeLiveKit([existing_trunk()]))
+
+    run(*APPLY)
+
+    assert "create_inbound_trunk" not in fake.calls
+    assert list(fake.rules[0].trunk_ids) == ["ST_abc"]
+
+
+def test_apply_rolls_the_trunk_back_when_the_rule_fails(env, fake_livekit) -> None:
+    env(**READY_ENV)
+    fake = fake_livekit(FakeLiveKit(fail_on="create_dispatch_rule"))
+
+    with pytest.raises(CommandError, match="was removed again") as raised:
+        run(*APPLY)
+
+    assert fake.calls[-1] == "delete_trunk"
+    assert fake.trunks == [] and fake.rules == []
+    assert PASSWORD not in str(raised.value) and NUMBER not in str(raised.value)
+
+
+def test_failed_rollback_names_the_trunk_to_remove_by_hand(env, fake_livekit) -> None:
+    env(**READY_ENV)
+    fake = fake_livekit(FakeLiveKit(fail_on="create_dispatch_rule"))
+
+    async def broken_delete(request):
+        raise ConnectionError("still down")
+
+    fake.sip.delete_trunk = broken_delete
+
+    with pytest.raises(CommandError, match=r"ST_new.*ALSO FAILED"):
+        run(*APPLY)
+
+
+def test_apply_never_leaves_a_pre_existing_trunk_deleted_on_failure(
+    env, fake_livekit
+) -> None:
+    env(**READY_ENV)
+    fake = fake_livekit(FakeLiveKit([existing_trunk()], fail_on="create_dispatch_rule"))
+
+    with pytest.raises(CommandError, match="Dispatch rule was not created"):
+        run(*APPLY)
+
+    assert "delete_trunk" not in fake.calls
+    assert len(fake.trunks) == 1
+
+
+def test_trunk_that_comes_back_unauthenticated_is_removed(env, fake_livekit) -> None:
+    env(**READY_ENV)
+    fake = fake_livekit(FakeLiveKit(drop_auth=True))
+
+    with pytest.raises(CommandError, match="did not come back authenticated"):
+        run(*APPLY)
+
+    assert fake.trunks == [] and fake.rules == []
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        {"trunks": [existing_trunk(), existing_trunk(sip_trunk_id="ST_2", name="x")]},
+        {"trunks": [existing_trunk(auth_username="", auth_password="")]},
+        {
+            "rules": [
+                existing_rule(sip_dispatch_rule_id="SDR_w", name="all", trunk_ids=[])
+            ]
+        },
+    ],
+    ids=["duplicate-trunks", "open-trunk", "wildcard-rule"],
+)
+def test_apply_refuses_when_livekit_needs_review(env, fake_livekit, state) -> None:
+    env(**READY_ENV)
+    fake = fake_livekit(FakeLiveKit(state.get("trunks", ()), state.get("rules", ())))
+
+    with pytest.raises(CommandError, match="nothing was changed"):
+        run(*APPLY)
+
+    assert fake.calls == LISTS
+
+
+def test_apply_create_failure_is_reported_without_secrets(env, fake_livekit) -> None:
+    env(**READY_ENV)
+    fake = fake_livekit(FakeLiveKit(fail_on="create_inbound_trunk"))
+
+    with pytest.raises(CommandError, match="create_inbound_trunk") as raised:
+        run(*APPLY)
+
+    assert PASSWORD not in str(raised.value) and NUMBER not in str(raised.value)
+    assert fake.trunks == []
+
+
+def test_vobiz_allow_list_trunk_carries_addresses_and_no_password(
+    env, fake_livekit
+) -> None:
+    env(
+        **{
+            **READY_ENV,
+            "TELEPHONY_PROVIDER": "vobiz",
+            "SIP_INBOUND_AUTH_MODE": "",
+            "SIP_INBOUND_AUTH_USERNAME": "",
+            "SIP_INBOUND_AUTH_PASSWORD": "",
+            "SIP_INBOUND_ALLOWED_ADDRESSES": "203.0.113.10,203.0.113.11",
+            "TELEPHONY_CONFIRMED": (
+                f"{ALL_CONFIRMED},{providers.ALLOWED_ADDRESSES_ENFORCED}"
+            ),
+        }
+    )
+    fake = fake_livekit(FakeLiveKit())
+
+    run(*APPLY)
+
+    trunk = fake.trunks[0]
+    assert trunk.name == "telugu-inbound-vobiz"
+    assert list(trunk.allowed_addresses) == ["203.0.113.10", "203.0.113.11"]
+    assert trunk.auth_username == "" and trunk.auth_password == ""
+
+
+def test_teardown_dry_run_lists_targets_and_deletes_nothing(env, fake_livekit) -> None:
+    env(**READY_ENV)
+    fake = fake_livekit(FakeLiveKit([existing_trunk()], [existing_rule()]))
+
+    output = run("teardown", "--dry-run")
+
+    assert fake.calls == LISTS
+    assert "SDR_abc" in output and "ST_abc" in output
+
+
+def test_teardown_deletes_the_rule_before_the_trunk(env, fake_livekit) -> None:
+    env(**READY_ENV)
+    other = existing_trunk(sip_trunk_id="ST_other", name="other", numbers=["+15550100"])
+    fake = fake_livekit(FakeLiveKit([existing_trunk(), other], [existing_rule()]))
+
+    run("teardown", "--confirm-trunk-id", "ST_abc", "--yes-delete-from-livekit")
+
+    assert fake.calls == [*LISTS, "delete_dispatch_rule", "delete_trunk"]
+    assert [t.sip_trunk_id for t in fake.trunks] == ["ST_other"]
+    assert fake.rules == []
+
+
+def test_teardown_refuses_the_wrong_trunk_id(env, fake_livekit) -> None:
+    env(**READY_ENV)
+    fake = fake_livekit(FakeLiveKit([existing_trunk()], [existing_rule()]))
+
+    with pytest.raises(CommandError, match="must be ST_abc"):
+        run("teardown", "--confirm-trunk-id", "ST_other", "--yes-delete-from-livekit")
+
+    assert fake.calls == LISTS
+
+
+def test_teardown_works_even_when_the_plan_is_blocked(env, fake_livekit) -> None:
+    env(**{**READY_ENV, "TELEPHONY_CONFIRMED": ""})
+    fake = fake_livekit(FakeLiveKit([existing_trunk()], [existing_rule()]))
+
+    run("teardown", "--confirm-trunk-id", "ST_abc", "--yes-delete-from-livekit")
+
+    assert fake.trunks == [] and fake.rules == []
+
+
+def test_teardown_with_nothing_to_remove_is_a_no_op(env, fake_livekit) -> None:
+    env(**READY_ENV)
+    fake = fake_livekit(FakeLiveKit())
+
+    output = run(
+        "teardown", "--confirm-trunk-id", "ST_abc", "--yes-delete-from-livekit"
+    )
+
+    assert fake.calls == LISTS
+    assert "Nothing to delete" in output

@@ -6,7 +6,8 @@ This is a standalone process, separate from Django:
     lk agent dev voice_agent/agent.py          # connect it to LiveKit Cloud
     uv run voice_agent/agent.py start          # production mode
 
-Phase 1 covers the local voice loop only; SIP dialling arrives in Phases 2-3.
+Inbound phone callers arrive as SIP participants through a LiveKit dispatch
+rule (Phase 2, see apps/telephony); outbound dialling is Phase 3.
 """
 
 import logging
@@ -19,6 +20,7 @@ from voice_agent.assistant import TeluguAssistant, greet
 from voice_agent.config import PROJECT_ROOT, ConfigError, load_settings
 from voice_agent.observability import attach_session_observers, configure_logging
 from voice_agent.pipeline import build_session
+from voice_agent.telephony import log_callers
 
 logger = logging.getLogger("voice_agent")
 
@@ -57,6 +59,7 @@ async def entrypoint(ctx: JobContext) -> None:
         room_options=room_io.RoomOptions(audio_input=audio_input),
     )
     await ctx.connect()
+    log_callers(ctx.room)
 
     # Speak first, but only once the room is connected (see greet()).
     greet(session, settings)

@@ -8,14 +8,15 @@ real Telugu microphone conversation through LiveKit Cloud Console. The new Djang
 interface passed browser UI checks and a live greeting check with a synthetic microphone.
 The owner also confirmed the Django manual checklist. Core Phase 1 and local Phase 1.5
 checks pass; extended speech-quality and production verification remain incomplete.
-Phase 2 has an offline telephony foundation only: planning and read-only status.
-No number, live SIP trunk, real phone call, call-record schema or deployment exists.
+Phase 2's inbound telephony integration is built and tested against a fake LiveKit.
+No number, live SIP trunk, real phone call, call-record schema or deployment exists yet.
 
 | Document | What it covers |
 | :--- | :--- |
-| [docs/PHASE2_IMPLEMENTATION.md](docs/PHASE2_IMPLEMENTATION.md) | Offline telephony foundation: what was built, verified, and what is waiting on LiveKit and the provider |
+| [docs/VOBIZ_SETUP.md](docs/VOBIZ_SETUP.md) | Step-by-step account, number and trunk setup for the first real inbound call |
+| [docs/PHASE2_IMPLEMENTATION.md](docs/PHASE2_IMPLEMENTATION.md) | Inbound telephony integration: what was built, verified, and what is not yet proven |
 | [docs/PHASE2_READINESS.md](docs/PHASE2_READINESS.md) | Provider comparison, costs, regulation and the Phase 2 plan |
-| [docs/CALL_TERMINATION_DESIGN.md](docs/CALL_TERMINATION_DESIGN.md) | Proposed goodbye and hang-up behaviour; not implemented |
+| [docs/CALL_TERMINATION_DESIGN.md](docs/CALL_TERMINATION_DESIGN.md) | Goodbye and hang-up behaviour, off unless `AGENT_CAN_END_CALL=true` |
 | [docs/PHASE1_5_VERIFICATION.md](docs/PHASE1_5_VERIFICATION.md) | Run the Django voice studio and review browser verification |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Full incoming/outgoing calling roadmap, Phases 1?5 |
 | [docs/AUDIT.md](docs/AUDIT.md) | What the implementation brief got right and wrong against current SDKs |
@@ -153,20 +154,23 @@ Django's existing SQLite fallback stores login/session data locally. PostgreSQL 
 business records remain Phase 4. See [the verification and testing guide](docs/PHASE1_5_VERIFICATION.md)
 for exact browser coverage and pending human checks.
 
-## Plan inbound telephony (offline)
+## Inbound telephony
 
-Phase 2 so far only plans. These commands buy nothing, place no call and create nothing:
+These commands buy nothing and place no call. The first three change nothing:
 
 ```powershell
-.\.venv\Scripts\python.exe manage.py telephony plan     # no network
-.\.venv\Scripts\python.exe manage.py telephony status   # lists LiveKit SIP config, read-only
+.\.venv\Scripts\python.exe manage.py telephony plan              # no network
+.\.venv\Scripts\python.exe manage.py telephony status            # lists LiveKit SIP config
+.\.venv\Scripts\python.exe manage.py telephony apply --dry-run   # what apply would create
+.\.venv\Scripts\python.exe manage.py telephony apply --confirm-number +91XXXXXXXXXX --yes-change-livekit
 ```
 
 `plan` shows the inbound trunk and dispatch rule that would be created and every
 blocker in the way. Unverified provider or LiveKit capabilities are blockers until you
-list them in `TELEPHONY_CONFIRMED`. `apply` and `teardown` exist but always refuse in
-this build. Settings are under "Inbound telephony" in [.env.example](.env.example);
-details are in [docs/PHASE2_IMPLEMENTATION.md](docs/PHASE2_IMPLEMENTATION.md).
+list them in `TELEPHONY_CONFIRMED`. `apply` creates the LiveKit trunk and dispatch rule
+only when the plan has no blockers; `teardown` removes them. Settings are under
+"Inbound telephony" in [.env.example](.env.example). Follow
+[docs/VOBIZ_SETUP.md](docs/VOBIZ_SETUP.md) for the first real call.
 
 ## Change the voice, model or language
 

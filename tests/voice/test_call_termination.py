@@ -1,25 +1,15 @@
-"""Specification for letting the agent end a call. NOT IMPLEMENTED YET.
+"""Wiring of the optional end-call tool (voice_agent/call_end.py).
 
-Written before the code, as agreed: these tests describe the proposed
-`voice_agent/call_end.py` in docs/CALL_TERMINATION_DESIGN.md. The whole module
-is skipped until that file exists, so it has never been executed and may need
-adjusting when the implementation is reviewed. The working agent is untouched.
-
-Whether the model ends calls at the right moments is a behaviour question;
-that is covered by scenarios/call_termination.yaml, not by these unit tests.
+Written before the code, from docs/CALL_TERMINATION_DESIGN.md; the
+implementation was made to pass them. Whether the model ends calls at the
+right moments is covered by scenarios/call_termination.yaml.
 """
 
-import pytest
+from voice_agent import call_end
+from voice_agent.assistant import TeluguAssistant
+from voice_agent.prompts import PROMPT_BUDGET_BYTES, build_instructions
 
-call_end = pytest.importorskip(
-    "voice_agent.call_end",
-    reason="call termination is designed but not implemented; awaiting review",
-)
-
-from voice_agent.assistant import TeluguAssistant  # noqa: E402
-from voice_agent.prompts import PROMPT_BUDGET_BYTES, build_instructions  # noqa: E402
-
-from .fakes import make_settings  # noqa: E402
+from .fakes import make_settings
 
 
 def _tool_names(tools) -> list[str]:

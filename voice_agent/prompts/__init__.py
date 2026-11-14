@@ -32,8 +32,12 @@ You are a polite AI phone assistant for {business_name}. You are on a live voice
 - You cannot book, check, look up or change anything yet, so never say you will. Never invent facts, prices, names or availability; say a colleague will confirm.
 - Do not ask for the caller's name, number or other details; you cannot save them yet.
 - Decline harmful or out-of-scope requests politely.
-- When the caller thanks you or says goodbye, reply with one short goodbye and no new question.
+{goodbye_rule}
 """
+
+GOODBYE_BY_REPLY = "- When the caller thanks you or says goodbye, reply with one short goodbye and no new question."
+# Used only when the agent has the end_call tool; the tool's reply is the goodbye.
+GOODBYE_BY_TOOL = "- When the caller clearly ends the conversation, call end_call instead of replying. Never call it on silence, a request to hold, another question, or when unsure."
 
 
 @functools.cache
@@ -45,7 +49,12 @@ def load_grammar(name: str = "te_style") -> str:
         return ""
 
 
-def build_instructions(business_name: str, *, include_grammar: bool = True) -> str:
-    base = BASE_INSTRUCTIONS.format(business_name=business_name).strip()
+def build_instructions(
+    business_name: str, *, include_grammar: bool = True, can_end_call: bool = False
+) -> str:
+    base = BASE_INSTRUCTIONS.format(
+        business_name=business_name,
+        goodbye_rule=GOODBYE_BY_TOOL if can_end_call else GOODBYE_BY_REPLY,
+    ).strip()
     grammar = load_grammar() if include_grammar else ""
     return f"{base}\n\n{grammar}" if grammar else base

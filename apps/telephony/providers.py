@@ -45,6 +45,11 @@ class Provider:
     label: str
     # Domestic Indian calls must keep signalling and media in India.
     required_sip_region: str | None
+    # How the provider can prove an INVITE is its own, as far as its docs say.
+    default_auth_mode: str = "digest"
+    # Addresses the provider documents as the source of calls it delivers.
+    # Shown as a hint only; never used unless copied into the environment.
+    documented_source_addresses: tuple[str, ...] = ()
     notes: dict[str, str] = field(default_factory=dict)
 
     def note(self, confirmation: str) -> str:
@@ -80,21 +85,30 @@ PROVIDERS: dict[str, Provider] = {
         key="vobiz",
         label="Vobiz",
         required_sip_region="india",
+        default_auth_mode="ip_allowlist",
+        documented_source_addresses=("13.233.44.61", "3.111.255.163", "3.111.128.110"),
         notes={
             ACCOUNT_READY: (
-                "Trial numbers are outbound only; inbound needs KYC and a paid "
-                "number. India prices are not published."
+                "Individuals verify with Aadhaar e-KYC and PAN; no GST is asked "
+                "for. Trial numbers are outbound only, so inbound needs KYC and a "
+                "paid number. 140, 160 and 92-series numbers need extra approval."
             ),
             REGIONAL_ENDPOINT: (
                 "Vobiz says domestic media must stay in India. Its LiveKit guide "
                 "uses the global endpoint, so the regional one is untested."
             ),
             INBOUND_DIGEST_AUTH: (
-                "Vobiz trunks support digest credentials; whether they are sent on "
-                "inbound calls to an external address is not documented. Its own "
-                "example opens the trunk to 0.0.0.0/0."
+                "Vobiz's origination URI has no username or password field, so "
+                "digest is not available for inbound. Use ip_allowlist."
             ),
-            INBOUND_SRTP: "Not published by Vobiz.",
+            ALLOWED_ADDRESSES_ENFORCED: (
+                "Vobiz documents three source addresses for delivered calls. "
+                "LiveKit ignores the list until its support enables enforcement."
+            ),
+            INBOUND_SRTP: (
+                "Vobiz trunks have a 'secure' setting for SRTP and a TLS transport "
+                "option in the console. Untested against LiveKit."
+            ),
         },
     ),
 }

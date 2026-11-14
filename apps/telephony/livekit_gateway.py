@@ -1,8 +1,6 @@
 """Read-only view of the SIP configuration held by LiveKit Cloud.
 
-This is the only telephony module that talks to LiveKit, and it only lists.
-There is deliberately no create, update or delete call anywhere in the app:
-provisioning is a later, separately approved step.
+This module only lists. The calls that change LiveKit live in provisioning.py.
 """
 
 from dataclasses import dataclass

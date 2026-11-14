@@ -154,9 +154,10 @@ def load_telephony_settings(env: Mapping[str, str] | None = None) -> TelephonySe
             f"Valid entries: {', '.join(sorted(CONFIRMATIONS))}."
         )
 
-    default_region = "global"
-    if provider and PROVIDERS[provider].required_sip_region:
-        default_region = PROVIDERS[provider].required_sip_region
+    default_region, default_auth = "global", "digest"
+    if provider:
+        default_region = PROVIDERS[provider].required_sip_region or "global"
+        default_auth = PROVIDERS[provider].default_auth_mode
 
     return TelephonySettings(
         provider=provider,
@@ -164,7 +165,7 @@ def load_telephony_settings(env: Mapping[str, str] | None = None) -> TelephonySe
         sip_subdomain=subdomain,
         sip_region=_choice(env, "LIVEKIT_SIP_REGION", default_region, SIP_REGIONS),
         transport=_choice(env, "SIP_INBOUND_TRANSPORT", "tls", TRANSPORTS),
-        auth_mode=_choice(env, "SIP_INBOUND_AUTH_MODE", "digest", AUTH_MODES),
+        auth_mode=_choice(env, "SIP_INBOUND_AUTH_MODE", default_auth, AUTH_MODES),
         auth_username=username,
         auth_password=password,
         allowed_addresses=_addresses(env, "SIP_INBOUND_ALLOWED_ADDRESSES"),

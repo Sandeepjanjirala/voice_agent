@@ -1,17 +1,15 @@
-# PROPOSED scenarios for the agent ending a call. NOT RUN, and not part of CI.
+# Scenarios for the agent ending a call. They need the end-call tool, which is
+# off by default, so they are kept out of scenarios.yaml and CI. Run with:
 #
-# Written before the feature, as agreed (docs/CALL_TERMINATION_DESIGN.md). The
-# current agent has no end_call tool, so every "ends the call" case here would
-# fail today. Once the implementation is approved, run them with:
-#
+#   $env:AGENT_CAN_END_CALL = "true"
 #   lk agent simulate text --scenarios scenarios/call_termination.yaml --concurrency 1 voice_agent/agent.py
 #
-# and move the passing set into scenarios.yaml. The judge reads the transcript;
-# whether end_call was actually invoked should also be graded on the final
-# state (see "Grade on the final state" in the LiveKit simulations docs).
+# Three conversations must end with end_call; three must not.
+id: SCNG_rQn7ibYV6PxE
 name: Telugu calling agent - call termination (proposed)
 scenarios:
-  - label: Ends the call after a Telugu goodbye
+  - id: SCN_SrAMmb2toLos
+    label: Ends the call after a Telugu goodbye
     instructions: |
       PERSONA: A Telugu-speaking caller who has finished.
       OPENING LINE: "నాకు ఇంకేమీ అవసరం లేదు."
@@ -25,7 +23,8 @@ scenarios:
     tags:
       feature: call-end
 
-  - label: Ends the call after an English goodbye
+  - id: SCN_8FjKBkruDQFD
+    label: Ends the call after an English goodbye
     instructions: |
       PERSONA: A caller who only speaks English.
       OPENING LINE: "Hi, I just wanted to check you are open today."
@@ -38,7 +37,8 @@ scenarios:
     tags:
       feature: call-end
 
-  - label: Hangs up when asked to directly
+  - id: SCN_vTmvHCqNuQh3
+    label: Hangs up when asked to directly
     instructions: |
       PERSONA: A caller in a hurry. Say the lines verbatim.
       OPENING LINE: "నేను తర్వాత call చేస్తాను, ఇప్పుడు phone పెట్టేయండి."
@@ -50,7 +50,8 @@ scenarios:
     tags:
       feature: call-end
 
-  - label: Does not hang up when thanks is followed by another question
+  - id: SCN_2EZFBodwkdTe
+    label: Does not hang up when thanks is followed by another question
     instructions: |
       PERSONA: A caller who thanks the agent but is not finished.
       OPENING LINE: "Thank you. ఇంకో విషయం అడగాలి."
@@ -64,7 +65,8 @@ scenarios:
     tags:
       feature: call-end
 
-  - label: Does not hang up when asked to hold
+  - id: SCN_7AyPSmouAW2y
+    label: Does not hang up when asked to hold
     instructions: |
       PERSONA: A caller who needs a moment.
       OPENING LINE: "ఒక్క నిమిషం ఆగండి, pen తెచ్చుకుంటాను."
@@ -78,7 +80,8 @@ scenarios:
     tags:
       feature: call-end
 
-  - label: Does not hang up on an unclear or one-word reply
+  - id: SCN_QwPSWfAJaeH9
+    label: Does not hang up on an unclear or one-word reply
     instructions: |
       PERSONA: A hesitant caller who gives very short answers.
       OPENING LINE: "హలో?"

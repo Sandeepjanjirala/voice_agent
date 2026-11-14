@@ -1,8 +1,9 @@
-"""Inbound telephony planning: `manage.py telephony plan|status|apply|teardown`.
+"""Inbound telephony: `manage.py telephony plan|status|apply|teardown`.
 
 `plan` uses no network. `status` only lists what LiveKit holds. `apply` and
-`teardown` check their confirmations and then stop: this build contains no code
-that creates, changes or deletes anything in LiveKit or at a provider.
+`teardown` change LiveKit, and only with a typed confirmation and an explicit
+flag; add `--dry-run` to see what they would do. Nothing here contacts the SIP
+provider or buys anything.
 """
 
 import asyncio
@@ -15,17 +16,19 @@ from apps.telephony.conf import TelephonyConfigError, load_telephony_settings
 from apps.telephony.livekit_gateway import ReadOnlySipGateway, TelephonyGatewayError
 from apps.telephony.masking import mask_phone, mask_phones_in
 from apps.telephony.planning import TelephonyPlan, build_plan
-from apps.telephony.reconcile import reconcile
-
-PROVISIONING_DISABLED = (
-    "Provisioning is not included in this build. No LiveKit or provider resource "
-    "was created, changed or deleted. It will be added only after the owner "
-    "approves live telephony setup."
+from apps.telephony.provisioning import (
+    Outcome,
+    ProvisioningFailedError,
+    ProvisioningRefusedError,
+    SipProvisioner,
+    apply_plan,
+    teardown_plan,
 )
+from apps.telephony.reconcile import reconcile
 
 
 class Command(BaseCommand):
-    help = "Plan and inspect inbound telephony. Read-only in this build."
+    help = "Plan, inspect, create and remove the inbound telephony setup."
 
     def add_arguments(self, parser):
         actions = parser.add_subparsers(dest="action", required=True)
@@ -38,15 +41,16 @@ class Command(BaseCommand):
         )
 
         apply = actions.add_parser(
-            "apply", help="Create the trunk and dispatch rule. Disabled in this build."
+            "apply", help="Create the missing trunk and dispatch rule in LiveKit."
         )
+        apply.add_argument("--dry-run", action="store_true")
         apply.add_argument("--confirm-number", default="")
         apply.add_argument("--yes-change-livekit", action="store_true")
 
         teardown = actions.add_parser(
-            "teardown",
-            help="Delete the trunk and dispatch rule. Disabled in this build.",
+            "teardown", help="Delete this plan's trunk and dispatch rule from LiveKit."
         )
+        teardown.add_argument("--dry-run", action="store_true")
         teardown.add_argument("--confirm-trunk-id", default="")
         teardown.add_argument("--yes-delete-from-livekit", action="store_true")
 
@@ -60,6 +64,26 @@ class Command(BaseCommand):
         )
         getattr(self, f"_{action}")(**options)
 
+    def _credentials(self) -> dict[str, str]:
+        url = django_settings.LIVEKIT_URL
+        key = django_settings.LIVEKIT_API_KEY
+        secret = django_settings.LIVEKIT_API_SECRET
+        if not (url and key and secret):
+            raise CommandError(
+                "LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET must be set."
+            )
+        return {"url": url, "api_key": key, "api_secret": secret}
+
+    def _run(self, operation) -> Outcome:
+        try:
+            return asyncio.run(operation)
+        except ProvisioningRefusedError as error:
+            raise CommandError(
+                f"Refused, nothing was changed: {mask_phones_in(str(error))}"
+            ) from None
+        except (ProvisioningFailedError, TelephonyGatewayError) as error:
+            raise CommandError(mask_phones_in(str(error))) from None
+
     # --- read-only ---------------------------------------------------------
 
     def _plan(self, *, as_json=False, **_):
@@ -69,14 +93,7 @@ class Command(BaseCommand):
         self._write_plan(self.plan)
 
     def _status(self, **_):
-        url = django_settings.LIVEKIT_URL
-        key = django_settings.LIVEKIT_API_KEY
-        secret = django_settings.LIVEKIT_API_SECRET
-        if not (url and key and secret):
-            raise CommandError(
-                "LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET must be set."
-            )
-        gateway = ReadOnlySipGateway(url=url, api_key=key, api_secret=secret)
+        gateway = ReadOnlySipGateway(**self._credentials())
         try:
             snapshot = asyncio.run(gateway.snapshot())
         except TelephonyGatewayError as error:
@@ -106,34 +123,77 @@ class Command(BaseCommand):
         if result.nothing_to_do:
             write("  The planned trunk and dispatch rule already exist and match.")
         else:
-            write(f"  A future apply would: {', '.join(result.actions)}")
+            write(f"  An apply would: {', '.join(result.actions)}")
         write(
             f"  Plan blockers: {len(self.plan.blockers)} "
             "(run `telephony plan` for the list)"
         )
 
-    # --- designed, not enabled ---------------------------------------------
+    # --- changes LiveKit ----------------------------------------------------
 
-    def _apply(self, *, confirm_number="", yes_change_livekit=False, **_):
+    def _apply(
+        self, *, dry_run=False, confirm_number="", yes_change_livekit=False, **_
+    ):
         if not self.plan.ready:
             codes = ", ".join(blocker.code for blocker in self.plan.blockers)
             raise CommandError(f"Refusing to apply: the plan is blocked ({codes}).")
-        if confirm_number != self.telephony.inbound_number:
-            raise CommandError(
-                "Refusing to apply: --confirm-number must be the full inbound number."
-            )
-        if not yes_change_livekit:
-            raise CommandError("Refusing to apply: pass --yes-change-livekit.")
-        raise CommandError(PROVISIONING_DISABLED)
+        if not dry_run:
+            if confirm_number != self.telephony.inbound_number:
+                raise CommandError(
+                    "Refusing to apply: --confirm-number must be the full inbound "
+                    "number."
+                )
+            if not yes_change_livekit:
+                raise CommandError("Refusing to apply: pass --yes-change-livekit.")
 
-    def _teardown(self, *, confirm_trunk_id="", yes_delete_from_livekit=False, **_):
-        if not confirm_trunk_id:
-            raise CommandError(
-                "Refusing to tear down: --confirm-trunk-id must name the trunk."
+        gateway = SipProvisioner(**self._credentials())
+        outcome = self._run(
+            apply_plan(self.plan, self.telephony, gateway, dry_run=dry_run)
+        )
+        write = self.stdout.write
+        if dry_run:
+            write("Dry run: nothing was changed.")
+            write(f"  Would do: {', '.join(outcome.would) or 'nothing'}")
+            write(f"  Already in place: {', '.join(outcome.kept) or 'nothing'}")
+            return
+        if not outcome.created:
+            write("Nothing to do: the trunk and dispatch rule already exist and match.")
+            return
+        write(f"Created: {', '.join(outcome.created)}")
+        if outcome.kept:
+            write(f"Kept: {', '.join(outcome.kept)}")
+        write(f"Point the provider at: {self.plan.provider_destination_uri}")
+        write(
+            f"To remove: telephony teardown --confirm-trunk-id {outcome.trunk_id} "
+            "--yes-delete-from-livekit"
+        )
+
+    def _teardown(
+        self, *, dry_run=False, confirm_trunk_id="", yes_delete_from_livekit=False, **_
+    ):
+        if not dry_run:
+            if not confirm_trunk_id:
+                raise CommandError(
+                    "Refusing to tear down: --confirm-trunk-id must name the trunk."
+                )
+            if not yes_delete_from_livekit:
+                raise CommandError(
+                    "Refusing to tear down: pass --yes-delete-from-livekit."
+                )
+        gateway = SipProvisioner(**self._credentials())
+        outcome = self._run(
+            teardown_plan(
+                self.plan, gateway, confirm_trunk_id=confirm_trunk_id, dry_run=dry_run
             )
-        if not yes_delete_from_livekit:
-            raise CommandError("Refusing to tear down: pass --yes-delete-from-livekit.")
-        raise CommandError(PROVISIONING_DISABLED)
+        )
+        write = self.stdout.write
+        if dry_run:
+            write("Dry run: nothing was changed.")
+            write(f"  Would delete: {', '.join(outcome.would) or 'nothing'}")
+        elif outcome.deleted:
+            write(f"Deleted: {', '.join(outcome.deleted)}")
+        else:
+            write("Nothing to delete: LiveKit holds no trunk or rule for this plan.")
 
     # --- output -------------------------------------------------------------
 
@@ -171,7 +231,7 @@ class Command(BaseCommand):
         for warning in plan.warnings:
             write(f"  NOTE     {warning}")
         if plan.ready:
-            write("  READY: no blockers. Provisioning still needs owner approval.")
+            write("  READY: no blockers.")
             return
         write(f"  NOT READY: {len(plan.blockers)} blocker(s)")
         for blocker in plan.blockers:

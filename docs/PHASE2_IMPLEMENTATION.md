@@ -1,166 +1,128 @@
-# Phase 2 offline foundation: implementation and verification
+# Phase 2 implementation: inbound calls
 
-14 November 2026. Scope approved by the owner: the no-purchase, offline part of Phase 2.
+Updated 14 November 2026.
 
-**Result: offline foundation complete. Live telephony is blocked on four confirmations
-and has not been started.** No number was bought, no call was placed, no trunk or
-dispatch rule was created, nothing was deployed, and nothing was committed.
+**Status: the inbound integration is built and tested against a fake LiveKit. It has
+not carried a real call.** No number has been bought, no trunk or dispatch rule exists
+in LiveKit, and nothing is deployed. Going live waits on the items in
+[VOBIZ_SETUP.md](VOBIZ_SETUP.md), which need the owner's accounts.
 
-## What exists now
+## What exists
 
-A Django app, `apps/telephony`, that plans an inbound setup and inspects LiveKit
-without being able to change it.
+| Area | Files | What it does |
+| :--- | :--- | :--- |
+| Settings | `apps/telephony/conf.py` | Typed, validated settings from the environment |
+| Providers | `apps/telephony/providers.py` | Vobiz and Plivo profiles; the confirmations a plan depends on |
+| Plan | `apps/telephony/planning.py` | The trunk and dispatch rule to create, and every blocker |
+| Read | `apps/telephony/livekit_gateway.py` | Lists LiveKit trunks and rules; drops the trunk password |
+| Compare | `apps/telephony/reconcile.py` | Missing, matching, duplicated, drifted or competing configuration |
+| Change | `apps/telephony/provisioning.py` | Creates and deletes the trunk and rule, with rollback |
+| Command | `manage.py telephony …` | `plan`, `status`, `apply`, `teardown` |
+| Worker | `voice_agent/telephony.py` | Recognises phone callers; logs joins and hang-ups with masked numbers |
+| Hang-up | `voice_agent/call_end.py` | Optional end-call tool, off unless `AGENT_CAN_END_CALL=true` |
 
-| File | Purpose |
-| :--- | :--- |
-| `conf.py` | Typed settings from the environment; malformed values are rejected |
-| `providers.py` | Plivo and Vobiz profiles, and the list of confirmations a plan can depend on |
-| `planning.py` | Builds the plan and its blockers; builds the trunk and dispatch requests for a future `apply`, and refuses to build them from a blocked plan |
-| `livekit_gateway.py` | The only code that contacts LiveKit. It lists trunks and dispatch rules and drops the trunk password from what it returns |
-| `reconcile.py` | Compares the plan with LiveKit: create what is missing, keep what matches, stop for a person on duplicates, drift or competing rules |
-| `masking.py` | Phone-number masking for all output |
-| `management/commands/telephony.py` | `plan`, `status`, `apply`, `teardown` |
-
-Unchanged: `voice_agent/`, `apps/core/` (the Voice Studio), `scenarios.yaml`, all models
-and prompts. `config/settings.py` gained one line registering the app.
+The Voice Studio (`apps/core`) is unchanged. In the worker, models, greeting, turn
+settings and the default prompt are unchanged; the default prompt is byte-identical.
 
 ## Commands
 
 ```powershell
-.\.venv\Scripts\python.exe manage.py telephony plan          # offline, no network
-.\.venv\Scripts\python.exe manage.py telephony plan --json
-.\.venv\Scripts\python.exe manage.py telephony status        # lists LiveKit config, read-only
+.\.venv\Scripts\python.exe manage.py telephony plan                 # offline
+.\.venv\Scripts\python.exe manage.py telephony status               # read-only
+.\.venv\Scripts\python.exe manage.py telephony apply --dry-run      # read-only
+.\.venv\Scripts\python.exe manage.py telephony apply --confirm-number +91XXXXXXXXXX --yes-change-livekit
+.\.venv\Scripts\python.exe manage.py telephony teardown --dry-run   # read-only
+.\.venv\Scripts\python.exe manage.py telephony teardown --confirm-trunk-id ST_xxx --yes-delete-from-livekit
 ```
 
-| Command | Network | Changes anything |
+| Command | Contacts LiveKit | Changes LiveKit |
 | :--- | :--- | :--- |
-| `plan` | None | No |
-| `status` | Two list calls to LiveKit | No |
-| `apply` | None in this build | No. Checks its confirmations, then stops with "not included in this build" |
-| `teardown` | None in this build | No. Same |
+| `plan` | No | No |
+| `status`, `apply --dry-run`, `teardown --dry-run` | Lists only | No |
+| `apply` | Yes | Creates what is missing |
+| `teardown` | Yes | Deletes this plan's rule, then its trunk |
 
-### Designed confirmations for the future `apply` and `teardown`
+None of them contacts the SIP provider. The provider side is set up in its console.
 
-`apply` will run only when all of these hold, in this order:
+### Safeguards in `apply`
 
-1. The plan has no blockers.
-2. `--confirm-number` equals the full inbound number, typed by the operator.
-3. `--yes-change-livekit` is passed.
-4. `status` finds no duplicates, drift, open trunks or wildcard rules.
+1. Refuses while the plan has any blocker.
+2. Needs the full number typed in `--confirm-number` and the `--yes-change-livekit` flag.
+3. Refuses if LiveKit already holds duplicate trunks, a trunk with no authentication, a
+   catch-all dispatch rule, or a trunk or rule that differs from the plan. It never
+   updates or overwrites.
+4. Running it twice creates nothing the second time.
+5. If the dispatch rule cannot be created, the trunk created in that run is deleted
+   again. A trunk that existed before is never deleted by `apply`.
+6. After creating, it re-reads LiveKit. A trunk that comes back without authentication
+   is removed at once.
 
-It will then create only what is missing, bind the dispatch rule to the new trunk's ID,
-and never update or delete an existing resource. `teardown` will need
-`--confirm-trunk-id` and `--yes-delete-from-livekit`. Checks 1 to 3 and the `teardown`
-flags are implemented and tested today; the step after them is a refusal.
+`teardown` deletes only the trunk and rule this plan names, rule first so routing stops
+before anything else, and needs the exact trunk ID. It works on a blocked plan, so a
+setup can always be removed.
 
-## What the plan produces
+## What gets created
 
-With every value set and confirmed (dummy values, run on 14 November):
+- **Inbound trunk** `telugu-inbound-<provider>`: one number, authentication, media
+  encryption, 25 s ringing timeout, 600 s maximum call.
+- **Dispatch rule** bound to that trunk only: one room per call named
+  `call-<our number>_<random>`, caller number hidden from the worker, existing
+  `telugu-agent` dispatched.
+- **Provider destination** `sip:<subdomain>.india.sip.livekit.cloud;transport=tls`.
 
-```text
-Provider:               Plivo (India region)
-Inbound number:         +91********23
-LiveKit SIP endpoint:   abc123def45.india.sip.livekit.cloud
-Provider sends calls to: sip:abc123def45.india.sip.livekit.cloud;transport=tls
-Inbound trunk:          telugu-inbound-plivo
-  Authentication:       username and password (lkinbound)
-  Media encryption:     require
-  Ringing timeout:      25 s
-  Max call duration:    600 s
-Dispatch rule:          telugu-inbound-plivo-dispatch
-  Rooms:                call-<our number>_<random>, one per call
-  Agent:                telugu-agent
-  Caller number:        hidden from the worker
-```
+## Security
 
-Design choices:
-
-- **Existing agent reused.** The dispatch rule names `telugu-agent`, as the Voice Studio
-  token already does. No second agent.
-- **One room per call, no caller number in the name.** A "callee" rule with a random
-  suffix names rooms after our own number. LiveKit's usual "individual" rule would put
-  the caller's number in the room name and so into logs.
-- **Rule bound to its trunk.** A rule without trunk IDs matches every trunk; the builder
-  refuses to create one.
-- **India endpoint by default** for Plivo and Vobiz
-  (`<subdomain>.india.sip.livekit.cloud`). Choosing `global` for either blocks the plan.
-
-## Security position
-
-| Requirement | How it is enforced |
+| Rule | Enforcement |
 | :--- | :--- |
-| Number matching is not authentication | A plan with neither credentials nor an enforced allow-list is blocked (`trunk_credentials_missing`). There is no setting that overrides this |
-| Digest credentials must be proven | `provider_inbound_digest_auth` blocks until confirmed |
-| Allow-list must actually be enforced | LiveKit saves `allowed_addresses` but ignores it until support enables it for the project. `livekit_allowed_addresses_enforced` blocks until confirmed. Ranges as wide as `0.0.0.0/0` are rejected outright |
-| Signalling encrypted | Only `tls` passes; `tcp` blocks the plan |
-| Media encrypted | Default `require`, which blocks until `provider_inbound_srtp` is confirmed. `allow` passes with a warning. `off` blocks |
-| Secrets stay on the server | The trunk password is read from the environment, excluded from `repr`, and absent from plan, JSON, status and error output. Tests check each |
-| No insecure trunk can be provisioned | No create, update or delete call exists in the app. A test scans the source for them |
+| Number matching is not authentication | A plan without credentials or an enforced allow-list is blocked. No setting overrides it |
+| Signalling encrypted | Only `tls` passes |
+| Media encrypted | `require` by default, blocked until the provider confirms SRTP. `allow` is an explicit choice with a warning. `off` is blocked |
+| Secrets stay on the server | The trunk password comes from `.env.local`, is excluded from `repr`, plans, status and errors |
+| Caller privacy | Numbers are masked in all Django output and worker logs; room names never contain the caller's number |
 
-### What was found about provider authentication
+Vobiz cannot authenticate with a username and password on inbound calls (its
+origination URI has no such fields), so the Vobiz path uses an address allow-list.
+LiveKit saves that list but **ignores it until LiveKit support enables enforcement for
+the project**. That is the main open item; see VOBIZ_SETUP.md.
 
-| Provider | Finding | Status |
-| :--- | :--- | :--- |
-| Plivo | Its origination URI object has `authentication_needed`, `username` and `password`, described as "Whether Plivo should authenticate when sending calls". The mechanism is not named. Neither Plivo's LiveKit guide nor LiveKit's Plivo guide configures any inbound authentication | Documented, untested. Blocker |
-| Vobiz | Trunks support digest credentials and IP lists, but nothing says credentials are sent on inbound calls to an external address. Its own example opens the LiveKit trunk to `0.0.0.0/0` | Undocumented. Blocker |
-| LiveKit allow-list | "Must be enabled for your project… Contact LiveKit support… Until it's enabled, the list is saved but not enforced". No plan is stated | Needs a support request. Blocker |
+## Hang-up
 
-Sources: <https://www.plivo.com/docs/sip-trunking/api/origination-uris>,
-<https://docs.livekit.io/telephony/start/providers/plivo/>,
-<https://docs.livekit.io/telephony/accepting-calls/inbound-trunk/>.
+- **Caller hangs up:** the session already closes by itself. The worker now logs it
+  with the disconnect reason.
+- **Agent hangs up:** with `AGENT_CAN_END_CALL=true` the model can call `end_call`. The
+  agent says one goodbye, the session closes and the room is deleted, which releases
+  the phone line. Off by default.
+- **Backstop:** the trunk's 600 s maximum call duration.
 
 ## Verification
 
 | Check | Result |
 | :--- | :--- |
-| Full test suite | **158 passed, 1 skipped**. The skip is the call-termination specification, by design |
-| Existing tests | The 92 from Phases 1 and 1.5 all pass, unmodified |
-| New telephony tests | 66, all mocked: settings validation, every blocker, request contents, room isolation, read-only gateway, duplicates, drift, error handling, command refusals |
-| Ruff lint and format | Clean |
-| `manage.py check` | No issues |
-| Process boundary test | Passes: Django imports `livekit.api` only, never the voice stack |
-| `plan` makes no network call | Tested with the LiveKit client replaced by one that fails on any use |
-| `status` only lists | Tested with a fake that fails on any call other than the two list calls |
-| `status` against the real project | Run once, read-only: 0 inbound trunks, 0 dispatch rules. Nothing was created |
-| Voice worker, Voice Studio, `scenarios.yaml` | No diff |
-| Five simulations | Not re-run: agent code, prompt and scenarios are unchanged |
-| Browser checks | Not re-run: no file under `apps/core` changed |
+| Unit and mocked tests | **189 passed.** 92 from Phases 1 and 1.5, 84 telephony, 8 call termination, 5 worker telephony |
+| Ruff, `manage.py check` | Clean |
+| Existing five simulations, end-call flag off | **5 of 5 passed** on the changed worker (14 Nov) |
+| Call-termination scenarios, flag on | **6 of 6 passed**, twice. In the second run `end_call` fired exactly once in each of the four conversations that end |
+| `status`, `apply --dry-run`, `teardown --dry-run` on the real project | Read-only; 0 trunks, 0 rules; nothing created |
+| Real `apply` | **Not run.** The plan is blocked, as it should be |
+| Real phone call, phone latency, interruption by phone | **Not done.** Needs a number |
+| Browser checks | Not re-run; `apps/core` is unchanged |
 
-The `ruff.exe` launcher had disappeared again and was restored from the uv cache, as
-described in the README.
+Found by the scenarios and fixed: in the first run the model called `end_call`
+repeatedly before its goodbye. The tool's reply now says the call is ending and not to
+call a tool again.
 
-## Complete, and waiting
+Still observed, not fixed: with the flag on, the agent sometimes asks "anything else?"
+after a thanks instead of ending. It errs toward staying on the line, which is the safer
+side.
 
-Complete:
+## Not yet proven
 
-- Provider-neutral telephony app with typed, validated settings.
-- Offline `plan` and read-only `status`.
-- Secure trunk and dispatch planning with the India endpoint.
-- Masked numbers and isolated room names.
-- Confirmation gates for `apply` and `teardown`.
-- Call-termination design, tests and scenarios (see `CALL_TERMINATION_DESIGN.md`).
-- `.gitignore` hardening.
-
-Waiting on LiveKit:
-
-| Token for `TELEPHONY_CONFIRMED` | Question to put in writing |
-| :--- | :--- |
-| `livekit_regional_sip_endpoint` | Does `<subdomain>.india.sip.livekit.cloud` accept inbound SIP on a Build-plan project? |
-| `livekit_allowed_addresses_enforced` | Only if the provider cannot do digest: can `allowed_addresses` be enabled for this project, and on which plan? |
-
-Waiting on the provider:
-
-| Token | Question |
-| :--- | :--- |
-| `provider_account_ready` | Is this entity eligible, is KYC approved, and is the number ours? |
-| `provider_inbound_digest_auth` | Do you answer a SIP digest challenge (407) from the destination on inbound calls, using the origination URI's username and password? |
-| `provider_inbound_srtp` | Is SRTP offered on inbound calls to an external SIP address over TLS? |
-
-Waiting on the owner:
-
-- Approval of the checkpoint in `PHASE2_READINESS.md` section 2 (commit, tag, backup).
-- Review of `CALL_TERMINATION_DESIGN.md`.
-- Approval, later, to add real provisioning to `apply`.
-
-Not built in this round, by choice: a telephony page in the Voice Studio, any change to
-the voice worker for SIP callers, and anything from Phase 3.
+- That `<subdomain>.india.sip.livekit.cloud` works on the Build plan.
+- That LiveKit will enable allow-list enforcement on the Build plan.
+- That Vobiz delivers inbound calls over TLS with SRTP to LiveKit.
+- That an individual Vobiz account can buy an ordinary inbound number (KYC is
+  documented as Aadhaar and PAN; number eligibility is not spelled out).
+- Telugu recognition on 8 kHz phone audio, and phone latency.
+- Whether the greeting is clipped at the start of a phone call. The agent greets as
+  soon as it connects; if the first word is lost, the fix is to wait for the caller's
+  audio to be subscribed.

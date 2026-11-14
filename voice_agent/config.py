@@ -99,6 +99,8 @@ class VoiceSettings:
     greeting: str
     fallback_message: str
     noise_cancellation: bool
+    # Off by default: with it off the agent has no tools and cannot hang up.
+    can_end_call: bool
     log_level: str
     log_transcripts: bool
     metrics_log_path: Path | None
@@ -130,6 +132,7 @@ class VoiceSettings:
             "endpointing_max_delay": self.turn.endpointing_max_delay,
             "interruption_mode": self.turn.interruption_mode,
             "noise_cancellation": self.noise_cancellation,
+            "can_end_call": self.can_end_call,
         }
 
 
@@ -327,6 +330,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> VoiceSettings:
         fallback_message=reader.str("AGENT_FALLBACK_MESSAGE", DEFAULT_FALLBACK_MESSAGE)
         or DEFAULT_FALLBACK_MESSAGE,
         noise_cancellation=reader.bool("NOISE_CANCELLATION", True),
+        can_end_call=reader.bool("AGENT_CAN_END_CALL", False),
         log_level=reader.choice(
             "VOICE_LOG_LEVEL", "info", ("debug", "info", "warning", "error")
         ).upper(),

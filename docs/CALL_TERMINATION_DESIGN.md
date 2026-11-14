@@ -1,8 +1,10 @@
 # Call termination design: polite goodbye, then hang up
 
-Status, 14 November 2026: **proposal for review. Not implemented.** No file under
-`voice_agent/` was changed. The tests and scenarios below were written first and have
-not been executed.
+Status, 14 November 2026: **implemented behind `AGENT_CAN_END_CALL`, which is off by
+default.** The tests and scenarios below were written first. After implementation the
+8 unit tests pass and the 6 scenarios passed twice on LiveKit Cloud with the flag on;
+the 5 existing simulations pass with it off. Not yet tried on a real phone call. The
+rest of this document is the design as proposed.
 
 ## Why it is needed
 

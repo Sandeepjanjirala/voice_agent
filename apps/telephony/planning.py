@@ -166,7 +166,14 @@ def build_plan(settings: TelephonySettings, *, agent_name: str) -> TelephonyPlan
                 "allow_list_empty",
                 CONFIG,
                 "Set SIP_INBOUND_ALLOWED_ADDRESSES to the provider's signalling "
-                "addresses.",
+                "addresses."
+                + (
+                    " Its documentation lists "
+                    f"{', '.join(provider.documented_source_addresses)}; confirm "
+                    "them with the provider before use."
+                    if provider and provider.documented_source_addresses
+                    else ""
+                ),
             )
         need(providers.ALLOWED_ADDRESSES_ENFORCED, LIVEKIT)
 
