@@ -8,7 +8,7 @@ owner's Django application. LiveKit Console remains a testing interface.
 | 1 | Independent Telugu voice worker | Core acceptance PASS: owner confirms Telugu/mixed speech and interruption; extended speech-quality checks INCOMPLETE (PHASE1_VERIFICATION.md) |
 | 1.5 | Own Django browser voice studio | Local functional PASS: owner checklist, 92 tests, fixed browser regressions and live synthetic-microphone smoke pass; extended/production checks INCOMPLETE |
 | 2 | Real incoming Indian phone calls | Integration BUILT and tested against a fake LiveKit (14 Nov 2026): plan, status, apply, teardown, caller detection, optional hang-up; 189 tests. NO REAL CALL YET: waiting on the owner's Vobiz account and LiveKit confirmations (VOBIZ_SETUP.md) |
-| 3 | Real outgoing Indian phone calls triggered through Django | Not started |
+| 3 | Real outgoing Indian phone calls triggered through Django | Minimal test path BUILT (14 Nov 2026): one trunk, one allowed number, one call per command; mocked tests only. NO REAL CALL YET (OUTBOUND_TEST.md). Dashboard, records and campaigns not started |
 | 4 | PostgreSQL-backed Django dashboard, call records, transcripts, appointment booking and agent management | Not started |
 | 5 | Production security, performance verification and deployment | Not started |
 
@@ -30,6 +30,13 @@ Django's existing auth tables and SQLite fallback; it is not the Phase 4 call sc
 Provider: Vobiz first (the owner is an individual without GST, which rules out Plivo).
 No number purchase, real phone call, live trunk, deployment or push has happened in
 Phase 2. Work is committed locally on branch `phase-2-inbound`.
+
+## Test order
+
+The first real call will be the outbound test to the owner's own mobile, because
+outbound uses username-and-password authentication that Vobiz supports today. Secure
+inbound resumes when LiveKit enables allow-list enforcement or another verified
+authentication method exists. The final product still has both directions.
 
 ## Still open from Phases 1 and 1.5
 

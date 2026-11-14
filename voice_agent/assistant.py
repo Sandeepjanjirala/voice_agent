@@ -27,6 +27,6 @@ def greet(session: AgentSession, settings: VoiceSettings) -> SpeechHandle:
     runs inside `session.start()`, before `ctx.connect()`, and the first audio
     frame then fails with "cannot access local participant before connecting".
     A fixed greeting also skips the LLM, so the caller hears it without waiting
-    for a generation. Outbound calls (Phase 3) will let the callee speak first.
+    for a generation. Outbound calls use it too, once the callee has answered.
     """
     return session.say(settings.greeting)

@@ -490,8 +490,8 @@ def test_only_provisioning_can_change_livekit_and_nothing_can_update() -> None:
     ]
     for name, source in sources.items():
         # Only provisioning.py may hold a LiveKit client's SIP service.
-        if name not in ("provisioning.py", "livekit_gateway.py"):
-            assert "client.sip" not in source and "_call(" not in source, name
+        if name not in ("provisioning.py", "livekit_gateway.py", "outbound.py"):
+            assert "client.sip" not in source and "._call(" not in source, name
         # Existing resources are never modified, and no provider API is called.
         assert "update_" not in source, name
         assert "transfer_" not in source, name

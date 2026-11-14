@@ -14,6 +14,8 @@ REGIONAL_ENDPOINT = "livekit_regional_sip_endpoint"
 INBOUND_DIGEST_AUTH = "provider_inbound_digest_auth"
 ALLOWED_ADDRESSES_ENFORCED = "livekit_allowed_addresses_enforced"
 INBOUND_SRTP = "provider_inbound_srtp"
+OUTBOUND_READY = "provider_outbound_ready"
+OUTBOUND_PLAIN_SIGNALLING = "outbound_plain_signalling_accepted"
 
 CONFIRMATIONS: dict[str, str] = {
     ACCOUNT_READY: (
@@ -35,6 +37,14 @@ CONFIRMATIONS: dict[str, str] = {
     INBOUND_SRTP: (
         "The provider confirmed SRTP media encryption on inbound calls to an "
         "external SIP address."
+    ),
+    OUTBOUND_READY: (
+        "The provider account passed KYC, is permitted to call Indian phone "
+        "numbers, and owns the number in SIP_OUTBOUND_CALLER_ID."
+    ),
+    OUTBOUND_PLAIN_SIGNALLING: (
+        "Add this only if the provider has said in writing that it has no TLS "
+        "for outbound trunks and you accept unencrypted signalling for the test."
     ),
 }
 

@@ -13,6 +13,7 @@ No number, live SIP trunk, real phone call, call-record schema or deployment exi
 
 | Document | What it covers |
 | :--- | :--- |
+| [docs/OUTBOUND_TEST.md](docs/OUTBOUND_TEST.md) | The first real call: one outbound test call to your own mobile |
 | [docs/VOBIZ_SETUP.md](docs/VOBIZ_SETUP.md) | Step-by-step account, number and trunk setup for the first real inbound call |
 | [docs/PHASE2_IMPLEMENTATION.md](docs/PHASE2_IMPLEMENTATION.md) | Inbound telephony integration: what was built, verified, and what is not yet proven |
 | [docs/PHASE2_READINESS.md](docs/PHASE2_READINESS.md) | Provider comparison, costs, regulation and the Phase 2 plan |

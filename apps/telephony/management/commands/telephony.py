@@ -15,6 +15,14 @@ from django.core.management.base import BaseCommand, CommandError
 from apps.telephony.conf import TelephonyConfigError, load_telephony_settings
 from apps.telephony.livekit_gateway import ReadOnlySipGateway, TelephonyGatewayError
 from apps.telephony.masking import mask_phone, mask_phones_in
+from apps.telephony.outbound import (
+    OutboundGateway,
+    apply_outbound,
+    build_outbound_plan,
+    load_outbound_settings,
+    place_test_call,
+    teardown_outbound,
+)
 from apps.telephony.planning import TelephonyPlan, build_plan
 from apps.telephony.provisioning import (
     Outcome,
@@ -54,15 +62,40 @@ class Command(BaseCommand):
         teardown.add_argument("--confirm-trunk-id", default="")
         teardown.add_argument("--yes-delete-from-livekit", action="store_true")
 
+        actions.add_parser(
+            "outbound-plan", help="Show the outbound test setup. No network."
+        )
+        out_apply = actions.add_parser(
+            "outbound-apply", help="Create the outbound trunk in LiveKit."
+        )
+        out_apply.add_argument("--dry-run", action="store_true")
+        out_apply.add_argument("--yes-change-livekit", action="store_true")
+        out_teardown = actions.add_parser(
+            "outbound-teardown", help="Delete the outbound trunk from LiveKit."
+        )
+        out_teardown.add_argument("--dry-run", action="store_true")
+        out_teardown.add_argument("--yes-delete-from-livekit", action="store_true")
+
+        call = actions.add_parser(
+            "call", help="Place ONE real call to the allowed test number."
+        )
+        call.add_argument("--to", required=True)
+        call.add_argument("--yes-place-one-call", action="store_true")
+        call.add_argument("--no-wait", action="store_true")
+
     def handle(self, *args, action, **options):
         try:
-            self.telephony = load_telephony_settings()
+            if action.startswith("outbound") or action == "call":
+                self.outbound = load_outbound_settings()
+                self.outbound_plan = build_outbound_plan(self.outbound)
+            else:
+                self.telephony = load_telephony_settings()
+                self.plan = build_plan(
+                    self.telephony, agent_name=django_settings.LIVEKIT_AGENT_NAME
+                )
         except TelephonyConfigError as error:
             raise CommandError(f"Telephony configuration error: {error}") from None
-        self.plan = build_plan(
-            self.telephony, agent_name=django_settings.LIVEKIT_AGENT_NAME
-        )
-        getattr(self, f"_{action}")(**options)
+        getattr(self, f"_{action.replace('-', '_')}")(**options)
 
     def _credentials(self) -> dict[str, str]:
         url = django_settings.LIVEKIT_URL
@@ -194,6 +227,104 @@ class Command(BaseCommand):
             write(f"Deleted: {', '.join(outcome.deleted)}")
         else:
             write("Nothing to delete: LiveKit holds no trunk or rule for this plan.")
+
+    # --- outbound test ------------------------------------------------------
+
+    def _outbound_plan(self, **_):
+        plan = self.outbound_plan
+        write = self.stdout.write
+        write("Outbound test plan (offline; nothing was contacted or changed)")
+        write(f"  Trunk:                 {plan.trunk_name}")
+        write(f"  Provider SIP domain:   {plan.address or '(not set)'}")
+        write(
+            f"  Authentication:        username and password ({plan.auth_username or '(not set)'})"
+        )
+        write(f"  Caller ID:             {mask_phone(plan.caller_id)}")
+        write(
+            f"  Signalling / media:    {plan.transport} / encryption {plan.media_encryption}"
+        )
+        write(
+            f"  Originates from:       LiveKit region for '{plan.destination_country}'"
+        )
+        write(f"  Only number dialled:   {mask_phone(plan.allowed_number)}")
+        write(
+            f"  Limits:                ring {self.outbound.ringing_timeout_seconds} s, "
+            f"call {self.outbound.max_call_duration_seconds} s, no retries"
+        )
+        for warning in plan.warnings:
+            write(f"  NOTE     {warning}")
+        if plan.ready:
+            write("  READY: no blockers.")
+            return
+        write(f"  NOT READY: {len(plan.blockers)} blocker(s)")
+        for blocker in plan.blockers:
+            write(f"    [{blocker.waiting_on}] {blocker.code}: {blocker.message}")
+
+    def _outbound_apply(self, *, dry_run=False, yes_change_livekit=False, **_):
+        if not dry_run and not yes_change_livekit:
+            raise CommandError("Refusing to apply: pass --yes-change-livekit.")
+        gateway = OutboundGateway(**self._credentials())
+        action, trunk_id = self._run(
+            apply_outbound(self.outbound_plan, self.outbound, gateway, dry_run=dry_run)
+        )
+        messages = {
+            "kept": f"Nothing to do: outbound trunk {trunk_id} already exists and matches.",
+            "would_create": "Dry run: would create the outbound trunk. Nothing was changed.",
+            "created": f"Created outbound trunk {trunk_id}.",
+        }
+        self.stdout.write(messages[action])
+
+    def _outbound_teardown(self, *, dry_run=False, yes_delete_from_livekit=False, **_):
+        if not dry_run and not yes_delete_from_livekit:
+            raise CommandError("Refusing to tear down: pass --yes-delete-from-livekit.")
+        gateway = OutboundGateway(**self._credentials())
+        ids = self._run(teardown_outbound(self.outbound_plan, gateway, dry_run=dry_run))
+        verb = "Would delete" if dry_run else "Deleted"
+        self.stdout.write(f"{verb}: {', '.join(ids) or 'nothing'}")
+
+    def _call(self, *, to="", yes_place_one_call=False, no_wait=False, **_):
+        if not yes_place_one_call:
+            raise CommandError(
+                "Refusing to call: this places a real, billed phone call. Pass "
+                "--yes-place-one-call."
+            )
+        gateway = OutboundGateway(**self._credentials())
+        room = self._run(
+            place_test_call(
+                self.outbound_plan,
+                self.outbound,
+                gateway,
+                to=to.strip().replace(" ", ""),
+                agent_name=django_settings.LIVEKIT_AGENT_NAME,
+            )
+        )
+        write = self.stdout.write
+        write(f"Asked {django_settings.LIVEKIT_AGENT_NAME} to call {mask_phone(to)}.")
+        write(f"  Room: {room}")
+        write("  The voice worker must be running; its log shows the outcome.")
+        if no_wait:
+            return
+        self._run(self._follow(gateway, room))
+
+    async def _follow(self, gateway: OutboundGateway, room: str) -> None:
+        """Print call status changes until the call is active or over. Read-only."""
+        last, seen_room = None, False
+        for _ in range((self.outbound.ringing_timeout_seconds + 30) // 2):
+            status = await gateway.call_status(room)
+            if status is None:
+                if seen_room:
+                    self.stdout.write("  Call ended (room closed).")
+                    return
+            else:
+                seen_room = True
+                if status and status != last:
+                    self.stdout.write(f"  Call status: {status}")
+                    last = status
+                if status == "active":
+                    self.stdout.write("  Answered. Hang up on your phone to end it.")
+                    return
+            await asyncio.sleep(2)
+        self.stdout.write("  No answer was observed. Check the worker log.")
 
     # --- output -------------------------------------------------------------
 

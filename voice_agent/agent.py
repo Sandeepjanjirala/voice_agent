@@ -7,7 +7,8 @@ This is a standalone process, separate from Django:
     uv run voice_agent/agent.py start          # production mode
 
 Inbound phone callers arrive as SIP participants through a LiveKit dispatch
-rule (Phase 2, see apps/telephony); outbound dialling is Phase 3.
+rule (Phase 2, see apps/telephony). A job whose metadata carries a dial
+request places one outbound test call instead (see voice_agent/outbound.py).
 """
 
 import logging
@@ -19,6 +20,7 @@ from livekit.plugins import ai_coustics
 from voice_agent.assistant import TeluguAssistant, greet
 from voice_agent.config import PROJECT_ROOT, ConfigError, load_settings
 from voice_agent.observability import attach_session_observers, configure_logging
+from voice_agent.outbound import parse_dial_request, run_outbound_call
 from voice_agent.pipeline import build_session
 from voice_agent.telephony import log_callers
 
@@ -40,6 +42,12 @@ server = AgentServer()
 async def entrypoint(ctx: JobContext) -> None:
     ctx.log_context_fields = {"room": ctx.room.name}
     logger.info("starting voice session", extra=settings.describe())
+
+    # A job dispatched by `manage.py telephony call` places one phone call.
+    dial = parse_dial_request(ctx.job.metadata)
+    if dial is not None:
+        await run_outbound_call(ctx, settings, dial)
+        return
 
     session = build_session(settings)
     attach_session_observers(session, settings, session_id=ctx.room.name)

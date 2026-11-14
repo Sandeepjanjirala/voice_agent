@@ -101,6 +101,8 @@ class VoiceSettings:
     noise_cancellation: bool
     # Off by default: with it off the agent has no tools and cannot hang up.
     can_end_call: bool
+    # The only number the worker will dial. None disables outbound calls.
+    outbound_allowed_number: str | None = field(repr=False)
     log_level: str
     log_transcripts: bool
     metrics_log_path: Path | None
@@ -331,6 +333,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> VoiceSettings:
         or DEFAULT_FALLBACK_MESSAGE,
         noise_cancellation=reader.bool("NOISE_CANCELLATION", True),
         can_end_call=reader.bool("AGENT_CAN_END_CALL", False),
+        outbound_allowed_number=reader.str("OUTBOUND_TEST_ALLOWED_NUMBER"),
         log_level=reader.choice(
             "VOICE_LOG_LEVEL", "info", ("debug", "info", "warning", "error")
         ).upper(),
