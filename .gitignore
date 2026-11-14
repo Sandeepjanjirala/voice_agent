@@ -40,3 +40,31 @@ staticfiles/
 .test-tmp/
 node_modules/
 browser-artifacts/
+
+# Secrets and key material
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.json
+credentials*.json
+
+# Telephony (Phase 2): LiveKit CLI trunk files can hold a SIP password;
+# captures, recordings and transcripts hold caller speech.
+*-trunk.json
+*trunk*.local.json
+dispatch-rule.json
+sip-participant.json
+*.pcap
+*.pcapng
+*.wav
+*.mp3
+*.ogg
+recordings/
+transcripts/
+
+# Local databases and backups
+*.sqlite3
+*.sqlite3-journal
+*.bundle
+*.dump

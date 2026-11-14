@@ -8,10 +8,14 @@ real Telugu microphone conversation through LiveKit Cloud Console. The new Djang
 interface passed browser UI checks and a live greeting check with a synthetic microphone.
 The owner also confirmed the Django manual checklist. Core Phase 1 and local Phase 1.5
 checks pass; extended speech-quality and production verification remain incomplete.
-No telephony, call-record schema or deployment has started.
+Phase 2 has an offline telephony foundation only: planning and read-only status.
+No number, live SIP trunk, real phone call, call-record schema or deployment exists.
 
 | Document | What it covers |
 | :--- | :--- |
+| [docs/PHASE2_IMPLEMENTATION.md](docs/PHASE2_IMPLEMENTATION.md) | Offline telephony foundation: what was built, verified, and what is waiting on LiveKit and the provider |
+| [docs/PHASE2_READINESS.md](docs/PHASE2_READINESS.md) | Provider comparison, costs, regulation and the Phase 2 plan |
+| [docs/CALL_TERMINATION_DESIGN.md](docs/CALL_TERMINATION_DESIGN.md) | Proposed goodbye and hang-up behaviour; not implemented |
 | [docs/PHASE1_5_VERIFICATION.md](docs/PHASE1_5_VERIFICATION.md) | Run the Django voice studio and review browser verification |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Full incoming/outgoing calling roadmap, Phases 1?5 |
 | [docs/AUDIT.md](docs/AUDIT.md) | What the implementation brief got right and wrong against current SDKs |
@@ -149,6 +153,21 @@ Django's existing SQLite fallback stores login/session data locally. PostgreSQL 
 business records remain Phase 4. See [the verification and testing guide](docs/PHASE1_5_VERIFICATION.md)
 for exact browser coverage and pending human checks.
 
+## Plan inbound telephony (offline)
+
+Phase 2 so far only plans. These commands buy nothing, place no call and create nothing:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py telephony plan     # no network
+.\.venv\Scripts\python.exe manage.py telephony status   # lists LiveKit SIP config, read-only
+```
+
+`plan` shows the inbound trunk and dispatch rule that would be created and every
+blocker in the way. Unverified provider or LiveKit capabilities are blockers until you
+list them in `TELEPHONY_CONFIRMED`. `apply` and `teardown` exist but always refuse in
+this build. Settings are under "Inbound telephony" in [.env.example](.env.example);
+details are in [docs/PHASE2_IMPLEMENTATION.md](docs/PHASE2_IMPLEMENTATION.md).
+
 ## Change the voice, model or language
 
 Edit `.env.local` and restart the worker. Every setting is described in
@@ -232,6 +251,8 @@ voice_agent/          LiveKit worker (separate process)
   prompts/  grammar/  system prompt and Telugu style sheet
 config/               Django project (settings, urls, asgi)
 apps/core/            health API, voice views, templates and static assets
+apps/telephony/       inbound telephony planning and read-only status (Phase 2)
+scenarios/            proposed scenarios that are not yet run in CI
 scripts/              latency_report.py, llm_bakeoff.py
 tests/                django/, voice/, test_process_boundary.py
 scenarios.yaml        LiveKit simulation scenarios

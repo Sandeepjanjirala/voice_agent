@@ -1,0 +1,93 @@
+# PROPOSED scenarios for the agent ending a call. NOT RUN, and not part of CI.
+#
+# Written before the feature, as agreed (docs/CALL_TERMINATION_DESIGN.md). The
+# current agent has no end_call tool, so every "ends the call" case here would
+# fail today. Once the implementation is approved, run them with:
+#
+#   lk agent simulate text --scenarios scenarios/call_termination.yaml --concurrency 1 voice_agent/agent.py
+#
+# and move the passing set into scenarios.yaml. The judge reads the transcript;
+# whether end_call was actually invoked should also be graded on the final
+# state (see "Grade on the final state" in the LiveKit simulations docs).
+name: Telugu calling agent - call termination (proposed)
+scenarios:
+  - label: Ends the call after a Telugu goodbye
+    instructions: |
+      PERSONA: A Telugu-speaking caller who has finished.
+      OPENING LINE: "నాకు ఇంకేమీ అవసరం లేదు."
+      DO, IN ORDER:
+      1. After the reply, say: "సరే, ధన్యవాదాలు, ఉంటాను."
+      2. Say nothing more.
+    agent_expectations: >
+      After the caller says goodbye, the agent says exactly one short Telugu
+      goodbye with no new question, then ends the call with the end_call tool.
+      It does not say goodbye twice and does not keep the call open.
+    tags:
+      feature: call-end
+
+  - label: Ends the call after an English goodbye
+    instructions: |
+      PERSONA: A caller who only speaks English.
+      OPENING LINE: "Hi, I just wanted to check you are open today."
+      DO, IN ORDER:
+      1. After the reply, say: "Okay, that's all. Thank you, bye."
+      2. Say nothing more.
+    agent_expectations: >
+      The agent says one short goodbye in English and ends the call with the
+      end_call tool. It does not invent opening hours.
+    tags:
+      feature: call-end
+
+  - label: Hangs up when asked to directly
+    instructions: |
+      PERSONA: A caller in a hurry. Say the lines verbatim.
+      OPENING LINE: "నేను తర్వాత call చేస్తాను, ఇప్పుడు phone పెట్టేయండి."
+      DO, IN ORDER:
+      1. Say nothing more.
+    agent_expectations: >
+      The agent gives one short polite goodbye in mixed Telugu-English and ends
+      the call with the end_call tool, without arguing or asking why.
+    tags:
+      feature: call-end
+
+  - label: Does not hang up when thanks is followed by another question
+    instructions: |
+      PERSONA: A caller who thanks the agent but is not finished.
+      OPENING LINE: "Thank you. ఇంకో విషయం అడగాలి."
+      DO, IN ORDER:
+      1. After the reply, ask: "మీరు Sunday కూడా open ఉంటారా?"
+      2. After the reply, say: "సరే, bye." and say nothing more.
+    agent_expectations: >
+      The agent does NOT end the call after the first "Thank you": it invites
+      the next question and answers it without inventing facts. It ends the
+      call with the end_call tool only after the final "bye".
+    tags:
+      feature: call-end
+
+  - label: Does not hang up when asked to hold
+    instructions: |
+      PERSONA: A caller who needs a moment.
+      OPENING LINE: "ఒక్క నిమిషం ఆగండి, pen తెచ్చుకుంటాను."
+      DO, IN ORDER:
+      1. After the reply, say: "హా, చెప్పండి."
+      2. After the reply, say: "సరే, ధన్యవాదాలు." and say nothing more.
+    agent_expectations: >
+      The agent waits politely when asked to hold and does NOT end the call. It
+      continues when the caller returns, and ends the call only after the final
+      thanks.
+    tags:
+      feature: call-end
+
+  - label: Does not hang up on an unclear or one-word reply
+    instructions: |
+      PERSONA: A hesitant caller who gives very short answers.
+      OPENING LINE: "హలో?"
+      DO, IN ORDER:
+      1. After the reply, say only: "సరే."
+      2. After the reply, say only: "ఊ."
+      3. After the reply, say: "నాకు appointment కావాలి."
+    agent_expectations: >
+      The agent never ends the call during this conversation. "సరే" and "ఊ" are
+      acknowledgements, not goodbyes; the agent stays on the line and helps.
+    tags:
+      feature: call-end
