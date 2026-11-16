@@ -119,6 +119,9 @@ LIVEKIT_AGENT_NAME = (
     os.environ.get("AGENT_NAME", "telugu-agent").strip() or "telugu-agent"
 )
 
+# Shared with the voice worker, which signs call-outcome reports with it.
+CALL_EVENTS_SECRET = os.environ.get("CALL_EVENTS_SECRET", "").strip()
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Closed by default: every API view must opt in to wider access explicitly.

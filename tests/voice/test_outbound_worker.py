@@ -112,11 +112,11 @@ def test_allowed_number_is_not_in_settings_repr_or_startup_log() -> None:
 async def test_answered_call_uses_the_trunk_hides_the_number_and_waits() -> None:
     job = FakeJob()
 
-    outcome = await outbound.place_call(
+    result = await outbound.place_call(
         job, outbound.parse_dial_request(metadata()), settings_allowing()
     )
 
-    assert outcome == outbound.ANSWERED
+    assert result.outcome == outbound.ANSWERED
     (request,) = job.requests
     assert request.sip_trunk_id == "ST_out"
     assert request.sip_call_to == MOBILE
@@ -138,11 +138,11 @@ async def test_answered_call_uses_the_trunk_hides_the_number_and_waits() -> None
 async def test_worker_refuses_any_number_but_the_allowed_one(allowed) -> None:
     job = FakeJob()
 
-    outcome = await outbound.place_call(
+    result = await outbound.place_call(
         job, outbound.parse_dial_request(metadata()), settings_allowing(allowed)
     )
 
-    assert outcome == outbound.REFUSED
+    assert result.outcome == outbound.REFUSED
     assert job.requests == []
 
 
@@ -163,11 +163,11 @@ async def test_sip_failures_map_to_outcomes_and_are_logged_masked(
     job = FakeJob(error=sip_error(code, reason))
 
     with caplog.at_level("INFO", logger="voice_agent"):
-        outcome = await outbound.place_call(
+        result = await outbound.place_call(
             job, outbound.parse_dial_request(metadata()), settings_allowing()
         )
 
-    assert outcome == expected
+    assert (result.outcome, result.sip_status_code) == (expected, code)
     assert len(job.requests) == 1  # no retry
     failure = next(r for r in caplog.records if "did not connect" in r.message)
     assert (failure.outcome, failure.sip_status_code) == (expected, code)
@@ -177,11 +177,11 @@ async def test_sip_failures_map_to_outcomes_and_are_logged_masked(
 async def test_non_sip_errors_are_failures_not_crashes() -> None:
     job = FakeJob(error=TimeoutError("no route"))
 
-    outcome = await outbound.place_call(
+    result = await outbound.place_call(
         job, outbound.parse_dial_request(metadata()), settings_allowing()
     )
 
-    assert outcome == outbound.FAILED
+    assert result.outcome == outbound.FAILED
 
 
 # --- whole call --------------------------------------------------------------
@@ -212,3 +212,30 @@ async def test_unconnected_call_shuts_down_and_releases_the_room(
     (hang_up,) = job.shutdown_callbacks
     await hang_up()
     assert job.deleted_rooms == ["outcall-test"]
+
+
+async def test_a_stale_request_is_never_dialled(caplog) -> None:
+    import time
+
+    job = FakeJob()
+    dial = outbound.parse_dial_request(metadata(requested_at=time.time() - 300))
+
+    with caplog.at_level("WARNING", logger="voice_agent"):
+        result = await outbound.place_call(job, dial, settings_allowing())
+
+    assert result.outcome == outbound.EXPIRED
+    assert job.requests == []
+    assert "too old" in caplog.text
+    assert MOBILE not in caplog.text
+
+
+async def test_a_fresh_request_is_dialled() -> None:
+    import time
+
+    job = FakeJob()
+    dial = outbound.parse_dial_request(metadata(requested_at=time.time() - 2))
+
+    result = await outbound.place_call(job, dial, settings_allowing())
+
+    assert result.outcome == outbound.ANSWERED
+    assert len(job.requests) == 1

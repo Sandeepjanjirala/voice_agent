@@ -3,13 +3,11 @@
 A voice agent that converses in Telugu, English and mixed Telugu-English, built for
 inbound and outbound calls on Indian (+91) numbers.
 
-**Status: Phase 1.5, local Django voice studio implemented.** The owner confirmed
-real Telugu microphone conversation through LiveKit Cloud Console. The new Django
-interface passed browser UI checks and a live greeting check with a synthetic microphone.
-The owner also confirmed the Django manual checklist. Core Phase 1 and local Phase 1.5
-checks pass; extended speech-quality and production verification remain incomplete.
-Phase 2's inbound telephony integration is built and tested against a fake LiveKit.
-No number, live SIP trunk, real phone call, call-record schema or deployment exists yet.
+**Status: real outbound calls work; the web calling page is built and awaits its
+first real call.** Two outbound test calls to the owner's mobile succeeded through
+Vobiz. Staff can now place that call from the Django web application, follow it live,
+and see a database record for every call. Inbound calling is built but blocked on
+secure trunk authentication. Nothing is deployed. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 | Document | What it covers |
 | :--- | :--- |
@@ -173,6 +171,53 @@ only when the plan has no blockers; `teardown` removes them. Settings are under
 "Inbound telephony" in [.env.example](.env.example). Follow
 [docs/VOBIZ_SETUP.md](docs/VOBIZ_SETUP.md) for the first real call.
 
+## Phone calls page (outbound, staff only)
+
+Staff users get a **Phone calls** link next to Voice studio. The page calls only
+`OUTBOUND_TEST_ALLOWED_NUMBER`, one call at a time, after you press **Call** and
+confirm. It shows the call live (initiating, ringing, answered, then completed,
+rejected, no answer or failed), lets you end it, and lists recent calls. Every call,
+including `manage.py telephony call`, is stored as a record with a masked number,
+timestamps, talk time, SIP status and latency.
+
+Make your account staff once (or use a superuser):
+
+```powershell
+.\.venv\Scripts\python.exe manage.py shell -c "from django.contrib.auth import get_user_model as U; U().objects.filter(username='YOUR_USERNAME').update(is_staff=True)"
+```
+
+Run it, in three PowerShell windows from this folder:
+
+```powershell
+# 1. Django
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
+
+# 2. Voice worker (restart it after changing .env.local)
+$env:PYTHONUTF8 = "1"
+.\.venv\Scripts\python.exe -m voice_agent.agent dev
+```
+
+3. Open <http://127.0.0.1:8000/calls/> and sign in.
+
+`CALL_EVENTS_URL` and `CALL_EVENTS_SECRET` in `.env.local` let the worker report each
+call's outcome, SIP status and latency to Django (signed; no numbers or transcripts).
+Without them the page still works and infers outcomes from LiveKit, with less detail.
+
+### PostgreSQL
+
+SQLite remains the zero-setup default. To use PostgreSQL locally with Docker Desktop:
+
+```powershell
+# In .env.local: POSTGRES_PASSWORD=<a strong password>
+docker compose --env-file .env.local up -d
+# In .env.local: DATABASE_URL=postgres://telugu_agent:<that password>@127.0.0.1:5432/telugu_agent
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py createsuperuser
+```
+
+Accounts do not move between databases, so create your user again after switching.
+
 ## Change the voice, model or language
 
 Edit `.env.local` and restart the worker. Every setting is described in
@@ -229,6 +274,25 @@ uv sync --reinstall-package ruff
 
 Ask IT to exclude the project's `.venv` folder if this keeps happening.
 
+### Tests for the phone calls page
+
+```powershell
+# Python: unit, API and cross-process tests (no network, no calls)
+.\.venv\Scripts\python.exe -m pytest
+
+# Same suite against PostgreSQL (needs the compose database running)
+$env:TEST_DATABASE_URL = "postgres://telugu_agent:<password>@127.0.0.1:5432/telugu_agent"
+.\.venv\Scripts\python.exe -m pytest
+Remove-Item Env:TEST_DATABASE_URL
+
+# Browser: real Chromium and Django, simulated LiveKit, fake numbers
+.\.venv\Scripts\python.exe -m tests.browser.calls_server   # window 1; Ctrl+C when done
+node tests/browser/calls.cjs                                 # window 2
+```
+
+The browser QA server sets fake numbers and credentials before Django starts, so it
+cannot place a real call. It uses a disposable database under `.test-tmp/`.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
@@ -256,7 +320,7 @@ voice_agent/          LiveKit worker (separate process)
   prompts/  grammar/  system prompt and Telugu style sheet
 config/               Django project (settings, urls, asgi)
 apps/core/            health API, voice views, templates and static assets
-apps/telephony/       inbound telephony planning and read-only status (Phase 2)
+apps/telephony/       telephony: trunk planning, outbound calls, call records, calls page
 scenarios/            proposed scenarios that are not yet run in CI
 scripts/              latency_report.py, llm_bakeoff.py
 tests/                django/, voice/, test_process_boundary.py

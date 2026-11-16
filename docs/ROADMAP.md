@@ -10,8 +10,8 @@ Updated 14 November 2026.
 | 1 | Independent Telugu voice worker | Core acceptance PASS: owner confirms Telugu/mixed speech and interruption; extended speech-quality checks INCOMPLETE (PHASE1_VERIFICATION.md) |
 | 1.5 | Own Django browser voice studio | Local functional PASS: owner checklist, browser regressions fixed, live synthetic-microphone smoke pass; extended/production checks INCOMPLETE |
 | 2 | Real incoming Indian phone calls | Integration BUILT and tested against a fake LiveKit: plan, status, apply, teardown, caller detection, optional hang-up. NO REAL INBOUND CALL YET: blocked on secure trunk authentication (see below) |
-| 3 | Real outgoing Indian phone calls triggered through Django | Test path WORKING on real calls: two outbound calls to the owner's mobile through Vobiz (14 Nov 2026). Triggered by a management command only; dashboard, call records and consent handling not started |
-| 4 | PostgreSQL-backed Django dashboard, call records, transcripts, appointment booking and agent management | Not started |
+| 3 | Real outgoing Indian phone calls triggered through Django | Real calls WORK by command (two calls, 14 Nov 2026). Staff web page with live status and PostgreSQL-ready call records BUILT and tested with mocks; first real call from the page awaits owner review. Consent handling and calls to anyone else not started |
+| 4 | PostgreSQL-backed Django dashboard, call records, transcripts, appointment booking and agent management | Started: call-record model and migration, verified on PostgreSQL 17. Transcripts, booking and agent management not started |
 | 5 | Production security, performance verification and deployment | Not started |
 
 The voice worker and Django remain separate processes. Automated suite: 265 tests.
@@ -58,8 +58,8 @@ setting at a time and keep barge-in on.
 
 | Item | Status |
 | :--- | :--- |
-| Trigger a call from the Django web application | Not started; today it is `manage.py telephony call` |
-| Call records: who, when, outcome, duration | Not started |
+| Trigger a call from the Django web application | Built: staff-only page with confirmation, live status and End call. Tested with mocks; no real call placed from it yet |
+| Call records: who, when, outcome, duration | Built: masked number, timestamps, talk time, SIP status, latency; written for web and command-line calls |
 | More than one allowed number, with consent recorded | Not started. DLT and consent rules must be settled before any call to third parties |
 | Noise cancellation on the outbound path | Not applied yet |
 | Caller ID shown as "Spam Alert" by Jio on the trial number | Seen on the first call's recording; revisit with a purchased number |
@@ -76,10 +76,19 @@ backchannels, turn-detection comparison, timed network outages, cross-browser an
 concurrency checks, and the six production configuration warnings. None of this is
 deployment approval.
 
+## Current milestone: outbound calls from the web application
+
+| Item | Status |
+| :--- | :--- |
+| Staff-only calls page, explicit confirmation, live status, End call | Done; Playwright browser test passes |
+| Call records with masked numbers, SIP status and latency | Done; migration verified on PostgreSQL 17 and SQLite |
+| One allow-listed number, one call at a time (database constraint), no redial | Done |
+| Worker reports outcomes to Django over signed HTTP | Done; worker never imports Django |
+| First real call placed from the page | **Waiting for owner review** |
+
 ## Next milestone
 
-**Outbound calls from the Django web application, with call records.** A staff-only
-page that places a call to an allow-listed number, shows live status, and stores each
-call's outcome, duration and latency in the database. It reuses the working outbound
-path, introduces PostgreSQL and the first Phase 4 models, and gives inbound calls a
-place to be recorded once the authentication blocker clears.
+**Secure inbound calls into the same records and page**, once LiveKit enables
+allow-list enforcement or another verified authentication method is available.
+In parallel: switch the local database to PostgreSQL, and decide the consent and DLT
+rules that must exist before the agent calls anyone other than the owner.

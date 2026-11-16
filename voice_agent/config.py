@@ -103,6 +103,10 @@ class VoiceSettings:
     can_end_call: bool
     # The only number the worker will dial. None disables outbound calls.
     outbound_allowed_number: str | None = field(repr=False)
+    # Where the worker reports outbound call outcomes to Django. Both unset
+    # turns reporting off.
+    call_events_url: str | None
+    call_events_secret: str | None = field(repr=False)
     log_level: str
     log_transcripts: bool
     metrics_log_path: Path | None
@@ -308,6 +312,22 @@ def _turn_settings(env: _Env) -> TurnSettings:
     )
 
 
+MIN_CALL_EVENTS_SECRET_LENGTH = 32
+
+
+def _call_events_settings(env: _Env) -> dict[str, str | None]:
+    url = env.str("CALL_EVENTS_URL")
+    secret = env.str("CALL_EVENTS_SECRET")
+    if url and not url.startswith(("http://", "https://")):
+        raise ConfigError("CALL_EVENTS_URL must start with http:// or https://")
+    if secret and len(secret) < MIN_CALL_EVENTS_SECRET_LENGTH:
+        raise ConfigError(
+            f"CALL_EVENTS_SECRET must be at least {MIN_CALL_EVENTS_SECRET_LENGTH} "
+            "characters"
+        )
+    return {"call_events_url": url, "call_events_secret": secret}
+
+
 def load_settings(env: Mapping[str, str] | None = None) -> VoiceSettings:
     """Build validated settings from `env` (defaults to the process environment)."""
     source = os.environ if env is None else env
@@ -334,6 +354,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> VoiceSettings:
         noise_cancellation=reader.bool("NOISE_CANCELLATION", True),
         can_end_call=reader.bool("AGENT_CAN_END_CALL", False),
         outbound_allowed_number=reader.str("OUTBOUND_TEST_ALLOWED_NUMBER"),
+        **_call_events_settings(reader),
         log_level=reader.choice(
             "VOICE_LOG_LEVEL", "info", ("debug", "info", "warning", "error")
         ).upper(),

@@ -8,19 +8,21 @@ provider or buys anything.
 
 import asyncio
 import json
+import time
 
 from django.conf import settings as django_settings
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.telephony import calls
 from apps.telephony.conf import TelephonyConfigError, load_telephony_settings
 from apps.telephony.livekit_gateway import ReadOnlySipGateway, TelephonyGatewayError
 from apps.telephony.masking import mask_phone, mask_phones_in
+from apps.telephony.models import CallRecord
 from apps.telephony.outbound import (
     OutboundGateway,
     apply_outbound,
     build_outbound_plan,
     load_outbound_settings,
-    place_test_call,
     teardown_outbound,
 )
 from apps.telephony.planning import TelephonyPlan, build_plan
@@ -288,42 +290,49 @@ class Command(BaseCommand):
                 "Refusing to call: this places a real, billed phone call. Pass "
                 "--yes-place-one-call."
             )
-        gateway = OutboundGateway(**self._credentials())
-        room = self._run(
-            place_test_call(
-                self.outbound_plan,
-                self.outbound,
-                gateway,
-                to=to.strip().replace(" ", ""),
-                agent_name=django_settings.LIVEKIT_AGENT_NAME,
+        to = to.strip().replace(" ", "")
+        if not self.outbound_plan.ready:
+            codes = ", ".join(b.code for b in self.outbound_plan.blockers)
+            raise CommandError(
+                f"Refused, nothing was changed: The outbound plan is blocked ({codes})."
             )
-        )
+        if to != self.outbound.allowed_number:
+            raise CommandError(
+                "Refused, nothing was changed: That number is not "
+                "OUTBOUND_TEST_ALLOWED_NUMBER. Only the one configured test number "
+                "can be called."
+            )
+        gateway = OutboundGateway(**self._credentials())
+        try:
+            record = calls.start_call(gateway=gateway)
+        except calls.CallError as error:
+            raise CommandError(str(error)) from None
         write = self.stdout.write
         write(f"Asked {django_settings.LIVEKIT_AGENT_NAME} to call {mask_phone(to)}.")
-        write(f"  Room: {room}")
+        write(f"  Room: {record.room}")
+        write(f"  Call record: {record.pk}")
         write("  The voice worker must be running; its log shows the outcome.")
         if no_wait:
             return
-        self._run(self._follow(gateway, room))
+        self._follow(gateway, record)
 
-    async def _follow(self, gateway: OutboundGateway, room: str) -> None:
-        """Print call status changes until the call is active or over. Read-only."""
-        last, seen_room = None, False
-        for _ in range((self.outbound.ringing_timeout_seconds + 30) // 2):
-            status = await gateway.call_status(room)
-            if status is None:
-                if seen_room:
-                    self.stdout.write("  Call ended (room closed).")
-                    return
-            else:
-                seen_room = True
-                if status and status != last:
-                    self.stdout.write(f"  Call status: {status}")
-                    last = status
-                if status == "active":
-                    self.stdout.write("  Answered. Hang up on your phone to end it.")
-                    return
-            await asyncio.sleep(2)
+    def _follow(self, gateway: OutboundGateway, record) -> None:
+        """Print status changes until the call is answered or over."""
+        last = None
+        deadline = time.monotonic() + self.outbound.ringing_timeout_seconds + 30
+        while time.monotonic() < deadline:
+            record = calls.refresh(record, gateway=gateway, force=True)
+            if record.status != last:
+                self.stdout.write(f"  Call status: {record.get_status_display()}")
+                last = record.status
+            if record.status == CallRecord.Status.ANSWERED:
+                self.stdout.write("  Answered. Hang up on your phone to end it.")
+                return
+            if not record.is_active:
+                if record.failure_reason:
+                    self.stdout.write(f"  {record.failure_reason}")
+                return
+            time.sleep(2)
         self.stdout.write("  No answer was observed. Check the worker log.")
 
     # --- output -------------------------------------------------------------

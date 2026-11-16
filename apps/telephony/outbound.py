@@ -8,6 +8,7 @@ Django only creates the trunk and asks the worker to place the call.
 
 import json
 import os
+import time
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from uuid import uuid4
@@ -269,6 +270,10 @@ def outbound_trunk_request(
     )
 
 
+class CallInProgressError(ProvisioningRefusedError):
+    """LiveKit already has a test-call room open."""
+
+
 class OutboundGateway:
     """The LiveKit calls the outbound test needs, one client per call."""
 
@@ -317,6 +322,34 @@ class OutboundGateway:
     async def dispatch(self, request: api.CreateAgentDispatchRequest) -> None:
         await self._call("agent_dispatch", "create_dispatch", request)
 
+    async def call_state(self, room: str) -> tuple[bool, str, bool]:
+        """(room exists, callee's `sip.callStatus`, voice agent has joined).
+        Raises on any LiveKit error, so a network problem is never mistaken for
+        a finished call."""
+        rooms = await self._call(
+            "room", "list_rooms", api.ListRoomsRequest(names=[room])
+        )
+        if not any(r.name == room for r in rooms.rooms):
+            return False, "", False
+        response = await self._call(
+            "room", "list_participants", api.ListParticipantsRequest(room=room)
+        )
+        kinds = api.ParticipantInfo.Kind
+        sip_status = next(
+            (
+                p.attributes.get("sip.callStatus", "")
+                for p in response.participants
+                if p.kind == kinds.SIP
+            ),
+            "",
+        )
+        agent = any(p.kind == kinds.AGENT for p in response.participants)
+        return True, sip_status, agent
+
+    async def delete_room(self, room: str) -> None:
+        """Ends the call: deleting the room disconnects the phone leg."""
+        await self._call("room", "delete_room", api.DeleteRoomRequest(room=room))
+
     async def call_status(self, room: str) -> str | None:
         """`sip.callStatus` of the callee, "" before it exists, None once the room is gone."""
         try:
@@ -329,6 +362,10 @@ class OutboundGateway:
             if participant.kind == api.ParticipantInfo.Kind.SIP:
                 return participant.attributes.get("sip.callStatus", "")
         return ""
+
+
+def new_room_name() -> str:
+    return f"{ROOM_PREFIX}{uuid4().hex}"
 
 
 def _differences(plan: OutboundPlan, trunk) -> list[str]:
@@ -401,6 +438,7 @@ async def place_test_call(
     *,
     to: str,
     agent_name: str,
+    room: str | None = None,
 ) -> str:
     """Ask the worker to place exactly one call. Returns the room name."""
     if not plan.ready:
@@ -418,17 +456,19 @@ async def place_test_call(
         )
     active = await gateway.active_test_rooms()
     if active:
-        raise ProvisioningRefusedError(
+        raise CallInProgressError(
             f"A test call is already in progress ({', '.join(active)}). "
             "Wait for it to end."
         )
-    room = f"{ROOM_PREFIX}{uuid4().hex}"
+    room = room or new_room_name()
     metadata = {
         METADATA_KEY: {
             "to": to,
             "trunk_id": trunk_id,
             "ringing_timeout": settings.ringing_timeout_seconds,
             "max_call_duration": settings.max_call_duration_seconds,
+            # The worker refuses requests older than this would allow.
+            "requested_at": round(time.time(), 3),
         }
     }
     await gateway.dispatch(

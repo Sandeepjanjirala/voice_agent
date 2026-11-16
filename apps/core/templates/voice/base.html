@@ -5,12 +5,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="same-origin">
-  <title>Telugu AI Calling Agent · Voice studio</title>
+  <title>Telugu AI Calling Agent · {% block title %}Voice studio{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'voice/studio.css' %}">
+  {% block head %}{% endblock %}
 </head>
 <body>
   <header class="topbar"><a class="brand" href="{% url 'voice' %}"><span class="brand-icon" aria-hidden="true">తె</span><span>Telugu AI<span class="brand-sub">CALLING AGENT</span></span></a>
-    <div class="top-actions"><span class="pill">Voice studio</span>{% if user.is_authenticated %}<form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text-button">Sign out</button></form>{% endif %}</div>
+    <div class="top-actions">{% if user.is_staff %}<nav class="top-nav" aria-label="Sections"><a href="{% url 'voice' %}"{% if request.resolver_match.url_name == 'voice' %} aria-current="page"{% endif %}>Voice studio</a><a href="{% url 'calls' %}"{% if request.resolver_match.url_name == 'calls' %} aria-current="page"{% endif %}>Phone calls</a></nav>{% else %}<span class="pill">Voice studio</span>{% endif %}{% if user.is_authenticated %}<form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text-button">Sign out</button></form>{% endif %}</div>
   </header>
   <main>{% block content %}{% endblock %}</main>
   <footer>Telugu AI Calling Agent <span>Built for conversations that feel natural.</span></footer>

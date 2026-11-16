@@ -1,0 +1,90 @@
+{% extends 'voice/base.html' %}{% load static %}
+{% block title %}Phone calls{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'telephony/calls.css' %}">{% endblock %}
+{% block content %}
+<div id="calls-app"
+     data-list-url="{% url 'telephony:calls' %}"
+     data-active-id="{{ active_id }}">
+  <section class="intro">
+    <div>
+      <p class="eyebrow">PHONE CALLS</p>
+      <h1>Outbound test call</h1>
+      <p class="muted">Your Telugu AI assistant calls your own allow-listed phone. One call at a time, only when you press Call.</p>
+    </div>
+    <span class="phase">OUTBOUND · PHASE 3</span>
+  </section>
+
+  <div class="calls-grid">
+    <section class="card" aria-labelledby="place-title">
+      <div class="card-heading"><h2 id="place-title">Place a call</h2>
+        {% if readiness.ready %}<span class="pill ready-pill">Ready</span>{% else %}<span class="pill blocked-pill">Not ready</span>{% endif %}
+      </div>
+      <dl class="call-facts">
+        <div><dt>Calls</dt><dd id="destination">{{ readiness.number|default:"Not configured" }}</dd></div>
+        <div><dt>Caller ID</dt><dd>{{ readiness.caller_id|default:"Not configured" }}</dd></div>
+        <div><dt>Limits</dt><dd>{% if readiness.ready %}Rings up to {{ readiness.ring_seconds }} s · ends after {{ readiness.max_seconds }} s · no redial{% else %}—{% endif %}</dd></div>
+      </dl>
+      {% if not readiness.ready %}
+        <div class="blockers" role="note"><p>Outbound calling needs attention before a call can be placed:</p>
+          <ul>{% for blocker in readiness.blockers %}<li>{{ blocker }}</li>{% endfor %}</ul>
+        </div>
+      {% endif %}
+      {% if not reporting %}
+        <p class="warning" role="note">Call outcomes are not reported by the voice worker yet (CALL_EVENTS_SECRET is not set). Status will be inferred from LiveKit, without SIP codes or latency.</p>
+      {% endif %}
+      <div class="place-actions">
+        <button id="call" class="primary call-button" {% if not readiness.ready %}disabled{% endif %}>Call</button>
+      </div>
+      <p class="fine-print">Each call is real and billed by your telephony provider.</p>
+    </section>
+
+    <section class="card" aria-labelledby="live-title">
+      <div class="card-heading"><h2 id="live-title">Live status</h2><span id="elapsed" class="pill" aria-label="Elapsed time">00:00</span></div>
+      <div class="live-body">
+        <ol id="steps" class="steps" aria-label="Call progress">
+          <li data-step="initiating">Initiating</li>
+          <li data-step="ringing">Ringing</li>
+          <li data-step="answered">Answered</li>
+          <li data-step="final" id="final-step">Completed</li>
+        </ol>
+        <h2 id="call-status" class="call-status" role="status" aria-live="polite" data-status="idle">No call in progress</h2>
+        <p id="call-detail" class="muted">Press Call to start. Your phone will ring within a few seconds.</p>
+        <dl id="call-metrics" class="call-metrics" hidden>
+          <div><dt>Talk time</dt><dd id="m-duration">—</dd></div>
+          <div><dt>Reply latency (median)</dt><dd id="m-latency">—</dd></div>
+          <div><dt>Agent turns</dt><dd id="m-turns">—</dd></div>
+          <div><dt>Interruptions</dt><dd id="m-interruptions">—</dd></div>
+        </dl>
+        <div class="live-actions"><button id="hangup" class="danger" hidden>End call</button></div>
+        <p id="call-notice" class="error" role="alert" hidden></p>
+      </div>
+    </section>
+  </div>
+
+  <section class="card history" aria-labelledby="history-title">
+    <div class="card-heading"><h2 id="history-title">Recent calls</h2><span class="muted small">Numbers are stored masked</span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Started</th><th scope="col">Number</th><th scope="col">Status</th><th scope="col">Talk time</th><th scope="col">SIP</th><th scope="col">Latency</th><th scope="col">Placed by</th></tr></thead>
+        <tbody id="history"></tbody>
+      </table>
+      <p id="history-empty" class="empty-row"{% if recent %} hidden{% endif %}>No calls yet.</p>
+    </div>
+  </section>
+
+  <dialog id="confirm" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <h2 id="confirm-title">Place a real phone call?</h2>
+      <p>This calls <strong id="confirm-number">{{ readiness.number }}</strong> from <strong>{{ readiness.caller_id }}</strong>. The phone will ring, and the call is billed by your provider.</p>
+      <div class="dialog-actions">
+        <button value="cancel" id="confirm-cancel">Cancel</button>
+        <button value="call" id="confirm-call" class="primary">Yes, place the call</button>
+      </div>
+    </form>
+  </dialog>
+  {{ recent|json_script:"initial-calls" }}
+  <form hidden>{% csrf_token %}</form>
+</div>
+<noscript><p class="error">Enable JavaScript to place and follow calls.</p></noscript>
+{% endblock %}
+{% block scripts %}<script defer src="{% static 'telephony/calls.js' %}"></script>{% endblock %}

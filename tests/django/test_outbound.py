@@ -19,6 +19,7 @@ from apps.telephony import outbound, providers
 from apps.telephony.conf import TelephonyConfigError
 
 ROOT = Path(__file__).resolve().parents[2]
+pytestmark = pytest.mark.django_db
 COMMAND = "apps.telephony.management.commands.telephony"
 
 MOBILE = "+919876543210"
@@ -399,22 +400,25 @@ def test_call_dispatches_one_job_to_the_existing_agent(env, livekit) -> None:
     (dispatch,) = fake.dispatches
     assert dispatch.agent_name == "telugu-agent"
     assert dispatch.room.startswith("outcall-")
-    assert json.loads(dispatch.metadata) == {
-        "outbound_call": {
-            "to": MOBILE,
-            "trunk_id": "ST_out",
-            "ringing_timeout": 30,
-            "max_call_duration": 300,
-        }
+    request = json.loads(dispatch.metadata)["outbound_call"]
+    assert request.pop("requested_at") > 0
+    assert request == {
+        "to": MOBILE,
+        "trunk_id": "ST_out",
+        "ringing_timeout": 30,
+        "max_call_duration": 300,
     }
     assert MOBILE not in output and "+91********10" in output
 
 
 def test_each_call_gets_its_own_room(env, livekit) -> None:
+    from apps.telephony.models import CallRecord
+
     env(**READY_ENV)
     fake = livekit(FakeLiveKit([existing_trunk()]))
 
     run(*CALL)
+    CallRecord.objects.update(status=CallRecord.Status.COMPLETED)
     run(*CALL)
 
     first, second = (d.room for d in fake.dispatches)
@@ -478,9 +482,12 @@ def test_dispatch_failure_is_reported_and_not_retried(env, livekit) -> None:
 
 
 def test_django_never_dials_and_has_no_loop_over_numbers() -> None:
-    source = (ROOT / "apps" / "telephony" / "outbound.py").read_text(encoding="utf-8")
+    app = ROOT / "apps" / "telephony"
+    source = "".join(p.read_text(encoding="utf-8") for p in app.rglob("*.py"))
 
     # The worker dials; Django only dispatches one job for one number.
     assert "create_sip_participant" not in source
-    assert source.count("create_dispatch") == 1
-    assert "retry" not in source.lower().replace("no retry", "")
+    assert source.count('"create_dispatch"') == 1
+    assert "retry" not in source.lower().replace("no retry", "").replace(
+        "retries", ""
+    ).replace("retry-after", "")

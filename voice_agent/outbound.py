@@ -3,13 +3,16 @@
 The dial request arrives as job metadata from Django (`manage.py telephony
 call`). The worker dials only the single number in OUTBOUND_TEST_ALLOWED_NUMBER,
 starts the conversation after the callee answers, and deletes the room when the
-call is over so the phone line is always released. No retries.
+call is over so the phone line is always released. No retries. The outcome is
+reported to Django when CALL_EVENTS_URL is set (see call_reporting.py).
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass
 
 from google.protobuf.duration_pb2 import Duration
@@ -17,6 +20,7 @@ from livekit import api, rtc
 from livekit.agents import JobContext, room_io
 
 from .assistant import TeluguAssistant, greet
+from .call_reporting import CallMetrics, CallReporter
 from .config import VoiceSettings
 from .observability import attach_session_observers
 from .pipeline import build_session
@@ -33,6 +37,10 @@ BUSY_OR_REJECTED = "busy_or_rejected"
 NO_ANSWER = "no_answer"
 FAILED = "failed"
 REFUSED = "refused"
+EXPIRED = "expired"
+
+# A dial request older than this is not dialled: nobody is waiting for it.
+MAX_REQUEST_AGE_SECONDS = 60
 
 
 @dataclass(frozen=True)
@@ -41,6 +49,14 @@ class DialRequest:
     trunk_id: str
     ringing_timeout: int
     max_call_duration: int
+    requested_at: float | None = None
+
+
+@dataclass(frozen=True)
+class DialResult:
+    outcome: str
+    sip_status_code: int | None = None
+    sip_status: str | None = None
 
 
 def parse_dial_request(metadata: str | None) -> DialRequest | None:
@@ -61,6 +77,9 @@ def parse_dial_request(metadata: str | None) -> DialRequest | None:
             max_call_duration=min(
                 max(int(request.get("max_call_duration", 300)), 30), 600
             ),
+            requested_at=float(request["requested_at"])
+            if request.get("requested_at") is not None
+            else None,
         )
     except (KeyError, TypeError, ValueError):
         return DialRequest(to="", trunk_id="", ringing_timeout=30, max_call_duration=30)
@@ -77,8 +96,8 @@ def classify_failure(error: Exception) -> str:
 
 async def place_call(
     ctx: JobContext, dial: DialRequest, settings: VoiceSettings
-) -> str:
-    """Dial and wait for an answer. Returns an outcome name; never raises."""
+) -> DialResult:
+    """Dial and wait for an answer. Never raises."""
     callee = mask_phone(dial.to)
     allowed = settings.outbound_allowed_number
     if not (dial.to and dial.trunk_id and allowed and dial.to == allowed):
@@ -86,7 +105,14 @@ async def place_call(
             "outbound call refused: number is not the allowed test number",
             extra={"callee": callee},
         )
-        return REFUSED
+        return DialResult(REFUSED)
+    age = time.time() - dial.requested_at if dial.requested_at is not None else 0.0
+    if age > MAX_REQUEST_AGE_SECONDS:
+        logger.warning(
+            "outbound call refused: request is too old",
+            extra={"callee": callee, "age_seconds": round(age)},
+        )
+        return DialResult(EXPIRED)
 
     logger.info("dialling", extra={"callee": callee, "sip_trunk_id": dial.trunk_id})
     try:
@@ -104,20 +130,24 @@ async def place_call(
             )
         )
     except Exception as error:
-        outcome = classify_failure(error)
+        result = DialResult(
+            outcome=classify_failure(error),
+            sip_status_code=getattr(error, "sip_status_code", None),
+            sip_status=getattr(error, "sip_status", None),
+        )
         logger.warning(
             "outbound call did not connect",
             extra={
                 "callee": callee,
-                "outcome": outcome,
-                "sip_status_code": getattr(error, "sip_status_code", None),
-                "sip_status": getattr(error, "sip_status", None),
+                "outcome": result.outcome,
+                "sip_status_code": result.sip_status_code,
+                "sip_status": result.sip_status,
                 "error_type": type(error).__name__,
             },
         )
-        return outcome
+        return result
     logger.info("outbound call answered", extra={"callee": callee})
-    return ANSWERED
+    return DialResult(ANSWERED)
 
 
 async def run_outbound_call(
@@ -126,8 +156,18 @@ async def run_outbound_call(
     """Whole life of one outbound call. Returns the dial outcome."""
     await ctx.connect()
     log_callers(ctx.room)
+    reporter = CallReporter.from_settings(settings, room=ctx.room.name)
+    metrics = CallMetrics()
+    call: dict = {"answered_at": None, "tasks": set()}
 
     async def hang_up(reason: str = "") -> None:
+        if call["answered_at"] is not None and not reporter.ended:
+            await reporter.send(
+                "ended",
+                outcome="completed",
+                talk_seconds=round(time.monotonic() - call["answered_at"], 1),
+                **metrics.summary(),
+            )
         # Deleting the room disconnects the phone leg whatever state it is in.
         try:
             await ctx.api.room.delete_room(api.DeleteRoomRequest(room=ctx.room.name))
@@ -138,16 +178,30 @@ async def run_outbound_call(
 
     ctx.add_shutdown_callback(hang_up)
 
-    outcome = await place_call(ctx, dial, settings)
-    if outcome != ANSWERED:
-        ctx.shutdown(reason=f"outbound call {outcome}")
-        return outcome
+    result = await place_call(ctx, dial, settings)
+    if result.outcome != ANSWERED:
+        # Reported before shutdown, while the room still exists.
+        await reporter.send(
+            "ended",
+            outcome=result.outcome,
+            sip_status_code=result.sip_status_code,
+            sip_status=result.sip_status,
+        )
+        ctx.shutdown(reason=f"outbound call {result.outcome}")
+        return result.outcome
+
+    call["answered_at"] = time.monotonic()
+    # Not awaited: the callee must not wait in silence for Django.
+    task = asyncio.create_task(reporter.send("answered"))
+    call["tasks"].add(task)
+    task.add_done_callback(call["tasks"].discard)
 
     participant = await ctx.wait_for_participant(identity=CALLEE_IDENTITY)
 
     # Only now, with the callee on the line, does the conversation start.
     session = build_session(settings)
     attach_session_observers(session, settings, session_id=ctx.room.name)
+    session.on("conversation_item_added", lambda ev: metrics.observe(ev.item))
 
     @session.on("close")
     def _on_close(_event) -> None:
@@ -164,4 +218,4 @@ async def run_outbound_call(
         room_options=room_io.RoomOptions(participant_identity=participant.identity),
     )
     greet(session, settings)
-    return outcome
+    return result.outcome
