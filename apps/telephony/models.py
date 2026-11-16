@@ -58,6 +58,7 @@ class CallRecord(models.Model):
     )
 
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    ringing_at = models.DateTimeField(null=True, blank=True)
     answered_at = models.DateTimeField(null=True, blank=True)
     ended_at = models.DateTimeField(null=True, blank=True)
     last_checked_at = models.DateTimeField(null=True, blank=True)

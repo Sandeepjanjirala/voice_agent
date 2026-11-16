@@ -101,6 +101,7 @@ def build_turn_handling(settings: TurnSettings) -> TurnHandlingOptions:
         enabled=True,
         min_duration=settings.interruption_min_duration,
         resume_false_interruption=settings.resume_false_interruption,
+        false_interruption_timeout=settings.false_interruption_timeout,
     )
     # "auto" leaves the mode unset: the session uses adaptive interruption when
     # it runs against LiveKit Cloud and plain VAD barge-in otherwise.

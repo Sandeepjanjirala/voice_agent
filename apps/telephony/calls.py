@@ -294,6 +294,7 @@ def refresh(
         if present:
             if sip_status == "ringing" and locked.status == Status.INITIATING:
                 locked.status, locked.status_source = Status.RINGING, Source.LIVEKIT
+                locked.ringing_at = locked.ringing_at or now
             elif sip_status == "active" and locked.status != Status.ANSWERED:
                 locked.status, locked.status_source = Status.ANSWERED, Source.LIVEKIT
                 locked.answered_at = locked.answered_at or now
@@ -480,6 +481,7 @@ def serialize(record: CallRecord) -> dict[str, Any]:
         if record.placed_by
         else "command line",
         "created_at": _iso(record.created_at),
+        "ringing_at": _iso(record.ringing_at),
         "answered_at": _iso(record.answered_at),
         "ended_at": _iso(record.ended_at),
         "elapsed_seconds": round(max((end - record.created_at).total_seconds(), 0), 1),

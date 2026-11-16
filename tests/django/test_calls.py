@@ -247,6 +247,7 @@ def test_ringing_then_answered_from_room_state(gateway) -> None:
     gateway.state = (True, "ringing", True)
     record = calls.refresh(record, force=True)
     assert record.status == Status.RINGING
+    assert record.ringing_at is not None
 
     gateway.state = (True, "active", True)
     record = calls.refresh(record, force=True)

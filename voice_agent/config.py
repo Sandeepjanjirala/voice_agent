@@ -89,6 +89,9 @@ class TurnSettings:
     interruption_mode: str
     interruption_min_duration: float
     resume_false_interruption: bool
+    # Silence after a suspected interruption before speech resumes. 2.0 is the
+    # LiveKit default; it is also the length of the pause a caller hears.
+    false_interruption_timeout: float
     preemptive_generation: bool
 
 
@@ -137,6 +140,8 @@ class VoiceSettings:
             "endpointing_min_delay": self.turn.endpointing_min_delay,
             "endpointing_max_delay": self.turn.endpointing_max_delay,
             "interruption_mode": self.turn.interruption_mode,
+            "interruption_min_duration": self.turn.interruption_min_duration,
+            "false_interruption_timeout": self.turn.false_interruption_timeout,
             "noise_cancellation": self.noise_cancellation,
             "can_end_call": self.can_end_call,
         }
@@ -308,6 +313,9 @@ def _turn_settings(env: _Env) -> TurnSettings:
         interruption_mode=env.choice("INTERRUPTION_MODE", "auto", INTERRUPTION_MODES),
         interruption_min_duration=env.float("INTERRUPTION_MIN_DURATION", 0.5, 0.0, 5.0),
         resume_false_interruption=env.bool("INTERRUPTION_RESUME_FALSE", True),
+        false_interruption_timeout=env.float(
+            "INTERRUPTION_FALSE_TIMEOUT", 2.0, 0.5, 5.0
+        ),
         preemptive_generation=env.bool("PREEMPTIVE_GENERATION", True),
     )
 

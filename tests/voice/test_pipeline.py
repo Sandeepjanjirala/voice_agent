@@ -112,6 +112,7 @@ def test_turn_handling_defaults_allow_barge_in() -> None:
     assert options["endpointing"] == {"min_delay": 0.5, "max_delay": 3.0}
     assert options["interruption"]["enabled"] is True
     assert options["interruption"]["resume_false_interruption"] is True
+    assert options["interruption"]["false_interruption_timeout"] == 2.0
     # "auto" must leave the mode unset so the SDK picks adaptive vs VAD itself.
     assert "mode" not in options["interruption"]
     assert options["preemptive_generation"] == {"enabled": True}
@@ -148,3 +149,15 @@ async def test_full_session_builds_with_default_settings() -> None:
     assert isinstance(session.stt, sarvam.STT)
     assert isinstance(session.tts, sarvam.TTS)
     assert isinstance(session.llm, inference.LLM)
+
+
+def test_false_interruption_wait_is_configurable_and_bounded() -> None:
+    import pytest
+
+    from voice_agent.config import ConfigError
+
+    options = build_turn_handling(make_settings(INTERRUPTION_FALSE_TIMEOUT="1.0").turn)
+    assert options["interruption"]["false_interruption_timeout"] == 1.0
+
+    with pytest.raises(ConfigError, match="INTERRUPTION_FALSE_TIMEOUT"):
+        make_settings(INTERRUPTION_FALSE_TIMEOUT="0")

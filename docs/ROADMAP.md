@@ -10,8 +10,8 @@ Updated 14 November 2026.
 | 1 | Independent Telugu voice worker | Core acceptance PASS: owner confirms Telugu/mixed speech and interruption; extended speech-quality checks INCOMPLETE (PHASE1_VERIFICATION.md) |
 | 1.5 | Own Django browser voice studio | Local functional PASS: owner checklist, browser regressions fixed, live synthetic-microphone smoke pass; extended/production checks INCOMPLETE |
 | 2 | Real incoming Indian phone calls | Integration BUILT and tested against a fake LiveKit: plan, status, apply, teardown, caller detection, optional hang-up. NO REAL INBOUND CALL YET: blocked on secure trunk authentication (see below) |
-| 3 | Real outgoing Indian phone calls triggered through Django | Real calls WORK by command (two calls, 14 Nov 2026). Staff web page with live status and PostgreSQL-ready call records BUILT and tested with mocks; first real call from the page awaits owner review. Consent handling and calls to anyone else not started |
-| 4 | PostgreSQL-backed Django dashboard, call records, transcripts, appointment booking and agent management | Started: call-record model and migration, verified on PostgreSQL 17. Transcripts, booking and agent management not started |
+| 3 | Real outgoing Indian phone calls triggered through Django | **Website-triggered outbound calling PASS (16 Nov 2026):** staff page, live status, call records and worker reports verified on two real calls. Limited to the owner's allow-listed number; consent handling and calls to anyone else not started |
+| 4 | PostgreSQL-backed Django dashboard, call records, transcripts, appointment booking and agent management | Started: call-record model in use on real calls, verified on PostgreSQL 17 (the local database is still SQLite). Transcripts, booking, agent management and a full dashboard not started |
 | 5 | Production security, performance verification and deployment | Not started |
 
 The voice worker and Django remain separate processes. Automated suite: 265 tests.
@@ -23,17 +23,26 @@ Provider: Vobiz (the owner is an individual without GST, which rules out Plivo).
 | :--- | :--- | :--- |
 | 14 Nov 2026, 13:06 | First outbound call, 99 s | Connected with TLS, required media encryption and India routing. Two-way Telugu conversation worked. Problems: replies paused mid-sentence for up to 3.5 s, formal Telugu, one stock question repeated, English answered in Telugu, no hang-up |
 | 14 Nov 2026, 16:23 | Second outbound call, 109 s | **Voice-quality checkpoint PASS (owner-confirmed):** natural Telugu-English, no broken audio, English answered in English, deliberate interruption honoured, AI hang-up worked. Event log: 0 pauses inside replies, 2 interruptions (both genuine), reply latency median 1.37 s |
+| 16 Nov 2026, 09:53 | First call from the Django page, 56 s | Completed. 5 turns each way, 1 interruption, median reply latency 1.31 s; outcome and metrics reported by the worker |
+| 16 Nov 2026, 10:07 | Website-triggered acceptance call, 67 s | **PASS.** Answered after 11 s of ringing, completed, record matches the worker's own logs (6 turns each way, 2 interruptions, median latency 1.46 s, worst 2.15 s); no stuck or duplicate records; LiveKit room cleaned up |
 
-Between the two calls the prompt, style sheet and greeting were rewritten, the hang-up
+Between the first two calls the prompt, style sheet and greeting were rewritten, the hang-up
 tool was enabled, and timing instrumentation was added. No audio, interruption, TTS,
 voice or Vobiz setting was changed. Voice remains `kavitha`.
 
 ## Known open issue
 
-**Mid-sentence pauses on the first call: cause unconfirmed, not reproduced.** Sarvam TTS
-was ruled out for the long gaps and no words were lost, which points away from the SIP
-media path. The leading hypothesis is false interruptions triggered by sound on the
-caller's side (echo or noise). The instrumentation stays in place:
+**Occasional pause inside a reply: cause now confirmed (16 Nov 2026).** On the
+acceptance call the agent started a reply, 0.09 s later the line carried 0.5 s of sound
+from the caller's side (likely echo or the end of the caller's sentence), which met the
+0.5 s interruption threshold. No words followed, so it was a false interruption and the
+agent resumed after LiveKit's default 2.0 s wait: one 2.0 s silence. This matches the
+first call's longer pauses. Sarvam TTS and the SIP media path are not involved.
+
+The wait is now configurable as `INTERRUPTION_FALSE_TIMEOUT` (default unchanged at
+2.0). The suggested next experiment, one change at a time with barge-in kept on, is
+1.0 s on the next call, then compare with `call_report.py`. Not applied: the owner asked
+to keep audio settings unchanged.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\call_report.py
@@ -58,16 +67,26 @@ setting at a time and keep barge-in on.
 
 | Item | Status |
 | :--- | :--- |
-| Trigger a call from the Django web application | Built: staff-only page with confirmation, live status and End call. Tested with mocks; no real call placed from it yet |
-| Call records: who, when, outcome, duration | Built: masked number, timestamps, talk time, SIP status, latency; written for web and command-line calls |
+| Trigger a call from the Django web application | **Done and verified on real calls** (16 Nov 2026) |
+| Call records: who, when, outcome, duration | Done: masked number, ringing/answer/end times, talk time, SIP status, latency; web and command-line calls |
 | More than one allowed number, with consent recorded | Not started. DLT and consent rules must be settled before any call to third parties |
 | Noise cancellation on the outbound path | Not applied yet |
 | Caller ID shown as "Spam Alert" by Jio on the trial number | Seen on the first call's recording; revisit with a purchased number |
+| Call that no worker picks up | Fixed 16 Nov: withdrawn after 15 s; the worker also refuses requests older than 60 s, so a late worker cannot ring the phone |
+| Worker must be started separately from Django | Operational: start it first and wait for `registered worker` |
 
 ### Dashboard and data (Phase 4)
 
-PostgreSQL, call and transcript models, dashboard pages, appointment booking, agent
-settings from the web application. Not started.
+| Item | Status |
+| :--- | :--- |
+| Call records and recent-calls table | Done (outbound) |
+| Switch the local database to PostgreSQL | Ready (`compose.yaml`); owner to switch |
+| Call detail page: timeline, metrics, events | Not started |
+| Transcripts per call, with a retention policy and consent notice | Not started |
+| Appointment booking (tools the agent can call, with confirmation) | Not started |
+| Agent management: greeting, business name, voice, hours from the web app | Not started |
+| Reports: calls per day, outcomes, latency trends | Not started |
+| Contact list with recorded consent, before calling anyone but the owner | Not started |
 
 ### Still open from Phases 1 and 1.5
 
@@ -84,7 +103,7 @@ deployment approval.
 | Call records with masked numbers, SIP status and latency | Done; migration verified on PostgreSQL 17 and SQLite |
 | One allow-listed number, one call at a time (database constraint), no redial | Done |
 | Worker reports outcomes to Django over signed HTTP | Done; worker never imports Django |
-| First real call placed from the page | **Waiting for owner review** |
+| First real call placed from the page | **PASS** on two real calls (16 Nov 2026) |
 
 ## Next milestone
 
