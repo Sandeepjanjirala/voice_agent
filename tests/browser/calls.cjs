@@ -147,6 +147,20 @@ async function status(page, text, timeout = 12000) {
     await other.goto(`${BASE}/`);
     assert.equal(await other.locator('a[href="/calls/"]').count(), 0);
 
+    // Agent settings: the example is offered unsaved; saving activates it.
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(`${BASE}/agent/`);
+    assert.match(await page.locator('.warning').textContent(), /Nothing is used until you press Save/);
+    assert.match(await page.locator('#id_call_purpose').inputValue(), /appointment enquiry/);
+    await page.locator('#id_business_name').fill('QA Clinic <b>bold</b>');
+    await page.getByRole('button', { name: 'Save and use this profile' }).click();
+    await page.locator('.ready-pill', { hasText: 'Saved' }).waitFor();
+    assert.equal(await page.locator('#id_business_name').inputValue(), 'QA Clinic <b>bold</b>');
+    assert.equal(await page.locator('.phase').textContent(), 'ACTIVE');
+    await page.screenshot({ path: 'browser-artifacts/agent-settings.png', fullPage: true });
+    const agentForbidden = await other.goto(`${BASE}/agent/`);
+    assert.equal(agentForbidden.status(), 403);
+
     assert.deepEqual(errors, []);
     console.log('calls page: all browser checks passed');
   } finally {

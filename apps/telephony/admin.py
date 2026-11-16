@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import CallRecord
+from .models import AgentProfile, CallRecord
 
 
 @admin.register(CallRecord)
@@ -25,3 +25,8 @@ class CallRecordAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False
+
+
+@admin.register(AgentProfile)
+class AgentProfileAdmin(admin.ModelAdmin):
+    list_display = ("name", "is_active", "business_name", "updated_at")

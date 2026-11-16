@@ -94,3 +94,66 @@ class CallRecord(models.Model):
     @property
     def is_active(self) -> bool:
         return self.status in self.ACTIVE
+
+
+class AgentProfile(models.Model):
+    """What the agent is for. One profile is active; it is sent to the voice
+    worker with every call and browser conversation."""
+
+    # The worker gives the prompt section 1024 bytes; leave room for its labels.
+    PROMPT_FIELDS = (
+        "agent_name",
+        "call_purpose",
+        "objectives",
+        "limitations",
+        "ending",
+    )
+    PROMPT_BYTES = 800
+
+    name = models.CharField(max_length=60, unique=True)
+    is_active = models.BooleanField(default=False)
+    business_name = models.CharField(max_length=80, blank=True)
+    agent_name = models.CharField(max_length=40, blank=True)
+    call_purpose = models.CharField(max_length=300, blank=True)
+    greeting = models.CharField(max_length=250, blank=True)
+    objectives = models.TextField(max_length=400, blank=True)
+    limitations = models.TextField(max_length=300, blank=True)
+    ending = models.CharField(max_length=200, blank=True)
+    business_info = models.TextField(max_length=4000, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=["is_active"],
+                condition=Q(is_active=True),
+                name="one_active_agent_profile",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return self.name
+
+    def clean(self) -> None:
+        from django.core.exceptions import ValidationError
+
+        size = sum(len(getattr(self, f).encode("utf-8")) for f in self.PROMPT_FIELDS)
+        if size > self.PROMPT_BYTES:
+            raise ValidationError(
+                "Purpose, goals, limits and ending are too long together "
+                f"({size} of {self.PROMPT_BYTES} bytes; Telugu letters count as three). "
+                "Shorten them, or move facts into Business information."
+            )
+
+    def payload(self) -> dict[str, str]:
+        """What the voice worker receives (voice_agent/profile.py)."""
+        return {
+            "business_name": self.business_name,
+            "agent_name": self.agent_name,
+            "purpose": self.call_purpose,
+            "greeting": self.greeting,
+            "objectives": self.objectives,
+            "limitations": self.limitations,
+            "ending": self.ending,
+            "business_info": self.business_info,
+        }

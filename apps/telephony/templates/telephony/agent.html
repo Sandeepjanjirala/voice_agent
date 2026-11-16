@@ -1,0 +1,35 @@
+{% extends 'voice/base.html' %}{% load static %}
+{% block title %}Agent settings{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'telephony/calls.css' %}">{% endblock %}
+{% block content %}
+<section class="intro">
+  <div>
+    <p class="eyebrow">AGENT SETTINGS</p>
+    <h1>What your agent is for</h1>
+    <p class="muted">These settings shape every phone call and browser conversation. The agent speaks natural Andhra Telugu-English and may state only the facts you write here.</p>
+  </div>
+  <span class="phase">{% if profile and profile.is_active %}ACTIVE{% else %}NOT SAVED YET{% endif %}</span>
+</section>
+
+<form method="post" class="card agent-form" novalidate>{% csrf_token %}
+  <div class="card-heading"><h2>{% if profile %}{{ profile.name }}{% else %}Appointment enquiry (example){% endif %}</h2>
+    {% if saved %}<span class="pill ready-pill" role="status">Saved</span>{% endif %}
+  </div>
+  {% if not profile %}<p class="warning" role="note">This is an example to start from. Nothing is used until you press Save. It contains no business facts: add your own.</p>{% endif %}
+  {% if form.non_field_errors %}<div class="error" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="agent-fields">
+    {% for field in form %}
+      <div class="agent-field{% if field.name == 'business_info' or field.name == 'objectives' %} wide{% endif %}">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
+        {% if field.errors %}<p class="field-error" role="alert">{{ field.errors|join:" " }}</p>{% endif %}
+      </div>
+    {% endfor %}
+  </div>
+  <div class="agent-actions">
+    <p class="fine-print">Changes apply to the next call or conversation. The agent can end calls and take messages; it cannot book appointments yet.</p>
+    <button class="primary" type="submit">Save and use this profile</button>
+  </div>
+</form>
+{% endblock %}

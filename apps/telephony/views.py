@@ -20,9 +20,10 @@ from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import calls
+from . import calls, profiles
+from .forms import AgentProfileForm
 from .masking import mask_phone
-from .models import CallRecord
+from .models import AgentProfile, CallRecord
 
 logger = logging.getLogger(__name__)
 
@@ -190,3 +191,31 @@ def call_events(request):
         extra={"call_id": str(record.pk), "call_status": record.status},
     )
     return HttpResponse(status=204)
+
+
+@never_cache
+@login_required
+def agent_page(request):
+    """Edit the active agent profile. Starts from an example with no business facts."""
+    if not request.user.is_staff:
+        raise PermissionDenied
+    profile = profiles.active_profile()
+    saved = False
+    if request.method == "POST":
+        form = AgentProfileForm(request.POST, instance=profile)
+        if form.is_valid():
+            profile = form.save(commit=False)
+            AgentProfile.objects.exclude(pk=profile.pk).update(is_active=False)
+            profile.is_active = True
+            profile.save()
+            saved = True
+            form = AgentProfileForm(instance=profile)
+    else:
+        form = AgentProfileForm(
+            instance=profile, initial=None if profile else profiles.EXAMPLE
+        )
+    return render(
+        request,
+        "telephony/agent.html",
+        {"form": form, "profile": profile, "saved": saved},
+    )

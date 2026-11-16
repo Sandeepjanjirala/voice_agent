@@ -439,6 +439,7 @@ async def place_test_call(
     to: str,
     agent_name: str,
     room: str | None = None,
+    extra_metadata: dict | None = None,
 ) -> str:
     """Ask the worker to place exactly one call. Returns the room name."""
     if not plan.ready:
@@ -469,7 +470,8 @@ async def place_test_call(
             "max_call_duration": settings.max_call_duration_seconds,
             # The worker refuses requests older than this would allow.
             "requested_at": round(time.time(), 3),
-        }
+        },
+        **(extra_metadata or {}),
     }
     await gateway.dispatch(
         api.CreateAgentDispatchRequest(

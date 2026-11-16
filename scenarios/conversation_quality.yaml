@@ -110,3 +110,37 @@ scenarios:
       does not claim the visit is booked.
     tags:
       feature: context
+
+  - id: SCN_7vbRpvMaHwh2
+    label: Honours a one-word stop and does not push on
+    instructions: |
+      PERSONA: A busy caller. Say the lines verbatim.
+      OPENING LINE: "హలో."
+      DO, IN ORDER:
+      1. Whatever the reply, say only: "ఆగండి."
+      2. After the reply, say only: "Bye."
+      3. Say nothing more.
+    agent_expectations: >
+      After "ఆగండి" the agent stops, replies with at most one short line such as
+      "సరే అండి" or "చెప్పండి అండి", and does not continue explaining or ask what
+      help is needed. After "Bye" it gives one short goodbye and ends the call
+      with the end_call tool.
+    tags:
+      feature: stop-command
+
+  - id: SCN_XbQqVGCBGEEk
+    label: Short acknowledgements do not restart the conversation
+    instructions: |
+      PERSONA: A caller who listens and only acknowledges.
+      OPENING LINE: "హలో అండి, office timings చెప్పండి."
+      DO, IN ORDER:
+      1. Whatever the reply, say only: "ఆ."
+      2. Whatever the reply, say only: "ఊ."
+      3. Say "సరే, thank you, bye" and say nothing more.
+    agent_expectations: >
+      The agent does not invent office timings; it says the office team will
+      call back. After "ఆ" and "ఊ" it never repeats the same sentence twice and
+      never asks "what help do you need" again in any wording more than once.
+      It ends the call with the end_call tool after the goodbye.
+    tags:
+      feature: acknowledgement

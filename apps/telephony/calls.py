@@ -18,6 +18,7 @@ from django.conf import settings as django_settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from . import profiles
 from .conf import TelephonyConfigError
 from .livekit_gateway import TelephonyGatewayError
 from .masking import mask_phone, mask_phones_in
@@ -204,6 +205,7 @@ def start_call(*, user=None, gateway: OutboundGateway | None = None) -> CallReco
             to=outbound.allowed_number,
             agent_name=django_settings.LIVEKIT_AGENT_NAME,
             room=record.room,
+            extra_metadata=profiles.profile_metadata(),
         )
     except CallInProgressError as error:
         _close_failed(record, str(error))

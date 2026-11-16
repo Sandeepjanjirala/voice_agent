@@ -1,5 +1,6 @@
 """Browser access only. The voice loop stays in the independent worker."""
 
+import json
 from datetime import timedelta
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -13,6 +14,19 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 from livekit import api
+
+from apps.telephony.profiles import profile_metadata
+
+
+def _agent_dispatch() -> api.RoomAgentDispatch:
+    """Dispatch the existing agent, with the active agent profile if there is one.
+    The profile holds wording and business facts only, never credentials."""
+    profile = profile_metadata()
+    if not profile:
+        return api.RoomAgentDispatch(agent_name=settings.LIVEKIT_AGENT_NAME)
+    return api.RoomAgentDispatch(
+        agent_name=settings.LIVEKIT_AGENT_NAME, metadata=json.dumps(profile)
+    )
 
 
 @never_cache
@@ -71,7 +85,7 @@ def token(request):
                 max_participants=2,
                 empty_timeout=60,
                 departure_timeout=20,
-                agents=[api.RoomAgentDispatch(agent_name=settings.LIVEKIT_AGENT_NAME)],
+                agents=[_agent_dispatch()],
             )
         )
         .to_jwt()

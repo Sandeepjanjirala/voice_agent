@@ -4,9 +4,17 @@ from __future__ import annotations
 
 import logging
 
-from livekit.agents import AgentSession, TurnHandlingOptions, inference, llm, stt, tts
+from livekit.agents import (
+    AgentSession,
+    TurnHandlingOptions,
+    inference,
+    llm,
+    room_io,
+    stt,
+    tts,
+)
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
-from livekit.plugins import openai, sarvam
+from livekit.plugins import ai_coustics, openai, sarvam
 
 from .config import LLMSettings, STTSettings, TTSSettings, TurnSettings, VoiceSettings
 
@@ -96,10 +104,24 @@ def build_llm(settings: LLMSettings) -> llm.LLM:
     )
 
 
+def build_audio_input(settings: VoiceSettings) -> room_io.AudioInputOptions:
+    """Caller audio options. With NOISE_CANCELLATION on, background noise and
+    other people's voices are removed before turn detection and STT hear them."""
+    if not settings.noise_cancellation:
+        return room_io.AudioInputOptions()
+    # LiveKit Cloud only; set NOISE_CANCELLATION=false when self-hosting.
+    return room_io.AudioInputOptions(
+        noise_cancellation=ai_coustics.audio_enhancement(
+            model=ai_coustics.EnhancerModel.QUAIL_VF_S
+        ),
+    )
+
+
 def build_turn_handling(settings: TurnSettings) -> TurnHandlingOptions:
     interruption = InterruptionOptions(
         enabled=True,
         min_duration=settings.interruption_min_duration,
+        min_words=settings.interruption_min_words,
         resume_false_interruption=settings.resume_false_interruption,
         false_interruption_timeout=settings.false_interruption_timeout,
     )

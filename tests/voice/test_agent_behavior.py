@@ -131,3 +131,27 @@ async def test_transcript_logging_can_be_switched_off(
     turns = [r for r in caplog.records if r.message == "turn completed"]
     assert turns
     assert all(not hasattr(r, "text") for r in turns)
+
+
+async def test_phone_greeting_cannot_be_interrupted() -> None:
+    settings = make_settings()
+
+    async with AgentSession(llm=FakeLLM()) as session:
+        await session.start(TeluguAssistant(settings))
+        normal = greet(session, settings)
+        await normal
+        phone = greet(session, settings, allow_interruptions=False)
+        await phone
+
+    assert normal.allow_interruptions is True
+    assert phone.allow_interruptions is False
+
+
+def test_outbound_greeting_is_the_uninterruptible_one() -> None:
+    source = (
+        Path(__file__).resolve().parents[2] / "voice_agent" / "outbound.py"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "greet(session, settings, allow_interruptions=False, profile=profile)" in source
+    )

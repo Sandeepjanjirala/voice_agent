@@ -161,3 +161,27 @@ def test_false_interruption_wait_is_configurable_and_bounded() -> None:
 
     with pytest.raises(ConfigError, match="INTERRUPTION_FALSE_TIMEOUT"):
         make_settings(INTERRUPTION_FALSE_TIMEOUT="0")
+
+
+def test_noise_cancellation_is_built_once_for_web_and_phone() -> None:
+    from voice_agent.pipeline import build_audio_input
+
+    assert build_audio_input(make_settings()).noise_cancellation is not None
+    off = build_audio_input(make_settings(NOISE_CANCELLATION="false"))
+    assert not off.noise_cancellation
+
+
+def test_outbound_calls_use_the_same_noise_cancellation_as_the_studio() -> None:
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2] / "voice_agent"
+    for name in ("agent.py", "outbound.py"):
+        assert "audio_input=build_audio_input(settings)" in (root / name).read_text(
+            encoding="utf-8"
+        ), name
+
+
+def test_interruption_word_minimum_defaults_to_any_speech() -> None:
+    assert build_turn_handling(make_settings().turn)["interruption"]["min_words"] == 0
+    two = build_turn_handling(make_settings(INTERRUPTION_MIN_WORDS="2").turn)
+    assert two["interruption"]["min_words"] == 2

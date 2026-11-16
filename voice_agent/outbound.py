@@ -23,7 +23,8 @@ from .assistant import TeluguAssistant, greet
 from .call_reporting import CallMetrics, CallReporter
 from .config import VoiceSettings
 from .observability import attach_session_observers
-from .pipeline import build_session
+from .pipeline import build_audio_input, build_session
+from .profile import AgentProfile
 from .telephony import log_callers, mask_phone
 
 logger = logging.getLogger("voice_agent")
@@ -151,7 +152,10 @@ async def place_call(
 
 
 async def run_outbound_call(
-    ctx: JobContext, settings: VoiceSettings, dial: DialRequest
+    ctx: JobContext,
+    settings: VoiceSettings,
+    dial: DialRequest,
+    profile: AgentProfile | None = None,
 ) -> str:
     """Whole life of one outbound call. Returns the dial outcome."""
     await ctx.connect()
@@ -213,9 +217,13 @@ async def run_outbound_call(
             ctx.shutdown(reason="callee hung up")
 
     await session.start(
-        agent=TeluguAssistant(settings),
+        agent=TeluguAssistant(settings, profile),
         room=ctx.room,
-        room_options=room_io.RoomOptions(participant_identity=participant.identity),
+        room_options=room_io.RoomOptions(
+            participant_identity=participant.identity,
+            audio_input=build_audio_input(settings),
+        ),
     )
-    greet(session, settings)
+    # People say "hello" as they answer. That must not cut the greeting off.
+    greet(session, settings, allow_interruptions=False, profile=profile)
     return result.outcome

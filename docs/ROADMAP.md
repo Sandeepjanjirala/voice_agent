@@ -51,6 +51,28 @@ to keep audio settings unchanged.
 If it recurs, the report shows each pause and what preceded it; change one interruption
 setting at a time and keep barge-in on.
 
+## Voice quality: not production-ready
+
+Owner's rating of the 16 Nov calls with a 1.0 s false-interruption wait: **poor**.
+The logs showed the agent could rarely finish a sentence. Status of each cause:
+
+| Cause | Status |
+| :--- | :--- |
+| No noise cancellation on phone calls; background speech muted the agent for 26 s | Fixed in code (same cancellation as the browser studio); **needs one real call to verify** |
+| Greeting cut off by the callee's "hello" | Fixed: the phone greeting cannot be interrupted |
+| A lone "ఆ" or "ఊ" discards the agent's answer | Built, **off**: `INTERRUPTION_IGNORE_ACKS`. Holds back acknowledgements only; "ఆగండి", "stop", "bye" and any other word still interrupt. Enable after the noise-cancellation call, as one change |
+| Agent had no purpose and kept asking how to help | Fixed: agent profile (purpose, goals, limits, business information) edited at `/agent/` |
+| "office people", re-asking after acknowledgements | Fixed in the prompt; scenarios pass |
+| Voice naturalness, pronunciation, phone audio quality | Unknown: needs the owner's ears and a recording |
+| False-interruption wait | 1.0 s kept provisionally |
+
+`INTERRUPTION_MIN_WORDS` stays 0 by owner decision: a word minimum would block
+one-word commands.
+
+Not yet possible: the agent cannot save what the caller tells it (for example a
+preferred appointment time). Until call outcomes are stored, that exists only in the
+worker log.
+
 ## Outstanding work
 
 ### Inbound calling (Phase 2)
@@ -84,7 +106,8 @@ setting at a time and keep barge-in on.
 | Call detail page: timeline, metrics, events | Not started |
 | Transcripts per call, with a retention policy and consent notice | Not started |
 | Appointment booking (tools the agent can call, with confirmation) | Not started |
-| Agent management: greeting, business name, voice, hours from the web app | Not started |
+| Agent settings: purpose, greeting, goals, limits, business information | Done (`/agent/`), one active profile; voice selection and multiple profiles not started |
+| Save call outcomes the agent collects (preferred time, yes/no) to the call record | Not started; next for the appointment agent |
 | Reports: calls per day, outcomes, latency trends | Not started |
 | Contact list with recorded consent, before calling anyone but the owner | Not started |
 

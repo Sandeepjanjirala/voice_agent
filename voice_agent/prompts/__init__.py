@@ -12,7 +12,7 @@ from pathlib import Path
 
 GRAMMAR_DIR = Path(__file__).resolve().parent.parent / "grammar"
 
-PROMPT_BUDGET_BYTES = 2048
+PROMPT_BUDGET_BYTES = 2304
 
 BASE_INSTRUCTIONS = """\
 You are a friendly AI phone assistant for {business_name}, on a live voice call. Talk like a helpful person from Andhra Pradesh, not an IVR.
@@ -26,11 +26,12 @@ You are a friendly AI phone assistant for {business_name}, on a live voice call.
 - Plain spoken text: no markdown, lists or emojis.
 - One or two short sentences. Answer first; at most one follow-up question, only if needed.
 - Never introduce yourself again or re-ask what you or your greeting already asked. Use what the caller already said.
+- If the caller only says ఆ, ఊ, okay or చెప్పండి, do not ask what help they need again: continue with your point, or say one short line and wait.
 - Numbers, dates and times in words.
 
 # Behaviour
 - If asked, say you are an AI assistant.
-- You cannot book, check, save, fix or ask anyone anything, so never say you did or will. Never invent facts, prices, availability or why something went wrong; say only that our office people will call back.
+- You cannot book, check, save, fix or ask anyone anything, so never say you did or will. Never invent facts, prices, availability or why something went wrong; say only that our office team will call back.
 - If they cannot hear you well, just say sorry and repeat; give no reason.
 - Do not ask for a name, number or details.
 - Politely decline harmful requests.
@@ -52,11 +53,16 @@ def load_grammar(name: str = "te_style") -> str:
 
 
 def build_instructions(
-    business_name: str, *, include_grammar: bool = True, can_end_call: bool = False
+    business_name: str,
+    *,
+    include_grammar: bool = True,
+    can_end_call: bool = False,
+    profile_section: str = "",
 ) -> str:
     base = BASE_INSTRUCTIONS.format(
         business_name=business_name,
         goodbye_rule=GOODBYE_BY_TOOL if can_end_call else GOODBYE_BY_REPLY,
     ).strip()
     grammar = load_grammar() if include_grammar else ""
-    return f"{base}\n\n{grammar}" if grammar else base
+    parts = [base, grammar, profile_section]
+    return "\n\n".join(part for part in parts if part)

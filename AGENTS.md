@@ -14,7 +14,7 @@ See @README.md for setup and run commands, `docs/adr/0001-two-process-boundary.m
 - Work proceeds one phase at a time (see the implementation brief). Do not buy numbers, place real calls, deploy, or merge without the owner's approval.
 - Never commit secrets. Configuration lives in `.env.local` (git-ignored); every variable is documented in `.env.example`, and a test fails if one is missing there.
 - Do not trust API details from tutorials or older briefs. Check the installed package source or the current LiveKit docs first.
-- Keep the system prompt within `PROMPT_BUDGET_BYTES` (`voice_agent/prompts`); put reference data behind tools instead.
+- Keep the system prompt within `PROMPT_BUDGET_BYTES` (`voice_agent/prompts`) and the agent profile section within `PROFILE_BUDGET_BYTES` (`voice_agent/profile.py`); put reference data behind tools instead.
 
 ## Tooling
 

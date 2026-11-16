@@ -236,7 +236,8 @@ Edit `.env.local` and restart the worker. Every setting is described in
 | `AGENT_GREETING` | Telugu greeting | First thing the agent says |
 
 The prompt is in `voice_agent/prompts/__init__.py` and the Telugu style sheet in
-`voice_agent/grammar/te_style.md`. Together they must stay under 2 kB; a test checks it.
+`voice_agent/grammar/te_style.md`. Together they must stay under 2.3 kB, and the
+per-call agent profile section under 1 kB; tests check both.
 
 ## Tests and linting
 

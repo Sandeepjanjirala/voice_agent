@@ -88,6 +88,12 @@ class TurnSettings:
     endpointing_max_delay: float
     interruption_mode: str
     interruption_min_duration: float
+    # Words the caller must say to interrupt. 0 lets any sound with a
+    # transcript, even "ఆ", stop the agent and discard its reply.
+    interruption_min_words: int
+    # Hold back a lone "ఆ"/"ఊ" said while the agent talks, so its reply
+    # resumes instead of being discarded. Other words still interrupt.
+    ignore_acknowledgements: bool
     resume_false_interruption: bool
     # Silence after a suspected interruption before speech resumes. 2.0 is the
     # LiveKit default; it is also the length of the pause a caller hears.
@@ -141,6 +147,8 @@ class VoiceSettings:
             "endpointing_max_delay": self.turn.endpointing_max_delay,
             "interruption_mode": self.turn.interruption_mode,
             "interruption_min_duration": self.turn.interruption_min_duration,
+            "interruption_min_words": self.turn.interruption_min_words,
+            "ignore_acknowledgements": self.turn.ignore_acknowledgements,
             "false_interruption_timeout": self.turn.false_interruption_timeout,
             "noise_cancellation": self.noise_cancellation,
             "can_end_call": self.can_end_call,
@@ -312,6 +320,8 @@ def _turn_settings(env: _Env) -> TurnSettings:
         endpointing_max_delay=max_delay,
         interruption_mode=env.choice("INTERRUPTION_MODE", "auto", INTERRUPTION_MODES),
         interruption_min_duration=env.float("INTERRUPTION_MIN_DURATION", 0.5, 0.0, 5.0),
+        interruption_min_words=env.int("INTERRUPTION_MIN_WORDS", 0, 0, 5),
+        ignore_acknowledgements=env.bool("INTERRUPTION_IGNORE_ACKS", False),
         resume_false_interruption=env.bool("INTERRUPTION_RESUME_FALSE", True),
         false_interruption_timeout=env.float(
             "INTERRUPTION_FALSE_TIMEOUT", 2.0, 0.5, 5.0
