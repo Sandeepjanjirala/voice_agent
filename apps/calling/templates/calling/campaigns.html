@@ -1,0 +1,32 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Campaigns{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">CALLING</p>
+    <h1>Campaigns</h1>
+    <p class="muted">Work through a list of people who agreed to be called, inside calling hours, with retries. Campaigns run as dry runs: they show who would be called and when, and dial nobody.</p>
+  </div>
+  {% if manage %}<a class="button primary" href="{% url 'campaign-new' %}">New campaign</a>{% endif %}
+</section>
+<section class="panel">
+  {% if campaigns %}
+  <div class="table-scroll"><table class="data" id="campaign-table">
+    <thead><tr><th>Campaign</th><th>Campus</th><th>AI employee</th><th class="num">People</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for campaign in campaigns %}
+      <tr>
+        <td class="wrap"><a href="{% url 'campaign-detail' campaign.pk %}">{{ campaign.name }}</a><small>{{ campaign.purpose }}</small></td>
+        <td>{{ campaign.campus.name }}</td>
+        <td>{{ campaign.employee.name|default:"–" }}</td>
+        <td class="num">{{ campaign.size }}</td>
+        <td><span class="tag{% if campaign.status == 'ready' %} good{% elif campaign.status == 'draft' %} draft{% endif %}">{{ campaign.get_status_display }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <div class="empty-state"><strong>No campaigns yet</strong>A campaign needs a published AI employee and contacts with permission to call.{% if manage %}<br><a class="button primary small" href="{% url 'campaign-new' %}">New campaign</a>{% endif %}</div>
+  {% endif %}
+</section>
+{% endblock %}

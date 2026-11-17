@@ -6,15 +6,19 @@ limits first, so nothing is cut silently and a version that is saved is exactly
 what a call will use.
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 from django.db import transaction
+from django.utils import timezone
 
 from apps.telephony import profiles
 from apps.telephony.models import AgentProfile
 
+from . import knowledge
 from .config import normalize
 from .models import Employee, EmployeeVersion
+from .voices import SPEECH_LANGUAGE
 
 # Kept in step with voice_agent/profile.py; a test compares the two.
 PROFILE_KEY = profiles.PROFILE_KEY
@@ -54,8 +58,9 @@ def _business() -> tuple[str, str]:
     return (profile.business_name, profile.business_info) if profile else ("", "")
 
 
-def worker_payload(config: dict) -> dict[str, str]:
-    """The profile the voice worker receives for this configuration."""
+def worker_payload(config: dict, language: str = "") -> dict[str, Any]:
+    """The profile the voice worker receives for this configuration.
+    `language` is Employee.language; it sets the voice's language."""
     config = normalize(config)
     goals = " ".join(
         f"{number}. {step['guidance'] or step['name']}"
@@ -78,6 +83,11 @@ def worker_payload(config: dict) -> dict[str, str]:
         ),
         "ending": config["ending"],
         "business_info": business_info,
+        "voice": {
+            "speaker": config["voice"]["speaker"],
+            "pace": config["voice"]["pace"],
+            "language": SPEECH_LANGUAGE.get(language, ""),
+        },
     }
 
 
@@ -121,7 +131,7 @@ class PublishError(Exception):
 def has_changes(employee: Employee) -> bool:
     """True when the draft differs from what calls use."""
     live = employee.live_version
-    return live is None or normalize(employee.draft) != live.config
+    return live is None or normalize(employee.draft) != normalize(live.config)
 
 
 def publish(employee: Employee, user=None) -> EmployeeVersion:
@@ -137,7 +147,7 @@ def publish(employee: Employee, user=None) -> EmployeeVersion:
             employee=locked,
             number=latest.number + 1 if latest else 1,
             config=config,
-            payload=worker_payload(config),
+            payload=worker_payload(config, locked.language),
             published_by=user if getattr(user, "is_authenticated", False) else None,
         )
         first = locked.live_version_id is None
@@ -165,34 +175,109 @@ def copy_into_draft(employee: Employee, version: EmployeeVersion) -> None:
     employee.save(update_fields=["draft", "name", "role", "updated_at"])
 
 
-def call_profile(employee: Employee) -> tuple[EmployeeVersion, dict[str, Any]]:
-    """The version a phone call must use, and its job metadata.
+def _business_name(employee: Employee, campus) -> str:
+    organisation = employee.organisation
+    if organisation is None:
+        return _business()[0]
+    name = f"{organisation.name}, {campus.name}" if campus else organisation.name
+    return name[: WORKER_LIMITS["business_name"]]
+
+
+def _with_knowledge(payload: dict, employee: Employee, campus) -> dict:
+    """The payload with today's business name and knowledge for this campus.
+    Knowledge applies from the next call, without publishing again."""
+    payload = dict(payload)
+    payload["business_name"] = _business_name(employee, campus)
+    if employee.organisation is not None:
+        facts = knowledge.compile_for(employee.organisation, campus)
+        payload["business_info"] = facts or _business()[1]
+    return payload
+
+
+@dataclass(frozen=True)
+class CallPlan:
+    """Everything a call needs, built once when it starts."""
+
+    version: EmployeeVersion
+    metadata: dict[str, Any]
+    snapshot: dict[str, Any]
+
+
+def plan_call(
+    employee: Employee,
+    *,
+    campus=None,
+    lead=None,
+    rehearsal: bool = False,
+    caller_name: str = "",
+) -> CallPlan:
+    """The published version a phone call uses, its job metadata, and the
+    snapshot stored with the call record.
 
     Refuses unless the employee is published and switched on: a draft is never
-    used on a call, and a paused employee takes none.
+    used on a call, and a paused employee takes none. Later edits to the draft
+    cannot reach a call that has started, because the call is given this copy.
     """
     version = employee.live_version
     if version is None:
         raise PublishError([f"{employee.name} has not been published yet."])
     if not employee.taking_calls:
         raise PublishError([f"{employee.name} is paused. Switch it on first."])
-    return version, trial_metadata(employee, "published")
+    config = normalize(version.config)
+    payload = _with_knowledge(version.payload, employee, campus)
+    payload.setdefault("voice", worker_payload(config, employee.language)["voice"])
+    context = {}
+    contact = getattr(lead, "contact", None)
+    name = caller_name or (contact.name if contact and not contact.is_erased else "")
+    if name:
+        context["name"] = name
+    if lead is not None:
+        context["about"] = lead.subject
+    if context:
+        payload["context"] = context
+    organisation = employee.organisation
+    if organisation is not None and organisation.transcripts != "off":
+        payload["transcript"] = True
+    snapshot = {
+        "built_at": timezone.now().isoformat(),
+        "employee": {
+            "id": str(employee.pk),
+            "name": employee.name,
+            "role": employee.role,
+            "version": version.number,
+        },
+        "campus": campus.name if campus else "",
+        "lead": str(lead.pk) if lead is not None else "",
+        "rehearsal": rehearsal,
+        "questions": config["questions"],
+        "actions": config["actions"],
+        "profile": payload,
+    }
+    return CallPlan(version, {PROFILE_KEY: payload}, snapshot)
+
+
+def call_profile(employee: Employee) -> tuple[EmployeeVersion, dict[str, Any]]:
+    """The version a phone call must use, and its job metadata."""
+    plan = plan_call(employee)
+    return plan.version, plan.metadata
 
 
 def trial_metadata(employee: Employee, source: str) -> dict[str, Any]:
     """Job metadata for trying an employee in the voice studio.
 
     "draft" uses the working copy, checked the same way publishing is;
-    "published" uses the stored payload of the version calls use.
+    "published" uses the stored payload of the version calls use. Both use
+    today's knowledge for the employee's campus, if it has exactly one.
     """
+    campuses = list(employee.campuses.all()[:2]) if employee.pk else []
+    campus = campuses[0] if len(campuses) == 1 else None
     if source == "published":
         if employee.live_version is None:
             raise PublishError([f"{employee.name} has not been published yet."])
-        payload = dict(employee.live_version.payload)
-        # Business facts may have changed since publishing; use today's.
-        payload["business_name"], payload["business_info"] = _business()
+        payload = _with_knowledge(employee.live_version.payload, employee, campus)
         return {PROFILE_KEY: payload}
     reasons = problems(employee.draft)
     if reasons:
         raise PublishError(reasons)
-    return {PROFILE_KEY: worker_payload(employee.draft)}
+    payload = worker_payload(employee.draft, employee.language)
+    return {PROFILE_KEY: _with_knowledge(payload, employee, campus)}

@@ -44,6 +44,8 @@ database.parent.mkdir(exist_ok=True)
 database.unlink(missing_ok=True)
 settings.DEBUG = True
 settings.ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
+# Lets the browser test post signed worker reports, as the voice worker would.
+settings.CALL_EVENTS_SECRET = "qa-call-events-secret-not-for-production-0123"
 settings.DATABASES["default"]["NAME"] = str(database)
 django.setup()
 call_command("migrate", verbosity=0)
@@ -120,9 +122,22 @@ CallRecord.objects.create(
 )
 
 
+CANNED_ANALYSIS = {
+    "summary": "The parent asked about a campus visit and wants a call back on "
+    "Friday evening.",
+    "outcome": "callback",
+    "answers": {"class": "Class 6"},
+    "callback_requested": True,
+    "callback_when": "Friday evening",
+    "opt_out_requested": False,
+}
+
+
 def canned_draft(system, user, **kwargs):
     """What a good LLM answer looks like, after a short realistic wait."""
     time.sleep(0.8)
+    if system.startswith("You review phone calls"):
+        return dict(CANNED_ANALYSIS)
     return {
         "agent_name": "Meera",
         "role": "Admissions enquiry assistant",

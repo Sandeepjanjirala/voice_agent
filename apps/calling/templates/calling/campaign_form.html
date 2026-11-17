@@ -1,0 +1,16 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}New campaign{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow"><a href="{% url 'campaigns' %}">CAMPAIGNS</a></p>
+    <h1>New campaign</h1>
+    <p class="muted">Calling hours are limited to 09:00–21:00 whatever is set here. Nobody is called: the campaign runs as a dry run.</p>
+  </div>
+</section>
+{% if not form.fields.employee.queryset.exists %}<p class="notice" role="note">No AI employee is published yet. Publish one first: a campaign can only use a published version.</p>{% endif %}
+<form method="post" class="panel" style="max-width:720px" novalidate>{% csrf_token %}
+  {% include 'dashboard/_fields.html' %}
+  <div class="form-actions"><a href="{% url 'campaigns' %}">Cancel</a><button class="primary" type="submit">Create campaign</button></div>
+</form>
+{% endblock %}

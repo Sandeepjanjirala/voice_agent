@@ -23,10 +23,11 @@ from apps.telephony.models import CallRecord
 from apps.tenancy.access import scope_for, scoped
 
 from . import llm, publishing
-from .config import LIMITS, MAX_QUESTIONS, MAX_STEPS, normalize
+from .config import ACTIONS, LIMITS, MAX_QUESTIONS, MAX_STEPS, normalize
 from .drafting import EXAMPLES, draft_employee
 from .forms import BriefForm, EmployeeForm
 from .models import Employee, EmployeeVersion
+from .voices import PACE_CHOICES, VOICES
 
 logger = logging.getLogger(__name__)
 
@@ -263,6 +264,11 @@ def _posted_config(post, current: dict) -> dict:
                 for name, text in zip(names, guidance, strict=False)
             ],
             "questions": post.getlist("question"),
+            "voice": {
+                "speaker": post.get("voice_speaker", ""),
+                "pace": post.get("voice_pace", ""),
+            },
+            "actions": post.getlist("action"),
         }
     )
 
@@ -298,6 +304,9 @@ def employee_detail(request, pk):
             "max_steps": MAX_STEPS,
             "max_questions": MAX_QUESTIONS,
             "strictness_levels": range(1, 6),
+            "voices": VOICES,
+            "paces": PACE_CHOICES,
+            "actions": ACTIONS,
             "test_line": _test_line(),
             "campuses": request.scope.campuses().filter(is_active=True),
             "assigned": set(employee.campuses.values_list("pk", flat=True)),
@@ -333,25 +342,22 @@ def employee_test_call(request, pk):
     """Place one real call to the approved test number, using the employee's
     published version. Nothing else can be dialled from here."""
     employee = _employee(request, pk)
+    assigned = list(employee.campuses.all()[:2])
+    # A call belongs to a campus only when the employee has just one.
+    campus = assigned[0] if len(assigned) == 1 else None
     try:
-        version, profile = publishing.call_profile(employee)
+        plan = publishing.plan_call(employee, campus=campus)
     except publishing.PublishError as error:
         messages.error(request, "No call was placed. " + " ".join(error.reasons))
         return redirect("employee-detail", pk=employee.pk)
+    version = plan.version
     if not cache.add(
         f"outbound-call:{request.user.pk}", True, timeout=CALL_THROTTLE_SECONDS
     ):
         messages.error(request, "Please wait a few seconds before calling again.")
         return redirect("employee-detail", pk=employee.pk)
-    assigned = list(employee.campuses.all()[:2])
     try:
-        record = calls.start_call(
-            user=request.user,
-            employee_version=version,
-            profile=profile,
-            # A call belongs to a campus only when the employee has just one.
-            campus=assigned[0] if len(assigned) == 1 else None,
-        )
+        record = calls.start_call(user=request.user, call_plan=plan, campus=campus)
     except calls.CallError as error:
         logger.warning("employee test call not started: %s", error)
         messages.error(

@@ -24,7 +24,7 @@ from .call_reporting import CallMetrics, CallReporter
 from .config import VoiceSettings
 from .observability import attach_session_observers
 from .pipeline import build_audio_input, build_session
-from .profile import AgentProfile
+from .profile import AgentProfile, voice_for
 from .telephony import log_callers, mask_phone
 
 logger = logging.getLogger("voice_agent")
@@ -161,7 +161,7 @@ async def run_outbound_call(
     await ctx.connect()
     log_callers(ctx.room)
     reporter = CallReporter.from_settings(settings, room=ctx.room.name)
-    metrics = CallMetrics()
+    metrics = CallMetrics(keep_transcript=bool(profile and profile.keep_transcript))
     call: dict = {"answered_at": None, "tasks": set()}
 
     async def hang_up(reason: str = "") -> None:
@@ -170,7 +170,7 @@ async def run_outbound_call(
                 "ended",
                 outcome="completed",
                 talk_seconds=round(time.monotonic() - call["answered_at"], 1),
-                **metrics.summary(),
+                **metrics.ended_fields(),
             )
         # Deleting the room disconnects the phone leg whatever state it is in.
         try:
@@ -203,6 +203,8 @@ async def run_outbound_call(
     participant = await ctx.wait_for_participant(identity=CALLEE_IDENTITY)
 
     # Only now, with the callee on the line, does the conversation start.
+    # The employee's own voice and language, from this call's profile.
+    settings = voice_for(settings, profile)
     session = build_session(settings)
     attach_session_observers(session, settings, session_id=ctx.room.name)
     session.on("conversation_item_added", lambda ev: metrics.observe(ev.item))

@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "apps.tenancy",
     "apps.workforce",
     "apps.crm",
+    "apps.calling",
 ]
 
 MIDDLEWARE = [

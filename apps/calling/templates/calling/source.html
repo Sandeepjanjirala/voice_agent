@@ -1,0 +1,60 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}{{ source.name }}{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow"><a href="{% url 'instant' %}">INSTANT LEADS</a> · {{ source.campus.name }}</p>
+    <h1>{{ source.name }}</h1>
+    <p class="muted">{% if source.employee %}New leads are queued for {{ source.employee.name }}, {{ source.call_delay_minutes }} minutes after they arrive, between {{ source.window_start|time:"H:i" }} and {{ source.window_end|time:"H:i" }}.{% else %}Choose an AI employee to queue calls for new leads.{% endif %}</p>
+  </div>
+  <span class="tag{% if source.is_active %} good{% endif %}">{% if source.is_active %}Accepting leads{% else %}Switched off{% endif %}</span>
+</section>
+{% if secret %}
+<div class="notice" role="alert" id="new-secret"><b>Copy this secret now. It will not be shown again.</b><br><code>{{ secret }}</code></div>
+{% endif %}
+{% if employee_problem %}<p class="notice" role="note">{{ employee_problem }}</p>{% endif %}
+
+<div class="grid-2">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>How to send leads</h2></div>
+      <p class="help" style="margin-top:0">Post JSON to this address with the secret in the <code>X-Lead-Secret</code> header. Only <code>phone</code> is required. Add <code>"dry_run": true</code> to check a delivery without storing it.</p>
+      <pre class="code" id="endpoint">POST {{ endpoint }}
+X-Lead-Secret: ls_…{{ source.secret_hint }}
+Content-Type: application/json
+
+{"phone": "+91 98765 43210", "name": "Parent name", "subject": "What they asked about"}</pre>
+      <p class="help">Answers: 201 stored, 200 for a test, duplicate or do-not-call number, 400 invalid, 401 wrong secret, 429 too many in a minute.</p>
+      {% if manage %}<form method="post" class="button-row">{% csrf_token %}<input type="hidden" name="action" value="test"><button class="small" type="submit">Send a test lead</button><span class="help">Uses a made-up number and stores nothing.</span></form>{% endif %}
+    </section>
+    {% include 'calling/_dry_run.html' %}
+    <section class="panel">
+      <div class="panel-head"><h2>Queue</h2>{% if manage %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="dry_run"><button class="primary small" type="submit">Run a dry run</button></form>{% endif %}</div>
+      {% if queue %}
+      <div class="table-scroll"><table class="data" id="source-queue">
+        <thead><tr><th>Person</th><th>Status</th><th>When</th></tr></thead>
+        <tbody>{% for entry in queue %}<tr><td>{% if entry.lead %}<a href="{% url 'lead-detail' entry.lead.pk %}">{{ entry.contact.name }}</a>{% else %}{{ entry.contact.name }}{% endif %}<small>{{ entry.contact.phone_masked|default:"erased" }}</small></td><td class="wrap"><span class="tag{% if entry.status == 'would_call' %} good{% elif entry.status == 'skipped' %} bad{% endif %}">{{ entry.get_status_display }}</span>{% if entry.reason %}<small>{{ entry.reason }}</small>{% endif %}</td><td>{{ entry.due_at|date:"j M, H:i"|default:"–" }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+      {% else %}<p class="help">Nobody is waiting.</p>{% endif %}
+    </section>
+  </div>
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Deliveries</h2></div>
+      {% if events %}
+      <ul class="timeline" id="events">{% for event in events %}<li><span class="tag{% if event.result == 'accepted' %} good{% elif event.result == 'invalid' or event.result == 'opted_out' %} bad{% endif %}">{{ event.get_result_display }}</span> {{ event.masked_number }}<small>{{ event.received_at|date:"j M, H:i" }} · {{ event.detail }}</small></li>{% endfor %}</ul>
+      {% else %}<p class="help">Nothing received yet.</p>{% endif %}
+    </section>
+    {% if manage %}
+    <details class="panel">
+      <summary><b>Change settings</b></summary>
+      <form method="post" novalidate style="margin-top:14px">{% csrf_token %}<input type="hidden" name="action" value="edit">
+        {% include 'dashboard/_fields.html' %}
+        <button class="small" type="submit">Save</button>
+      </form>
+    </details>
+    <form method="post" class="panel danger-zone" data-ask="Make a new secret? The old one stops working at once.">{% csrf_token %}<input type="hidden" name="action" value="new_secret"><p>Replace the secret if it may have been seen by someone else.</p><button class="small" type="submit">New secret</button></form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

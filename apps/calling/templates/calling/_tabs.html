@@ -1,0 +1,4 @@
+<nav class="tabs" aria-label="Calling setup">
+  <a href="{% url 'numbers' %}"{% if tab == 'numbers' %} aria-current="true"{% endif %}>Numbers</a>
+  <a href="{% url 'inbound' %}"{% if tab == 'inbound' %} aria-current="true"{% endif %}>Incoming calls</a>
+</nav>

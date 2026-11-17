@@ -1,0 +1,40 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Knowledge{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">SETUP</p>
+    <h1>Knowledge</h1>
+    <p class="muted">Facts your AI employees may state and rules they must follow, for every campus or for one. Each call is given its campus's items; changes apply from the next call. Anything not written here, an employee will not claim.</p>
+  </div>
+</section>
+<div class="grid-2">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Items</h2></div>
+      {% if items %}
+      <div class="table-scroll"><table class="data" id="knowledge-table">
+        <thead><tr><th>Item</th><th>Type</th><th>Used for</th><th></th></tr></thead>
+        <tbody>{% for item in items %}<tr><td class="wrap">{{ item.title }}<small>{{ item.text|truncatechars:140 }}</small></td><td>{% if item.kind == 'rule' %}Rule{% else %}Fact{% endif %}{% if not item.is_active %} <span class="tag">Not in use</span>{% endif %}</td><td>{{ item.campus.name|default:"Every campus" }}</td><td>{% if manage %}<a href="{% url 'knowledge-edit' item.pk %}">Edit</a>{% endif %}</td></tr>{% endfor %}</tbody>
+      </table></div>
+      {% else %}
+      <div class="empty-state"><strong>Nothing yet</strong>Add the timings, fees, addresses and policies callers ask about.</div>
+      {% endif %}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>What a call is given</h2>
+        <form method="get"><select name="campus" aria-label="Campus" data-autosubmit><option value="">Organisation-wide only</option>{% for item in campuses %}<option value="{{ item.pk }}"{% if campus and item.pk == campus.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select><noscript><button class="small">Show</button></noscript></form>
+      </div>
+      {% if preview %}<pre class="code" id="knowledge-preview">{{ preview }}</pre>{% else %}<p class="help">Nothing: the employee will say the team will call back with details.</p>{% endif %}
+      <p class="help">{{ preview_size }} of {{ limit }} characters. Items beyond the limit are left out whole.</p>
+    </section>
+  </div>
+  {% if manage %}
+  <form method="post" class="panel" novalidate>{% csrf_token %}
+    <div class="panel-head"><h2>Add an item</h2></div>
+    {% include 'dashboard/_fields.html' %}
+    <button class="primary small" type="submit">Add</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

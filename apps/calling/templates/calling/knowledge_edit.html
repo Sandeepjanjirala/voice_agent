@@ -1,0 +1,15 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}{{ item.title }}{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow"><a href="{% url 'knowledge' %}">KNOWLEDGE</a></p>
+    <h1>{{ item.title }}</h1>
+  </div>
+</section>
+<form method="post" class="panel" style="max-width:640px" novalidate>{% csrf_token %}
+  {% include 'dashboard/_fields.html' %}
+  <div class="form-actions"><a href="{% url 'knowledge' %}">Cancel</a><button class="primary" type="submit">Save</button></div>
+</form>
+<form method="post" class="panel danger-zone" style="max-width:640px;margin-top:20px" data-ask="Remove “{{ item.title }}”?">{% csrf_token %}<input type="hidden" name="action" value="delete"><p>Remove this item. Calls already made keep what they were given.</p><button class="danger small" type="submit">Remove</button></form>
+{% endblock %}

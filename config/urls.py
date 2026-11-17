@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import include, path
 
+from apps.calling import views as calling_views
 from apps.core import dashboard_views, voice_views
 from apps.core.navigation import MODULES
 from apps.crm import views as crm_views
@@ -78,6 +79,7 @@ urlpatterns = [
     path("leads/new/", crm_views.lead_new, name="lead-new"),
     path("leads/follow-ups/", crm_views.followups, name="followups"),
     path("leads/<uuid:pk>/", crm_views.lead_detail, name="lead-detail"),
+    path("leads/<uuid:pk>/rehearse/", crm_views.lead_rehearse, name="lead-rehearse"),
     path("contacts/", crm_views.contact_list, name="contacts"),
     path("contacts/import/", crm_views.contact_import, name="contact-import"),
     path("contacts/export/", crm_views.contact_export, name="contact-export"),
@@ -101,6 +103,18 @@ urlpatterns = [
         crm_views.opt_out_remove,
         name="optout-remove",
     ),
+    path("campaigns/", calling_views.campaigns, name="campaigns"),
+    path("campaigns/new/", calling_views.campaign_new, name="campaign-new"),
+    path("campaigns/<uuid:pk>/", calling_views.campaign_detail, name="campaign-detail"),
+    path("instant/", calling_views.instant, name="instant"),
+    path("instant/new/", calling_views.source_new, name="source-new"),
+    path("instant/<uuid:pk>/", calling_views.source_detail, name="source-detail"),
+    path("api/intake/<uuid:pk>/", calling_views.lead_intake, name="lead-intake"),
+    path("inbound/", calling_views.incoming, name="inbound"),
+    path("numbers/", calling_views.numbers, name="numbers"),
+    path("numbers/<uuid:pk>/", calling_views.number_edit, name="number-edit"),
+    path("knowledge/", calling_views.knowledge_list, name="knowledge"),
+    path("knowledge/<int:pk>/", calling_views.knowledge_edit, name="knowledge-edit"),
     # Planned modules: each has a page saying what works today and what is to come.
     *(
         path(f"{slug}/", dashboard_views.module, {"slug": slug}, name=slug)

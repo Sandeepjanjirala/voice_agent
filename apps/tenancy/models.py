@@ -9,8 +9,17 @@ from django.db import models
 class Organisation(models.Model):
     """A customer of the platform. Nothing is shared between organisations."""
 
+    class Transcripts(models.TextChoices):
+        OFF = "off", "Do not keep what was said"
+        ANALYSE = "analyse", "Use it for the call summary, then delete it"
+        KEEP = "keep", "Keep the transcript with the call"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=120, unique=True)
+    # Off unless the organisation chooses: what a caller says is personal data.
+    transcripts = models.CharField(
+        max_length=8, choices=Transcripts.choices, default=Transcripts.OFF
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -84,6 +93,10 @@ class RetentionPolicy(models.Model):
     )
     call_days = models.PositiveIntegerField(
         default=0, help_text="Delete call records older than this. 0 keeps them."
+    )
+    transcript_days = models.PositiveIntegerField(
+        default=30,
+        help_text="Delete kept call transcripts older than this. 0 keeps them.",
     )
     audit_days = models.PositiveIntegerField(
         default=0, help_text="Delete access-log entries older than this. 0 keeps them."

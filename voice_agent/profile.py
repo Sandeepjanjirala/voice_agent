@@ -4,15 +4,25 @@ The profile is edited in the Django application and reaches the worker as job
 metadata. The worker never trusts its size: every field is clamped here, the
 prompt section has its own byte budget, and business facts stay out of the
 prompt behind a tool, so the per-turn prompt stays small.
+
+A profile may also choose the voice for its call (speaker, pace, language), say
+who the call is with, and allow the transcript to be reported to Django. Each
+of these is optional; a profile without them behaves as before.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, replace
 from typing import Any
 
 from livekit.agents import function_tool
+from livekit.plugins.sarvam.models import MODEL_SPEAKER_COMPATIBILITY
+
+from .config import VoiceSettings
+
+logger = logging.getLogger("voice_agent")
 
 PROFILE_KEY = "agent_profile"
 # Budget for the per-call section added to the system prompt.
@@ -28,6 +38,11 @@ _LIMITS = {
     "ending": 200,
     "business_info": 4000,
 }
+
+# Language codes a profile may choose, for both speech recognition and voice.
+LANGUAGES = ("te-IN", "en-IN", "hi-IN")
+PACE_RANGE = (0.5, 2.0)
+_CONTEXT_LIMITS = {"name": 60, "about": 160}
 
 NO_INFO_REPLY = (
     "No business information is available. Say our office team will call back "
@@ -45,6 +60,15 @@ class AgentProfile:
     limitations: str = ""
     ending: str = ""
     business_info: str = ""
+    # The voice for this call; empty or None keeps the worker's own setting.
+    speaker: str = ""
+    pace: float | None = None
+    language: str = ""
+    # Who the call is with and what it is about, when Django knows.
+    caller_name: str = ""
+    about: str = ""
+    # Whether the transcript may be sent to Django when the call ends.
+    keep_transcript: bool = False
 
     @property
     def is_empty(self) -> bool:
@@ -74,8 +98,53 @@ def parse_profile(metadata: str | None) -> AgentProfile | None:
         else str(raw.get(name) or "").strip()[:limit]
         for name, limit in _LIMITS.items()
     }
-    profile = AgentProfile(**fields)
+    voice = raw.get("voice") if isinstance(raw.get("voice"), dict) else {}
+    context = raw.get("context") if isinstance(raw.get("context"), dict) else {}
+    try:
+        pace = float(voice["pace"]) if voice.get("pace") is not None else None
+    except (TypeError, ValueError):
+        pace = None
+    language = str(voice.get("language") or "")
+    profile = AgentProfile(
+        **fields,
+        speaker=str(voice.get("speaker") or "").strip().lower()[:40],
+        pace=min(max(pace, PACE_RANGE[0]), PACE_RANGE[1]) if pace else None,
+        language=language if language in LANGUAGES else "",
+        caller_name=" ".join(str(context.get("name") or "").split())[
+            : _CONTEXT_LIMITS["name"]
+        ],
+        about=" ".join(str(context.get("about") or "").split())[
+            : _CONTEXT_LIMITS["about"]
+        ],
+        keep_transcript=raw.get("transcript") is True,
+    )
     return None if profile.is_empty else profile
+
+
+def voice_for(settings: VoiceSettings, profile: AgentProfile | None) -> VoiceSettings:
+    """The worker's settings with this profile's voice choices applied.
+
+    A speaker that the configured TTS model does not have is ignored (and
+    logged), so a bad profile can never stop a call from being answered.
+    """
+    if profile is None:
+        return settings
+    tts, stt = settings.tts, settings.stt
+    if profile.speaker:
+        voices = MODEL_SPEAKER_COMPATIBILITY.get(tts.model, {}).get("all", ())
+        if profile.speaker in voices:
+            tts = replace(tts, speaker=profile.speaker)
+        else:
+            logger.warning(
+                "profile voice is not available; using the configured voice",
+                extra={"speaker": profile.speaker, "tts_model": tts.model},
+            )
+    if profile.pace:
+        tts = replace(tts, pace=profile.pace)
+    if profile.language:
+        tts = replace(tts, language=profile.language)
+        stt = replace(stt, language=profile.language)
+    return replace(settings, tts=tts, stt=stt)
 
 
 def profile_instructions(profile: AgentProfile | None) -> str:
@@ -85,6 +154,10 @@ def profile_instructions(profile: AgentProfile | None) -> str:
     lines = ["# This call"]
     if profile.agent_name:
         lines.append(f"- Your name is {profile.agent_name}.")
+    if profile.caller_name:
+        lines.append(f"- You are speaking with {profile.caller_name}.")
+    if profile.about:
+        lines.append(f"- They enquired about: {profile.about}")
     for label, value in (
         ("Purpose", profile.purpose),
         ("Goals", profile.objectives),

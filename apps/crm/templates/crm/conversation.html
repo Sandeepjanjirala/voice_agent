@@ -6,7 +6,7 @@
   <div>
     <p class="eyebrow"><a href="{% url 'conversations' %}">CONVERSATIONS</a></p>
     <h1>{{ call.get_direction_display }} call · {{ call.masked_number }}</h1>
-    <p class="muted">Started <time datetime="{{ call.created_at|date:'c' }}" data-local-time>{{ call.created_at|date:"j M Y, H:i" }}</time>{% if call.placed_by %} by {{ call.placed_by.get_username }}{% endif %}.</p>
+    <p class="muted">Started <time datetime="{{ call.created_at|date:'c' }}" data-local-time>{{ call.created_at|date:"j M Y, H:i" }}</time>{% if call.placed_by %} by {{ call.placed_by.get_username }}{% endif %}.{% if call.is_rehearsal %} Rehearsal: the approved test number stood in for the contact.{% endif %}</p>
   </div>
   <span class="tag{% if call.status == 'completed' or call.status == 'answered' %} good{% elif call.is_active %}{% else %} bad{% endif %}" id="call-status">{{ call.get_status_display }}</span>
 </section>
@@ -19,6 +19,31 @@
 
 <div class="grid-2">
   <div class="stack">
+    <section class="panel" id="result">
+      <div class="panel-head"><h2>Result</h2>{% if can_analyse %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="analyse"><button class="small" type="submit">{% if result and result.status == 'done' %}Analyse again{% else %}Analyse now{% endif %}</button></form>{% endif %}</div>
+      {% if result and result.status == 'done' %}
+        <p class="status-line"><span class="tag good" id="outcome">{{ result.get_outcome_display }}</span>{% if result.callback_requested %}<span class="tag draft">Call back {{ result.callback_when|default:"requested" }}</span>{% endif %}{% if result.opt_out_requested %}<span class="tag bad">Asked not to be called</span>{% endif %}</p>
+        <p id="summary" style="line-height:1.7;margin:0 0 12px">{{ result.summary }}</p>
+        {% if answers %}<dl class="facts-grid" id="answers">{% for label, value in answers %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% endif %}
+        <p class="help">Written by AI from the transcript on {{ result.analysed_at|date:"j M, H:i" }}. Check important details against the transcript.</p>
+      {% elif result and result.error %}
+        <p class="help" id="result-unavailable">{{ result.error }}</p>
+      {% elif call.is_active %}
+        <p class="help">The summary is made when the call ends.</p>
+      {% else %}
+        <p class="help" id="result-unavailable">Not analysed. A summary needs the transcript, which is kept only when the organisation chooses so in Privacy &amp; settings.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel" id="actions">
+      <div class="panel-head"><h2>What the system did</h2></div>
+      {% if actions %}
+      <ul class="timeline">{% for item in actions %}<li><span class="tag{% if item.status == 'done' %} good{% elif item.status == 'failed' %} bad{% endif %}">{{ item.get_status_display }}</span> {{ item.detail }}<small>{{ item.action }} · {{ item.created_at|date:"j M, H:i" }}</small></li>{% endfor %}</ul>
+      {% else %}
+      <p class="help">Nothing. Actions are carried out only after the call is analysed, and only those switched on for the employee.</p>
+      {% endif %}
+    </section>
+
     <section class="panel">
       <div class="panel-head"><h2>What happened</h2></div>
       <dl class="facts-grid">
@@ -29,31 +54,54 @@
         <dt>Talk time</dt><dd>{% if call.duration_seconds is None %}–{% else %}{{ call.duration_seconds|floatformat:0 }} seconds{% endif %}</dd>
         <dt>Phone network result</dt><dd>{% if call.sip_status_code %}{{ call.sip_status_code }} {{ call.sip_status }}{% else %}–{% endif %}</dd>
         <dt>Status reported by</dt><dd>{{ call.get_status_source_display }}</dd>
-      </dl>
-    </section>
-    <section class="panel">
-      <div class="panel-head"><h2>Conversation quality</h2></div>
-      <dl class="facts-grid">
-        <dt>Agent turns</dt><dd>{{ call.agent_turns|default_if_none:"–" }}</dd>
-        <dt>Caller turns</dt><dd>{{ call.user_turns|default_if_none:"–" }}</dd>
-        <dt>Interruptions</dt><dd>{{ call.interruptions|default_if_none:"–" }}</dd>
         <dt>Response time, median</dt><dd>{% if call.e2e_latency_p50 is None %}–{% else %}{{ call.e2e_latency_p50|floatformat:2 }} s{% endif %}</dd>
-        <dt>Response time, slowest</dt><dd>{% if call.e2e_latency_max is None %}–{% else %}{{ call.e2e_latency_max|floatformat:2 }} s{% endif %}</dd>
-        <dt>Language model, first word</dt><dd>{% if call.llm_ttft_p50 is None %}–{% else %}{{ call.llm_ttft_p50|floatformat:2 }} s{% endif %}</dd>
-        <dt>Voice, first sound</dt><dd>{% if call.tts_ttfb_p50 is None %}–{% else %}{{ call.tts_ttfb_p50|floatformat:2 }} s{% endif %}</dd>
+        <dt>Turns</dt><dd>{{ call.agent_turns|default_if_none:"–" }} by the employee, {{ call.user_turns|default_if_none:"–" }} by the person, {{ call.interruptions|default_if_none:"0" }} interruptions</dd>
       </dl>
-      <p class="help">These come from the voice worker's report. No recording, transcript or summary is stored yet.</p>
     </section>
+
+    {% if transcript %}
+    <section class="panel" id="transcript">
+      <div class="panel-head"><h2>Transcript</h2><span class="help">Numbers masked</span></div>
+      <ol class="transcript">{% for turn in transcript.turns %}<li class="{{ turn.role }}"><b>{% if turn.role == 'assistant' %}AI employee{% else %}Person{% endif %}</b>{{ turn.text }}</li>{% endfor %}</ol>
+    </section>
+    {% endif %}
   </div>
+
   <div class="stack">
     <section class="panel">
       <div class="panel-head"><h2>Belongs to</h2></div>
       <dl class="facts-grid">
         <dt>Campus</dt><dd>{{ call.campus.name|default:"Whole organisation" }}</dd>
-        <dt>AI employee</dt><dd>{% if call.employee_version %}{{ call.employee_version.employee.name }}, version {{ call.employee_version.number }}{% else %}None: this call used the Agent profile{% endif %}</dd>
+        <dt>AI employee</dt><dd id="call-employee">{% if call.employee_version %}{{ call.employee_version.employee.name }}, version {{ call.employee_version.number }}{% else %}None: this call used the Agent profile{% endif %}</dd>
+        <dt>Person</dt><dd>{% if call.contact %}<a href="{% url 'contact-detail' call.contact.pk %}">{{ call.contact.name }}</a>{% elif call.is_rehearsal %}The test number, standing in for the contact{% else %}Not known{% endif %}</dd>
         <dt>Lead</dt><dd>{% if call.lead %}<a href="{% url 'lead-detail' call.lead.pk %}">{{ call.lead.subject }}</a>{% else %}–{% endif %}</dd>
+        <dt>Recording</dt><dd>Not available</dd>
       </dl>
     </section>
+    {% if snapshot %}
+    <details class="panel" id="snapshot">
+      <summary><b>What the employee was given</b></summary>
+      <p class="help">Fixed when the call started. Later changes to the employee do not change it.</p>
+      <dl class="facts-grid">
+        <dt>Version</dt><dd>{{ snapshot.employee.name }}, version {{ snapshot.employee.version }}</dd>
+        <dt>Opening line</dt><dd>{{ snapshot.profile.greeting }}</dd>
+        <dt>Purpose</dt><dd>{{ snapshot.profile.purpose }}</dd>
+        <dt>Goals</dt><dd>{{ snapshot.profile.objectives }}</dd>
+        <dt>Voice</dt><dd>{{ voice.speaker|default:"default" }}, speed {{ voice.pace|default:"1.0" }}{% if voice.language %}, {{ voice.language }}{% endif %}</dd>
+        <dt>Knowledge</dt><dd>{% if snapshot.profile.business_info %}{{ snapshot.profile.business_info|length }} characters for {{ snapshot.campus|default:"the organisation" }}{% else %}None{% endif %}</dd>
+        <dt>Actions allowed</dt><dd>{{ snapshot.actions|join:", "|default:"None" }}</dd>
+      </dl>
+    </details>
+    {% endif %}
+    {% if can_create_lead %}
+    <form method="post" class="panel" id="create-lead">{% csrf_token %}<input type="hidden" name="action" value="create_lead">
+      <div class="panel-head"><h2>Unknown caller</h2></div>
+      <div class="field"><label for="lead-name">Caller's name</label><input type="text" id="lead-name" name="name" maxlength="120" required></div>
+      <div class="field"><label for="lead-subject">What they called about</label><input type="text" id="lead-subject" name="subject" maxlength="160" required></div>
+      <button class="small" type="submit">Add as a lead</button>
+      <p class="help">Their number is copied from this call without being shown.</p>
+    </form>
+    {% endif %}
     <form method="post" class="panel">{% csrf_token %}
       <div class="panel-head"><h2>Staff notes</h2></div>
       <div class="field"><label for="call-notes" class="visually-hidden">Notes about this call</label><textarea id="call-notes" name="notes" rows="5" maxlength="2000">{{ call.notes }}</textarea><p class="help">Do not write full phone numbers here.</p></div>

@@ -7,8 +7,10 @@ This is a standalone process, separate from Django:
     uv run voice_agent/agent.py start          # production mode
 
 Inbound phone callers arrive as SIP participants through a LiveKit dispatch
-rule (Phase 2, see apps/telephony). A job whose metadata carries a dial
-request places one outbound test call instead (see voice_agent/outbound.py).
+rule (Phase 2, see apps/telephony). With INBOUND_CONTEXT_URL set, the worker
+asks Django which published AI employee answers the dialled number (see
+voice_agent/inbound.py). A job whose metadata carries a dial request places
+one outbound test call instead (see voice_agent/outbound.py).
 """
 
 import logging
@@ -18,10 +20,11 @@ from livekit.agents import AgentServer, JobContext, cli, room_io
 
 from voice_agent.assistant import TeluguAssistant, greet
 from voice_agent.config import PROJECT_ROOT, ConfigError, load_settings
+from voice_agent.inbound import run_inbound_call
 from voice_agent.observability import attach_session_observers, configure_logging
 from voice_agent.outbound import parse_dial_request, run_outbound_call
 from voice_agent.pipeline import build_audio_input, build_session
-from voice_agent.profile import parse_profile
+from voice_agent.profile import parse_profile, voice_for
 from voice_agent.telephony import log_callers
 
 logger = logging.getLogger("voice_agent")
@@ -49,12 +52,17 @@ async def entrypoint(ctx: JobContext) -> None:
     if dial is not None:
         await run_outbound_call(ctx, settings, dial, profile)
         return
+    # Phone calls into a routed number take their employee from Django.
+    if settings.inbound_context_url:
+        await run_inbound_call(ctx, settings, profile)
+        return
 
-    session = build_session(settings)
-    attach_session_observers(session, settings, session_id=ctx.room.name)
+    voice = voice_for(settings, profile)
+    session = build_session(voice)
+    attach_session_observers(session, voice, session_id=ctx.room.name)
 
     await session.start(
-        agent=TeluguAssistant(settings, profile),
+        agent=TeluguAssistant(voice, profile),
         room=ctx.room,
         room_options=room_io.RoomOptions(audio_input=build_audio_input(settings)),
     )
@@ -62,7 +70,7 @@ async def entrypoint(ctx: JobContext) -> None:
     log_callers(ctx.room)
 
     # Speak first, but only once the room is connected (see greet()).
-    greet(session, settings, profile=profile)
+    greet(session, voice, profile=profile)
 
 
 if __name__ == "__main__":

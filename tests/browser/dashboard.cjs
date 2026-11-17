@@ -47,11 +47,10 @@ async function noSidewaysScroll(page, label) {
       await noSidewaysScroll(page, label);
     }
 
-    // A planned module says so and offers nothing to click that does nothing.
+    // No section of the sidebar is a placeholder any more.
+    assert.equal(await page.locator('.side-nav a.soon').count(), 0);
     await page.goto(`${BASE}/campaigns/`);
-    await page.getByText('Not built yet').waitFor();
-    assert.equal(await page.locator('main button, main form').count(), 0);
-    await page.screenshot({ path: 'browser-artifacts/dashboard-planned-module.png', fullPage: true });
+    assert.equal(await page.getByText('Not built yet').count(), 0);
 
     // Hire wizard: an example fills the brief and picks its kind of call.
     await page.locator('.pagebar').getByRole('link', { name: 'Hire an employee' }).click();

@@ -13,6 +13,8 @@ secure trunk authentication. Nothing is deployed. See [docs/ROADMAP.md](docs/ROA
 | :--- | :--- |
 | [docs/PROGRESS.md](docs/PROGRESS.md) | Dashboard build: what each milestone delivered and how it was checked |
 | [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) | Feature-by-feature comparison with the reference product, and what is still missing |
+| [docs/CONTACT_KEYS.md](docs/CONTACT_KEYS.md) | Backing up, recovering and rotating the keys that protect stored phone numbers |
+| [docs/INBOUND.md](docs/INBOUND.md) | Inbound routing, call lifecycle, and the transfer design |
 | [docs/OUTBOUND_TEST.md](docs/OUTBOUND_TEST.md) | The first real call: one outbound test call to your own mobile |
 | [docs/VOBIZ_SETUP.md](docs/VOBIZ_SETUP.md) | Step-by-step account, number and trunk setup for the first real inbound call |
 | [docs/PHASE2_IMPLEMENTATION.md](docs/PHASE2_IMPLEMENTATION.md) | Inbound telephony integration: what was built, verified, and what is not yet proven |
@@ -198,6 +200,20 @@ manager. Calling stored contacts is switched off (`CONTACT_DIALING_ENABLED` in
 `config/settings.py`): calls go only to `OUTBOUND_TEST_ALLOWED_NUMBER`. Use made-up
 contacts until real data is authorised.
 
+### Calling channels, campaigns and results
+
+- **Numbers & channels**: business lines, each with a campus and the published
+  employee that answers it. Inbound calls stay off until the SIP trunk can be
+  authenticated; see [docs/INBOUND.md](docs/INBOUND.md).
+- **Campaigns** and **Instant leads** run as dry runs: they show who would be
+  called and when, and dial nobody. Instant leads arrive at
+  `POST /api/intake/<source id>/` with the source's `X-Lead-Secret`.
+- **Knowledge**: facts and rules per campus, given to each call.
+- After a call, **Analyse now** (or `manage.py analyse_calls --apply` from a
+  scheduled task) writes the summary and carries out the employee's permitted
+  actions. It needs transcripts, which are off until chosen under Privacy &
+  settings.
+
 ## Inbound telephony
 
 These commands buy nothing and place no call. The first three change nothing:
@@ -335,6 +351,7 @@ Remove-Item Env:TEST_DATABASE_URL
 .\.venv\Scripts\python.exe -m tests.browser.dashboard_server   # window 1
 node tests/browser/dashboard.cjs                               # window 2
 node tests/browser/crm.cjs                                     # window 2, same server
+node tests/browser/calling.cjs                                 # after restarting the server
 
 # Browser: real Chromium and Django, simulated LiveKit, fake numbers
 .\.venv\Scripts\python.exe -m tests.browser.calls_server   # window 1; Ctrl+C when done
@@ -375,6 +392,7 @@ apps/telephony/       telephony: trunk planning, outbound calls, call records, c
 apps/workforce/       AI employees: hire wizard, LLM drafting, draft editor, dashboard home
 apps/tenancy/         organisations, campuses, roles and scope, access log
 apps/crm/             encrypted contacts, leads, follow-ups, import, reports, retention
+apps/calling/         numbers, inbound routing, campaigns, instant leads, call results
 scenarios/            proposed scenarios that are not yet run in CI
 scripts/              latency_report.py, llm_bakeoff.py
 tests/                django/, voice/, test_process_boundary.py

@@ -49,6 +49,8 @@ def create(scope, campus, *, name: str, phone: str, **fields) -> Contact:
     Raises InvalidPhoneError or DuplicateContactError."""
     number = normalize(phone)
     lookup = crypto.lookup(number)
+    # A lead source has no signed-in person behind it.
+    actor = scope.user if getattr(scope.user, "is_authenticated", False) else None
     existing = Contact.objects.filter(
         organisation=scope.organisation, phone_lookup=lookup
     ).first()
@@ -56,7 +58,7 @@ def create(scope, campus, *, name: str, phone: str, **fields) -> Contact:
         raise DuplicateContactError(existing)
     if fields.get("consent", Contact.Consent.UNKNOWN) != Contact.Consent.UNKNOWN:
         fields.setdefault("consent_at", timezone.now())
-        fields.setdefault("consent_by", scope.user)
+        fields.setdefault("consent_by", actor)
     try:
         with transaction.atomic():
             contact = Contact.objects.create(
@@ -66,7 +68,7 @@ def create(scope, campus, *, name: str, phone: str, **fields) -> Contact:
                 phone_encrypted=crypto.encrypt(number),
                 phone_lookup=lookup,
                 phone_masked=mask_phone(number),
-                created_by=scope.user,
+                created_by=actor,
                 **fields,
             )
     except IntegrityError:

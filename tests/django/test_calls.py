@@ -737,7 +737,7 @@ def test_signed_report_is_applied_without_csrf(gateway) -> None:
         ({"timestamp": "not-a-time"}, 403),
         ({"raw": b"not json"}, 400),
         ({"raw": b"[1, 2]"}, 400),
-        ({"raw": b"{" + b" " * 5000 + b"}"}, 413),
+        ({"raw": b"{" + b" " * 70_000 + b"}"}, 413),
     ],
 )
 def test_bad_reports_are_refused(gateway, kwargs, status) -> None:

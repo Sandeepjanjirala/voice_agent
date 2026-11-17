@@ -41,3 +41,38 @@ def normalize(raw) -> str:
     elif not 8 <= len(digits) <= 15 or digits.startswith("0"):
         raise InvalidPhoneError("That is not a valid international number.")
     return f"+{digits}"
+
+
+_INDIAN_LINE = re.compile(r"[1-9]\d{9}")
+
+
+def normalize_line(raw) -> str:
+    """E.164 for any phone line, landlines included, e.g. +914012345678.
+
+    Contacts must be mobiles (normalize); business lines and inbound callers
+    may be landlines. Indian numbers are ten digits after +91, written with
+    the +91, a leading 0, or as the bare ten digits.
+    """
+    text = str(raw or "").strip()
+    if not text:
+        raise InvalidPhoneError("The phone number is empty.")
+    if re.search(r"[^\d\s+().\-]", text):
+        raise InvalidPhoneError("A phone number has only digits, spaces and +.")
+    international = text.startswith("+") or text.startswith("00")
+    digits = re.sub(r"\D", "", text)
+    if text.startswith("00"):
+        digits = digits[2:]
+    if not international:
+        if len(digits) == 11 and digits.startswith("0"):
+            digits = digits[1:]
+        if len(digits) == 12 and digits.startswith(DEFAULT_COUNTRY):
+            digits = digits[2:]
+        if not _INDIAN_LINE.fullmatch(digits):
+            raise InvalidPhoneError("Enter the number with its area code, or with +.")
+        return f"+{DEFAULT_COUNTRY}{digits}"
+    if digits.startswith(DEFAULT_COUNTRY):
+        if not _INDIAN_LINE.fullmatch(digits[2:]):
+            raise InvalidPhoneError("That is not a valid Indian number.")
+    elif not 8 <= len(digits) <= 15 or digits.startswith("0"):
+        raise InvalidPhoneError("That is not a valid international number.")
+    return f"+{digits}"

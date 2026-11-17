@@ -123,6 +123,9 @@ class VoiceSettings:
     tts: TTSSettings
     llm: LLMSettings
     turn: TurnSettings
+    # Where an inbound phone call asks Django which AI employee answers it.
+    # Unset keeps inbound calls on the job's own profile, as before.
+    inbound_context_url: str | None = None
 
     def describe(self) -> dict[str, object]:
         """Selected models and tuning, safe to log (no secrets, no prompts)."""
@@ -343,7 +346,16 @@ def _call_events_settings(env: _Env) -> dict[str, str | None]:
             f"CALL_EVENTS_SECRET must be at least {MIN_CALL_EVENTS_SECRET_LENGTH} "
             "characters"
         )
-    return {"call_events_url": url, "call_events_secret": secret}
+    inbound = env.str("INBOUND_CONTEXT_URL")
+    if inbound and not inbound.startswith(("http://", "https://")):
+        raise ConfigError("INBOUND_CONTEXT_URL must start with http:// or https://")
+    if inbound and not secret:
+        raise ConfigError("INBOUND_CONTEXT_URL needs CALL_EVENTS_SECRET to sign with")
+    return {
+        "call_events_url": url,
+        "call_events_secret": secret,
+        "inbound_context_url": inbound,
+    }
 
 
 def load_settings(env: Mapping[str, str] | None = None) -> VoiceSettings:

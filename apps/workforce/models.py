@@ -124,3 +124,44 @@ class EmployeeVersion(models.Model):
 
     def __str__(self) -> str:
         return f"{self.employee.name} v{self.number}"
+
+
+class KnowledgeItem(models.Model):
+    """A fact the AI employees may state, or a rule they must follow.
+
+    An item with a campus is used only on that campus's calls; one without is
+    used on every call of the organisation. Changes apply from the next call.
+    """
+
+    class Kind(models.TextChoices):
+        FACT = "fact", "Fact it may state"
+        RULE = "rule", "Rule it must follow"
+
+    organisation = models.ForeignKey(
+        "tenancy.Organisation", on_delete=models.CASCADE, related_name="knowledge"
+    )
+    campus = models.ForeignKey(
+        "tenancy.Campus",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="knowledge",
+    )
+    kind = models.CharField(max_length=4, choices=Kind.choices, default=Kind.FACT)
+    title = models.CharField(max_length=80)
+    text = models.TextField(max_length=600)
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("kind", "title")
+
+    def __str__(self) -> str:
+        return self.title

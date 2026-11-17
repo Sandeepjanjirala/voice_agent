@@ -45,6 +45,16 @@
         <select id="f-language" name="language">{% for value, label in form.language.field.choices %}<option value="{{ value }}"{% if form.language.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
       </div>
     </div>
+    <div class="two-up">
+      <div class="field">
+        <label for="f-speaker">Voice</label>
+        <select id="f-speaker" name="voice_speaker"><option value="">The installation's default voice</option>{% for value, label in voices %}<option value="{{ value }}"{% if config.voice.speaker == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      </div>
+      <div class="field">
+        <label for="f-pace">Speaking speed</label>
+        <select id="f-pace" name="voice_pace">{% for value, label in paces %}<option value="{{ value }}"{% if config.voice.pace|stringformat:".1f" == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      </div>
+    </div>
     {% if campuses %}
     <fieldset class="field">
       <legend>Campuses it works for</legend>
@@ -102,6 +112,11 @@
       <legend>How closely it follows the script</legend>
       <div class="dial">{% for level in strictness_levels %}<label><input type="radio" name="strictness" value="{{ level }}"{% if level == config.strictness %} checked{% endif %}><span>{{ level }}</span></label>{% endfor %}</div>
       <div class="dial-ends"><span>Flexible</span><span>Strict</span></div>
+    </fieldset>
+    <fieldset class="field" id="actions">
+      <legend>What the system may do after a call</legend>
+      {% for key, info in actions.items %}<label class="check-label"><input type="checkbox" name="action" value="{{ key }}"{% if key in config.actions %} checked{% endif %}> <span>{{ info.0 }}<small class="help" style="display:block;margin:2px 0 0">{{ info.1 }}</small></span></label>{% endfor %}
+      <p class="help">Carried out by the system after the call, from what the call summary says, and logged on the call. A request not to be called again is always honoured.</p>
     </fieldset>
     <div class="form-actions">
       <p class="fine">Saving changes the draft only. Nothing changes for callers until you publish.</p>

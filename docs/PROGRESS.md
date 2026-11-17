@@ -8,8 +8,8 @@ See [FEATURE_MATRIX.md](FEATURE_MATRIX.md) for the comparison that drives it.
 | A | Dashboard shell, navigation, Hire Employee wizard | Done, 16 Nov 2026 |
 | B | Employee configuration, publishing, voice testing, versions | Done, 16 Nov 2026 (two items moved to D, see below) |
 | C | Campuses, leads, conversations, analytics | Done, 16 Nov 2026 |
-| D | Employees on outbound calls, inbound routing, authorised campaigns | Started: outbound test call with a published version works; inbound routing and campaigns are next |
-| E | Knowledge, API actions, integrations, production readiness | Not started |
+| D | Employees on outbound calls, inbound routing, authorised campaigns | Done, 17 Nov 2026 (dry-run and switched-off parts listed below) |
+| E | Knowledge, API actions, integrations, production readiness | Next; knowledge entries were brought forward into D |
 
 ## Milestone A
 
@@ -190,26 +190,115 @@ access log and a retention policy.
   `CONTACT_LOOKUP_KEY`. A local pair was generated into `.env.local`.
 - The test settings use a fast password hasher; the suite runs in about 10 seconds.
 
-## Milestone D (started)
+## Milestone D
 
-**Works now.** On a published, switched-on employee, **Call the test number**
-places one real call to `OUTBOUND_TEST_ALLOWED_NUMBER` with that version's
-script. The call record names the employee version, and the call page follows
-it live (ringing, answered) and can end it. Later edits to the draft do not
-reach the call. Nothing else can be dialled from the dashboard.
+**What you can do now**
 
-Checked with the fake gateway in `pytest` and with a simulated line in
-Chromium. **Not checked with a real phone call:** that needs you to press the
-button.
+- Give each AI employee its own voice, speaking speed, language and approved
+  actions; publish them as a version.
+- Add facts and rules under **Knowledge**, for every campus or one. Each call
+  is given its campus's items from the next call, without publishing again.
+- On a lead, **Call the test number** rings the approved test number with a
+  published employee, as if calling that contact. The contact is never dialled.
+- After a call, see the AI summary, the outcome, the answers to the employee's
+  questions, the masked transcript (if your organisation keeps transcripts)
+  and every action the system took or declined, with the reason.
+- Add business lines under **Numbers & channels**, each with a campus and the
+  employee that answers it, and see inbound readiness. **Incoming calls** shows
+  which number rings whom and every inbound call.
+- Create a **campaign** for one campus and one published employee, add
+  contacts with permission to call, record the agreement, and run a dry run
+  that shows who would be called, when each attempt would be, and who is
+  skipped and why.
+- Create an **instant-lead source**: a private address and secret for a
+  website form. Each lead it receives becomes a consented contact and a lead,
+  queued for a call; a dry run shows when it would be called.
 
-**Still to do in D**
+**How a call is put together**
 
-1. Inbound: a routing table (which published employee answers which number),
-   independent of the provider. It stays inactive until the SIP trunk can be
-   authenticated securely.
-2. Campaigns and instant leads, in dry-run mode until wider dialling is authorised.
-3. Per-employee voice (speaker and pace), which needs a voice-worker change.
-4. Linking a call to a lead when it is placed from one.
+`workforce.publishing.plan_call` builds every call from the employee's
+published version, the campus's knowledge, the organisation's name and the
+lead, and returns a snapshot. The call record stores that snapshot once and
+refuses any later change to it, so editing a draft can never alter a call in
+progress or rewrite what a past call was told. A draft or paused employee is
+never put on a call.
+
+**Voice worker changes** (all opt-in; a job without the new fields behaves as
+before, and the existing worker tests are unchanged)
+
+- `profile.py`: reads the profile's voice (speaker, pace, language), who the
+  call is with, and whether the transcript may be reported. `voice_for()`
+  applies the voice per call; an unknown speaker falls back to the configured
+  one and is logged.
+- `call_reporting.py`: when allowed, the "ended" report carries the transcript,
+  with number-like text masked and its size capped.
+- `inbound.py` (new): with `INBOUND_CONTEXT_URL` set, an inbound call asks
+  Django, by a signed request, which employee answers the dialled number, then
+  reports the call's lifecycle and deletes the room at the end.
+
+**What runs where**
+
+| Piece | Code |
+| :--- | :--- |
+| Numbers, campaigns, queue, sources, results, actions | `apps/calling` (new) |
+| Inbound routing and caller recognition | `apps/calling/inbound.py`, `POST /api/telephony/inbound-context/` |
+| Lead intake API | `POST /api/intake/<source id>/`, header `X-Lead-Secret` |
+| Dry runs | `apps/calling/queue.py` |
+| Summary, outcome and actions | `apps/calling/analysis.py`; `manage.py analyse_calls [--apply]` |
+| Knowledge | `apps/workforce/knowledge.py`, `KnowledgeItem` |
+
+**Checks**
+
+| Check | Result |
+| :--- | :--- |
+| `pytest` on SQLite | 660 passed (598 before this milestone's tests) |
+| `pytest` on PostgreSQL 17.11 | 660 passed, in a disposable container; 13 migrations of the five apps apply on a clean database |
+| `ruff check`, `ruff format --check` | Clean, ruff 0.17.5 |
+| `manage.py check`, `makemigrations --check` | Clean; four new migrations applied to the local database, your 7 call records kept |
+| Worker tests | 200 passed, 18 of them new: voice per call, context, transcript masking and size, inbound lookup client |
+| Employee version on calls | Draft edits after publishing never reach a call; the snapshot cannot be changed; paused and draft employees are refused |
+| Isolation | Campaigns, sources, numbers, knowledge and calls of another organisation or campus are 404; campus staff can view but not manage; posted employees and campuses from outside are rejected |
+| Chromium | `calling.cjs` (new) passes the whole flow above, desktop and 390 px; `dashboard.cjs`, `crm.cjs`, `calls.cjs` and `voice.cjs` still pass; no server errors |
+| `uv.lock` | Updated with `py -3.12 -m uv lock`: only `cryptography 46.0.7` added; `uv sync --locked --dry-run` matches the environment |
+
+**Not checked, or not possible here**
+
+- No real call was placed. The phone test, rehearsal and inbound paths were
+  run against the fake LiveKit gateway and a simulated line.
+- The voice worker was not run against LiveKit with the new profile fields.
+  The first real check is a rehearsal call: you should hear the chosen voice.
+- No LLM was called for analysis in tests: the summary used a canned answer.
+
+**Switched off or dry-run only, on purpose**
+
+- Calling stored contacts (`CONTACT_DIALING_ENABLED = False`). Campaigns and
+  instant leads run as dry runs; real calls go only to the approved test number.
+- Inbound SIP: routes are ready, but the trunk is not created until it can be
+  authenticated (see [INBOUND.md](INBOUND.md)).
+- Transfer to a person: designed in [INBOUND.md](INBOUND.md), not built.
+- Recordings: not available (needs LiveKit egress and storage).
+
+**Changed behaviour to know about**
+
+- An employee now introduces itself with its organisation's name (and campus),
+  not the business name on the Agent profile page. Knowledge entries replace
+  the Agent profile's business information once any exist.
+- Business lines and inbound callers may be landlines (`phones.normalize_line`);
+  contacts must still be mobiles.
+- Worker reports may be up to 64 kB, to carry a transcript.
+- New setting: `INBOUND_CONTEXT_URL` (worker), documented in `.env.example`.
+
+**Decisions for you**
+
+1. **Transcripts** are off by default. Summaries, outcomes and automatic
+   follow-ups need them: choose "Use it for the call summary, then delete it"
+   or "Keep the transcript" under Privacy & settings.
+2. **`livekit-protocol 1.1.31` is yanked upstream** (uv warns: chat history is
+   not uploaded to LiveKit observability with agents 1.7.0 to 1.8.8). I did not
+   upgrade it, as asked. Upgrading `livekit-agents` is a separate, tested step.
+3. **Scheduled jobs**: `analyse_calls --apply` and `retention --apply` need a
+   scheduler. A Windows Task Scheduler entry works for one server; Celery and
+   Redis are proposed for Milestone E, with a real call queue.
 
 ## Run the browser check
 
@@ -218,6 +307,8 @@ button.
 node tests/browser/dashboard.cjs                               # window 2
 node tests/browser/crm.cjs                                     # window 2, same server
 ```
+
+For Milestone D, restart the server and run `node tests/browser/calling.cjs`.
 
 The server uses a disposable database, a canned LLM answer, a simulated phone
 line and made-up people. Restart it before running the pair again.

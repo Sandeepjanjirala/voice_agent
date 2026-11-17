@@ -25,7 +25,12 @@ class OrganisationSetupForm(forms.Form):
 class OrganisationForm(forms.ModelForm):
     class Meta:
         model = Organisation
-        fields = ("name",)
+        fields = ("name", "transcripts")
+        labels = {"transcripts": "What the AI employee hears on a call"}  # noqa: RUF012
+        help_texts = {  # noqa: RUF012
+            "transcripts": "Needed for call summaries and outcomes. Numbers in it "
+            "are masked. Recordings are not available.",
+        }
 
 
 class CampusForm(forms.ModelForm):
@@ -106,9 +111,10 @@ class MemberEditForm(_MemberFields):
 class RetentionForm(forms.ModelForm):
     class Meta:
         model = RetentionPolicy
-        fields = ("contact_days", "call_days", "audit_days")
+        fields = ("contact_days", "call_days", "transcript_days", "audit_days")
         labels = {  # noqa: RUF012
             "contact_days": "Erase inactive contacts after (days)",
             "call_days": "Delete call records after (days)",
+            "transcript_days": "Delete kept transcripts after (days)",
             "audit_days": "Delete access-log entries after (days)",
         }

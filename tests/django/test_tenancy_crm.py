@@ -1375,7 +1375,12 @@ def _age(model, pk, days, *fields):
 
 def test_retention_erases_only_what_the_policy_covers(world):
     policy = retention.policy_for(world.org_a)
-    assert retention.preview(world.org_a) == {"contacts": 0, "calls": 0, "audit": 0}
+    assert retention.preview(world.org_a) == {
+        "contacts": 0,
+        "calls": 0,
+        "transcripts": 0,
+        "audit": 0,
+    }
 
     old = world.contact(world.admin_a, world.north, number=ASHA, name="Old")
     busy = world.lead(world.admin_a, world.north, number=RAVI).contact
@@ -1393,12 +1398,18 @@ def test_retention_erases_only_what_the_policy_covers(world):
     old_events = AuditEvent.objects.filter(organisation=world.org_a).count()
 
     # With every period at 0, nothing is due.
-    assert retention.preview(world.org_a) == {"contacts": 0, "calls": 0, "audit": 0}
+    assert retention.preview(world.org_a) == {
+        "contacts": 0,
+        "calls": 0,
+        "transcripts": 0,
+        "audit": 0,
+    }
     policy.contact_days, policy.call_days, policy.audit_days = 365, 365, 365
     policy.save()
     assert retention.preview(world.org_a) == {
         "contacts": 1,
         "calls": 1,
+        "transcripts": 0,
         "audit": old_events,
     }
     out = io.StringIO()
@@ -1434,6 +1445,7 @@ def test_only_admins_set_and_apply_retention(world):
             "action": "retention",
             "keep-contact_days": "30",
             "keep-call_days": "0",
+            "keep-transcript_days": "30",
             "keep-audit_days": "0",
         },
         follow=True,
@@ -1450,9 +1462,12 @@ def test_only_admins_set_and_apply_retention(world):
     assert "Retention applied: 1 contacts erased" in body(response)
     assert AuditEvent.objects.get(action="retention.applied").actor_name == "admin-a"
 
-    admin.post(reverse("settings"), {"action": "organisation", "org-name": "Org A2"})
+    admin.post(
+        reverse("settings"),
+        {"action": "organisation", "org-name": "Org A2", "org-transcripts": "keep"},
+    )
     world.org_a.refresh_from_db()
-    assert world.org_a.name == "Org A2"
+    assert world.org_a.name == "Org A2" and world.org_a.transcripts == "keep"
 
 
 # --- phone test with a published employee version ---------------------------------------

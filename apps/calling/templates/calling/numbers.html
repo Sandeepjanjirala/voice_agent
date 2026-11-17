@@ -1,0 +1,62 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Numbers &amp; channels{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">SETUP</p>
+    <h1>Numbers &amp; channels</h1>
+    <p class="muted">Your business lines, the campus each belongs to, and which published AI employee answers it.</p>
+  </div>
+</section>
+{% include 'calling/_tabs.html' with tab='numbers' %}
+<p class="notice" role="note">Inbound calls stay switched off until the phone line (SIP trunk) can be authenticated securely. Routes set up here are used from the moment it is, with no further change.</p>
+
+<div class="grid-2">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Business lines</h2></div>
+      {% if rows %}
+      <div class="table-scroll"><table class="data" id="number-table">
+        <thead><tr><th>Number</th><th>Campus</th><th>Answered by</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td>{{ row.number.number }}{% if row.number.label %}<small>{{ row.number.label }}</small>{% endif %}</td>
+            <td>{{ row.number.campus.name|default:"Whole organisation" }}</td>
+            <td>{% if row.number.employee %}{{ row.number.employee.name }}{% if row.number.employee.live_version %} v{{ row.number.employee.live_version.number }}{% endif %}{% else %}–{% endif %}</td>
+            <td class="wrap">{% if row.problems %}<span class="tag draft">Not routed</span><small>{{ row.problems|join:" " }}</small>{% else %}<span class="tag good">Routed</span>{% endif %}</td>
+            <td>{% if manage %}<a href="{% url 'number-edit' row.number.pk %}">Edit</a>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}
+      <div class="empty-state"><strong>No numbers yet</strong>Add the business lines your provider gave you, then choose who answers each.</div>
+      {% endif %}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Outbound test line</h2></div>
+      {% if outbound.ready %}
+      <p class="status-line"><span class="tag good">Ready</span> Calls go only to the approved test number {{ outbound.number }}, from {{ outbound.caller_id }}.</p>
+      {% else %}
+      <p class="status-line"><span class="tag draft">Not ready</span> {{ outbound.reason|default:"The outbound test line is not set up." }}</p>
+      {% endif %}
+      <p class="help">Calls to stored contacts are switched off on this installation. Campaigns and instant leads run as dry runs.</p>
+    </section>
+  </div>
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Inbound readiness</h2></div>
+      {% include 'calling/_checks.html' %}
+      <p class="help">Checked from configuration only; nothing was sent to LiveKit or the provider.</p>
+    </section>
+    {% if manage %}
+    <form method="post" class="panel" novalidate>{% csrf_token %}
+      <div class="panel-head"><h2>Add a number</h2></div>
+      {% include 'dashboard/_fields.html' %}
+      <button class="primary small" type="submit">Add number</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,5 @@
+<ul class="plain-list checklist" id="diagnostics">
+  {% for item in checks %}
+  <li><span class="check{% if item.done %} done{% endif %}" aria-hidden="true"></span><span>{{ item.label }}<span class="visually-hidden"> ({% if item.done %}ready{% else %}not ready{% endif %})</span>{% if not item.done and item.help %}<small>{{ item.help }}</small>{% endif %}</span></li>
+  {% endfor %}
+</ul>

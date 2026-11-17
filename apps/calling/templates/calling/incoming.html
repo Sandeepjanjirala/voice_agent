@@ -1,0 +1,43 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Incoming calls{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">CALLING</p>
+    <h1>Incoming calls</h1>
+    <p class="muted">Calls to your numbers, who answered them, and who was calling, when they are a known contact.</p>
+  </div>
+</section>
+{% include 'calling/_tabs.html' with tab='inbound' %}
+<p class="notice" role="note">Inbound calling is switched off until the SIP trunk can be authenticated securely. {{ routed }} of {{ rows|length }} number{{ rows|length|pluralize }} ready to be answered when it is.</p>
+<div class="grid-2">
+  <section class="panel">
+    <div class="panel-head"><h2>Recent incoming calls</h2><a href="{% url 'conversations' %}?direction=inbound">All</a></div>
+    {% if calls %}
+    <div class="table-scroll"><table class="data" id="incoming-table">
+      <thead><tr><th>Started</th><th>Caller</th><th>Answered by</th><th>Result</th></tr></thead>
+      <tbody>
+        {% for call in calls %}
+        <tr><td><a href="{% url 'conversation-detail' call.pk %}">{{ call.created_at|date:"j M, H:i" }}</a></td><td>{% if call.contact %}{{ call.contact.name }}{% else %}Unknown caller{% endif %}<small>{{ call.masked_number }}</small></td><td>{% if call.employee_version %}{{ call.employee_version.employee.name }} v{{ call.employee_version.number }}{% else %}–{% endif %}</td><td>{{ call.get_status_display }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+    <div class="empty-state"><strong>No incoming calls yet</strong>They appear here once inbound calling is switched on.</div>
+    {% endif %}
+  </section>
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Which number rings whom</h2><a href="{% url 'numbers' %}">Manage</a></div>
+      {% if rows %}
+      <ul class="timeline" id="routes">{% for row in rows %}<li>{{ row.number.number }} → {% if row.number.employee %}{{ row.number.employee.name }}{% else %}nobody{% endif %}{% if row.problems %}<small>{{ row.problems|join:" " }}</small>{% else %}<small>Routed{% if row.number.campus %} for {{ row.number.campus.name }}{% endif %}</small>{% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="help">No numbers yet.</p>{% endif %}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Readiness</h2></div>
+      {% include 'calling/_checks.html' %}
+      <p class="help">Transfer to a person is designed but not built; see docs/INBOUND.md.</p>
+    </section>
+  </div>
+</div>
+{% endblock %}

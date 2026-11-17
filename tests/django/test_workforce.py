@@ -651,9 +651,19 @@ def test_a_publishable_script_reaches_the_worker_whole():
     payload = metadata[publishing.PROFILE_KEY]
     parsed = worker_profile.parse_profile(json.dumps(metadata))
     # Nothing was clamped on the way.
+    voice = payload.pop("voice")
     for field, value in payload.items():
         assert getattr(parsed, field) == value, field
-    assert parsed.business_name == "Test School" and parsed.business_info == "9-4"
+    assert (parsed.speaker, parsed.pace, parsed.language) == (
+        voice["speaker"],
+        voice["pace"],
+        voice["language"],
+    )
+    assert voice["language"] == "te-IN", "Telugu + English speaks Telugu"
+    # The employee speaks for its organisation. Without knowledge entries the
+    # facts still come from the Agent profile.
+    assert parsed.business_name == "Test Organisation"
+    assert parsed.business_info == "9-4"
     assert parsed.greeting == AI_DRAFT["greeting"]
     assert "2. Ask which class the child is joining." in parsed.objectives
     assert "Find out: Class, Preferred campus." in parsed.objectives
@@ -704,7 +714,7 @@ def test_publishing_creates_versions_and_calls_use_the_latest(staff_client):
         "published",
     )
     assert first.published_by.username == "head"
-    assert first.payload == publishing.worker_payload(employee.draft)
+    assert first.payload == publishing.worker_payload(employee.draft, "te-en")
     assert not publishing.has_changes(employee)
 
     # Editing the draft changes nothing that is published.

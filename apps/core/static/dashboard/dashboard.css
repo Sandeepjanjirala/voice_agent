@@ -166,6 +166,12 @@ blockquote.brief { margin: 0 0 12px; padding: 10px 14px; border-left: 3px solid 
 
 .eyebrow a { color: inherit; text-decoration: none; }
 .eyebrow a:hover { text-decoration: underline; }
+pre.code { background: #f4f7f3; border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 10px; }
+details.panel > summary { cursor: pointer; font-size: 14px; }
+.transcript { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 420px; overflow-y: auto; }
+.transcript li { font-size: 13.5px; line-height: 1.6; padding: 8px 12px; border-radius: 10px; background: #f1f5ed; max-width: 92%; overflow-wrap: anywhere; }
+.transcript li.user { background: #edf5f5; margin-left: auto; }
+.transcript b { display: block; font-size: 10.5px; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); }
 /* --- organisation, CRM and reports ------------------------------------------ */
 .side-org { margin: 0 8px 14px; padding: 10px 12px; border: 1px solid #244a41; border-radius: 10px; display: grid; gap: 2px; }
 .side-org-name { color: #fff; font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; }

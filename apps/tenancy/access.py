@@ -36,6 +36,11 @@ CAMPUS_STAFF_PERMISSIONS = frozenset(
         "reports.view",
         "employees.view",
         "campuses.view",
+        "campaigns.view",
+        "sources.view",
+        "numbers.view",
+        "knowledge.view",
+        "calls.analyse",
     }
 )
 ORG_ADMIN_PERMISSIONS = CAMPUS_STAFF_PERMISSIONS | frozenset(
@@ -48,6 +53,10 @@ ORG_ADMIN_PERMISSIONS = CAMPUS_STAFF_PERMISSIONS | frozenset(
         "optout.remove",
         "audit.view",
         "retention.manage",
+        "campaigns.manage",
+        "sources.manage",
+        "numbers.manage",
+        "knowledge.manage",
     }
 )
 PERMISSIONS = {

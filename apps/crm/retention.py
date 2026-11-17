@@ -1,5 +1,5 @@
 """Apply an organisation's retention policy: erase old contacts, delete old
-call records and old access-log entries. Run from the settings page or with
+call records, kept transcripts and access-log entries. Run from the settings page or with
 `manage.py retention`; both show what would happen before doing it."""
 
 from datetime import timedelta
@@ -7,6 +7,7 @@ from datetime import timedelta
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.calling.models import CallTranscript
 from apps.telephony.models import CallRecord
 from apps.tenancy import audit
 from apps.tenancy.models import AuditEvent, RetentionPolicy
@@ -27,6 +28,7 @@ def _due(organisation, now=None) -> dict:
     due = {
         "contacts": Contact.objects.none(),
         "calls": CallRecord.objects.none(),
+        "transcripts": CallTranscript.objects.none(),
         "audit": AuditEvent.objects.none(),
     }
     if policy.contact_days:
@@ -43,6 +45,11 @@ def _due(organisation, now=None) -> dict:
             organisation=organisation,
             created_at__lt=now - timedelta(days=policy.call_days),
         ).exclude(status__in=CallRecord.ACTIVE)
+    if policy.transcript_days:
+        due["transcripts"] = CallTranscript.objects.filter(
+            call__organisation=organisation,
+            created_at__lt=now - timedelta(days=policy.transcript_days),
+        )
     if policy.audit_days:
         due["audit"] = AuditEvent.objects.filter(
             organisation=organisation,
@@ -62,6 +69,8 @@ def apply(organisation, actor=None, now=None) -> dict[str, int]:
     for contact in list(due["contacts"]):
         contacts.erase(contact)
         counts["contacts"] += 1
+    counts["transcripts"] = due["transcripts"].count()
+    due["transcripts"].delete()
     counts["calls"] = due["calls"].count()
     due["calls"].delete()
     counts["audit"] = due["audit"].count()

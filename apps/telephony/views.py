@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 RECENT_CALLS = 20
 START_THROTTLE_SECONDS = 5
 EVENT_MAX_AGE_SECONDS = 300
-EVENT_MAX_BYTES = 4096
+# A report may carry a transcript (voice_agent/call_reporting.py).
+EVENT_MAX_BYTES = 65_536
 SIGNATURE_HEADER = "HTTP_X_CALL_SIGNATURE"
 TIMESTAMP_HEADER = "HTTP_X_CALL_TIMESTAMP"
 
@@ -191,6 +192,41 @@ def call_events(request):
         extra={"call_id": str(record.pk), "call_status": record.status},
     )
     return HttpResponse(status=204)
+
+
+@csrf_exempt  # Server-to-server; authenticated by the HMAC signature instead.
+@never_cache
+@require_POST
+def inbound_context(request):
+    """Which published AI employee answers an inbound call (voice_agent/inbound.py).
+
+    404 means the number is not routed: the worker then answers with its own
+    profile. The caller's number is used to recognise a known contact and is
+    never logged or returned.
+    """
+    secret = django_settings.CALL_EVENTS_SECRET
+    if not calls.reporting_configured():
+        return JsonResponse({"error": "Call reporting is not configured."}, status=503)
+    if len(request.body) > EVENT_MAX_BYTES:
+        return JsonResponse({"error": "Request too large."}, status=413)
+    if not _signature_valid(request, secret):
+        return JsonResponse({"error": "Invalid signature."}, status=403)
+    try:
+        payload = json.loads(request.body)
+    except ValueError:
+        return JsonResponse({"error": "Invalid JSON."}, status=400)
+    if not isinstance(payload, dict) or not isinstance(payload.get("room"), str):
+        return JsonResponse({"error": "Invalid request."}, status=400)
+    from apps.calling import inbound
+
+    metadata = inbound.answer(
+        room=payload["room"][:64],
+        called=str(payload.get("called") or ""),
+        caller=str(payload.get("caller") or ""),
+    )
+    if metadata is None:
+        return JsonResponse({"error": "This number is not routed."}, status=404)
+    return JsonResponse(metadata)
 
 
 @never_cache

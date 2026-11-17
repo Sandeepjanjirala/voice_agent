@@ -36,17 +36,17 @@ SECTIONS = (
     (
         "Calling",
         (
-            ("campaigns", "Campaigns", MEMBER),
-            ("instant", "Instant leads", MEMBER),
-            ("inbound", "Incoming calls", MEMBER),
+            ("campaigns", "Campaigns", "campaigns.view"),
+            ("instant", "Instant leads", "sources.view"),
+            ("inbound", "Incoming calls", "calls.view"),
             ("calls", "Phone calls", STAFF),
         ),
     ),
     (
         "Setup",
         (
-            ("numbers", "Numbers & channels", MEMBER),
-            ("knowledge", "Knowledge & integrations", MEMBER),
+            ("numbers", "Numbers & channels", "numbers.view"),
+            ("knowledge", "Knowledge", "knowledge.view"),
             ("settings", "Privacy & settings", MEMBER),
         ),
     ),
@@ -66,81 +66,15 @@ PARENTS = {
     "member-add": "campuses",
     "member-edit": "campuses",
     "audit-log": "settings",
+    "campaign-new": "campaigns",
+    "campaign-detail": "campaigns",
+    "source-new": "instant",
+    "source-detail": "instant",
+    "number-edit": "numbers",
+    "knowledge-edit": "knowledge",
 }
 
-MODULES = {
-    "campaigns": {
-        "title": "Campaigns",
-        "lead": "Work through an authorised list inside calling hours, with retries.",
-        "milestone": "D",
-        "today": (),
-        "planned": (
-            "Upload a contact list and map its columns",
-            "Calling window, days, retries and do-not-call checks",
-            "Pause, resume and export results",
-        ),
-        "note": "Calls stay limited to the one approved test number until "
-        "wider outbound calling is explicitly authorised.",
-    },
-    "instant": {
-        "title": "Instant leads",
-        "lead": "Call a new enquiry within moments of it arriving.",
-        "milestone": "D",
-        "today": (),
-        "planned": (
-            "A private intake address for each employee",
-            "Call delay, calling window and retry rules",
-            "A queue of leads waiting for a call",
-        ),
-        "note": "Calls stay limited to the one approved test number until "
-        "wider outbound calling is explicitly authorised.",
-    },
-    "inbound": {
-        "title": "Incoming calls",
-        "lead": "An employee that answers your number, takes messages and "
-        "lists missed callers.",
-        "milestone": "D",
-        "today": (),
-        "planned": (
-            "Choose which employee answers which number",
-            "Messages from callers and missed-caller list",
-            "Opening hours",
-        ),
-        "note": "Inbound routing stays off until the SIP trunk can be "
-        "authenticated securely.",
-    },
-    "numbers": {
-        "title": "Numbers & channels",
-        "lead": "The phone lines your employees call from and answer on.",
-        "milestone": "D",
-        "today": (
-            (
-                "calls",
-                "Phone calls shows the outbound test line and whether it is ready.",
-            ),
-        ),
-        "planned": (
-            "Line status for outbound and inbound",
-            "Assign a line to an employee",
-        ),
-    },
-    "knowledge": {
-        "title": "Knowledge & integrations",
-        "lead": "The facts employees may state, and the systems they may act on.",
-        "milestone": "E",
-        "today": (
-            (
-                "agent",
-                "Agent profile holds the business facts used on calls today.",
-            ),
-        ),
-        "planned": (
-            "Campus-specific facts and rules",
-            "Approved actions, each switched on per employee",
-            "Webhooks for call results",
-        ),
-    },
-}
+MODULES: dict = {}
 
 
 def _visible(requirement: str, user, scope) -> bool:

@@ -42,7 +42,7 @@
         {% include 'dashboard/_fields.html' with form=retention_form %}
         <button class="small" type="submit">Save policy</button>
       </form>
-      <p class="help" id="retention-preview">Applying the saved policy now would erase {{ retention_preview.contacts }} contact{{ retention_preview.contacts|pluralize }} and delete {{ retention_preview.calls }} call record{{ retention_preview.calls|pluralize }} and {{ retention_preview.audit }} access-log entr{{ retention_preview.audit|pluralize:"y,ies" }}.</p>
+      <p class="help" id="retention-preview">Applying the saved policy now would erase {{ retention_preview.contacts }} contact{{ retention_preview.contacts|pluralize }} and delete {{ retention_preview.calls }} call record{{ retention_preview.calls|pluralize }}, {{ retention_preview.transcripts }} transcript{{ retention_preview.transcripts|pluralize }} and {{ retention_preview.audit }} access-log entr{{ retention_preview.audit|pluralize:"y,ies" }}.</p>
       <form method="post" data-ask="Apply the retention policy now? Erased contacts cannot be brought back.">{% csrf_token %}<input type="hidden" name="action" value="retention_apply"><button class="danger small" type="submit">Apply now</button></form>
       <p class="help">To apply it on a schedule, run <code>python manage.py retention --apply</code> from a scheduled task.</p>
     </section>

@@ -8,6 +8,7 @@ import csv
 from datetime import timedelta
 
 from django.contrib import messages
+from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
@@ -16,11 +17,15 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from apps.calling import analysis
+from apps.calling.models import CallResult, CallTranscript
 from apps.telephony import calls as telephony_calls
+from apps.telephony.masking import mask_phone
 from apps.telephony.models import CallRecord
 from apps.tenancy import audit
 from apps.tenancy.access import scoped
 from apps.tenancy.forms import OrganisationForm, RetentionForm
+from apps.workforce import publishing
 from apps.workforce.models import Employee
 
 from . import contacts, crypto, importing, reports, retention
@@ -53,7 +58,12 @@ def _contacts(scope):
 def _calls(scope):
     return scope.limit(
         CallRecord.objects.select_related(
-            "campus", "placed_by", "lead", "employee_version__employee"
+            "campus",
+            "placed_by",
+            "lead",
+            "contact",
+            "employee_version__employee",
+            "result",
         )
     )
 
@@ -261,6 +271,13 @@ def lead_detail(request, pk):
             done.save(update_fields=["done_at", "done_by"])
             messages.success(request, "Follow-up done.")
             return redirect("lead-detail", pk=lead.pk)
+    rehearsal_employees = (
+        scope.limit_shared(Employee.objects.all())
+        .filter(live_version__isnull=False, taking_calls=True)
+        .select_related("live_version")
+        if scope.can("employees.manage")
+        else Employee.objects.none()
+    )
     return render(
         request,
         "crm/lead.html",
@@ -274,6 +291,8 @@ def lead_detail(request, pk):
             "tasks": lead.follow_ups.select_related("assigned_to"),
             "calls": _calls(scope).filter(lead=lead)[:20],
             "can_edit": scope.can("leads.edit"),
+            "rehearsal_employees": rehearsal_employees,
+            "test_number": _test_number(),
         },
     )
 
@@ -512,7 +531,22 @@ def _filtered_calls(request, scope):
     status = request.GET.get("status", "")
     direction = request.GET.get("direction", "")
     days = request.GET.get("days", "")
+    outcome = request.GET.get("outcome", "")
+    employee = request.GET.get("employee", "")
     campus = _campus_filter(request, scope)
+    if outcome in CallResult.Outcome.values:
+        found = found.filter(result__outcome=outcome)
+    else:
+        outcome = ""
+    employees = scope.limit_shared(Employee.objects.all())
+    chosen = None
+    if employee:
+        try:
+            chosen = employees.filter(pk=employee).first()
+        except (ValidationError, ValueError):
+            chosen = None
+    if chosen is not None:
+        found = found.filter(employee_version__employee=chosen)
     if status in CallRecord.Status.values:
         found = found.filter(status=status)
     else:
@@ -532,6 +566,8 @@ def _filtered_calls(request, scope):
         "direction": direction,
         "days": days,
         "campus": campus,
+        "outcome": outcome,
+        "employee": chosen,
     }
 
 
@@ -548,6 +584,8 @@ def conversations(request):
             "filters": filters,
             "statuses": CallRecord.Status.choices,
             "directions": CallRecord.Direction.choices,
+            "outcomes": CallResult.Outcome.choices,
+            "employees": scope.limit_shared(Employee.objects.all()),
             "campuses": scope.campuses(),
             "querystring": _query(request),
             "can_export": scope.can("calls.export"),
@@ -612,6 +650,25 @@ def conversation_detail(request, pk):
             audit.record(scope, "call.ended", call)
             messages.success(request, "The call was ended.")
         return redirect("conversation-detail", pk=call.pk)
+    if request.method == "POST" and request.POST.get("action") == "analyse":
+        if not scope.can("calls.analyse"):
+            raise PermissionDenied
+        if call.is_active:
+            messages.error(request, "The call is still in progress.")
+        else:
+            result = analysis.analyse(call)
+            audit.record(scope, "call.analysed", call, status=result.status)
+            if result.status == CallResult.Status.DONE:
+                messages.success(request, "The call was analysed.")
+            else:
+                messages.error(
+                    request, result.error or "The call could not be analysed."
+                )
+        return redirect("conversation-detail", pk=call.pk)
+    if request.method == "POST" and request.POST.get("action") == "create_lead":
+        if not scope.can("leads.edit"):
+            raise PermissionDenied
+        return _lead_from_caller(request, scope, call)
     if request.method == "POST":
         call.notes = request.POST.get("notes", "").strip()[:2000]
         call.save(update_fields=["notes", "updated_at"])
@@ -621,7 +678,87 @@ def conversation_detail(request, pk):
     if call.is_active:
         # Someone is watching: bring the status up to date from LiveKit.
         call = telephony_calls.refresh(call)
-    return render(request, "crm/conversation.html", {"call": call, "may_end": may_end})
+    result = CallResult.objects.filter(call=call).first()
+    transcript = CallTranscript.objects.filter(call=call).first()
+    questions = {
+        question["key"]: question["label"]
+        for question in call.context_snapshot.get("questions") or []
+    }
+    answers = [
+        (questions.get(key, key), value)
+        for key, value in (result.answers.items() if result else ())
+    ]
+    profile = call.context_snapshot.get("profile") or {}
+    return render(
+        request,
+        "crm/conversation.html",
+        {
+            "call": call,
+            "may_end": may_end,
+            "result": result,
+            "answers": answers,
+            "transcript": transcript,
+            "actions": call.actions.all(),
+            "snapshot": call.context_snapshot,
+            "voice": profile.get("voice") or {},
+            "can_analyse": scope.can("calls.analyse") and not call.is_active,
+            "can_create_lead": scope.can("leads.edit")
+            and bool(call.remote_encrypted)
+            and call.contact_id is None
+            and call.campus_id is not None,
+        },
+    )
+
+
+def _lead_from_caller(request, scope, call):
+    """Turn an unknown inbound caller into a contact and lead. The number is
+    copied from the call record's encrypted copy; nobody sees it."""
+    name = " ".join(request.POST.get("name", "").split())[:120]
+    subject = " ".join(request.POST.get("subject", "").split())[:160]
+    if not (name and subject):
+        messages.error(request, "Give the caller's name and what they called about.")
+        return redirect("conversation-detail", pk=call.pk)
+    if not call.remote_encrypted or call.contact_id or call.campus is None:
+        messages.error(request, "This caller cannot be turned into a lead.")
+        return redirect("conversation-detail", pk=call.pk)
+    try:
+        number = crypto.decrypt(call.remote_encrypted)
+        contact = contacts.create(
+            scope,
+            call.campus,
+            name=name,
+            phone=number,
+            origin=Contact.Origin.PHONE,
+            origin_detail="Called the business",
+            calling_purpose=subject,
+        )
+    except contacts.DuplicateContactError:
+        messages.error(request, "This caller is already a contact.")
+        return redirect("conversation-detail", pk=call.pk)
+    except crypto.CryptoError:
+        messages.error(request, "The caller's number could not be read.")
+        return redirect("conversation-detail", pk=call.pk)
+    except InvalidPhoneError:
+        messages.error(
+            request, "The caller rang from a landline; only mobiles can be stored."
+        )
+        return redirect("conversation-detail", pk=call.pk)
+    lead = Lead.objects.create(
+        organisation=scope.organisation,
+        campus=call.campus,
+        contact=contact,
+        subject=subject,
+        created_by=scope.user,
+        employee=call.employee_version.employee if call.employee_version else None,
+    )
+    CallRecord.objects.filter(pk=call.pk).update(contact=contact, lead=lead)
+    audit.record(scope, "lead.created", lead, from_call=str(call.pk))
+    messages.success(
+        request,
+        "Lead added. Permission to call them back is not recorded yet: "
+        "record it on the contact if they agreed.",
+    )
+    return redirect("lead-detail", pk=lead.pk)
 
 
 # --- performance ---------------------------------------------------------------------
@@ -742,7 +879,8 @@ def privacy_settings(request):
             messages.success(
                 request,
                 f"Retention applied: {counts['contacts']} contacts erased, "
-                f"{counts['calls']} call records and {counts['audit']} "
+                f"{counts['calls']} call records, {counts['transcripts']} "
+                f"transcripts and {counts['audit']} "
                 "access-log entries deleted.",
             )
             return redirect("settings")
@@ -772,3 +910,49 @@ def opt_out_remove(request, pk):
     audit.record(scope, "optout.removed", number=masked)
     messages.success(request, f"{masked} was taken off the do-not-call list.")
     return redirect("settings")
+
+
+def _test_number() -> str:
+    try:
+        outbound, plan = telephony_calls.outbound_context()
+    except telephony_calls.CallError:
+        return ""
+    return mask_phone(outbound.allowed_number) if plan.ready else ""
+
+
+@scoped("employees.manage")
+@require_POST
+def lead_rehearse(request, pk):
+    """Ring the approved test number with a published employee, as if it were
+    calling this lead's contact. The contact is never dialled."""
+    scope = request.scope
+    lead = scope.get(_leads(scope), pk=pk)
+    employee = scope.get(
+        scope.limit_shared(Employee.objects.all()), pk=request.POST.get("employee")
+    )
+    try:
+        plan = publishing.plan_call(
+            employee, campus=lead.campus, lead=lead, rehearsal=True
+        )
+    except publishing.PublishError as error:
+        messages.error(request, "No call was placed. " + " ".join(error.reasons))
+        return redirect("lead-detail", pk=lead.pk)
+    if not cache.add(f"outbound-call:{scope.user.pk}", True, timeout=5):
+        messages.error(request, "Please wait a few seconds before calling again.")
+        return redirect("lead-detail", pk=lead.pk)
+    try:
+        record = telephony_calls.start_call(
+            user=scope.user, call_plan=plan, campus=lead.campus, lead=lead
+        )
+    except telephony_calls.CallError as error:
+        messages.error(
+            request, " ".join(["No call was placed.", str(error), *error.details])
+        )
+        return redirect("lead-detail", pk=lead.pk)
+    audit.record(scope, "lead.rehearsal_call", lead, call=str(record.pk))
+    messages.success(
+        request,
+        f"Calling the test number with {employee.name}, version "
+        f"{plan.version.number}, as if calling {lead.contact.name}.",
+    )
+    return redirect("conversation-detail", pk=record.pk)

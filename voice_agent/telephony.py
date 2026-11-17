@@ -21,6 +21,14 @@ def mask_phone(number: str | None) -> str:
     return f"{plus}{digits[:2]}{'*' * (len(digits) - 4)}{digits[-2:]}"
 
 
+_PHONE_RUN = re.compile(r"\+?\d[\d\s\-]{6,}\d")
+
+
+def mask_phones_in(text: str) -> str:
+    """Mask every phone-number-like run inside free text, such as a transcript."""
+    return _PHONE_RUN.sub(lambda match: mask_phone(match.group()), text)
+
+
 def is_phone_caller(participant: rtc.Participant) -> bool:
     return participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
 

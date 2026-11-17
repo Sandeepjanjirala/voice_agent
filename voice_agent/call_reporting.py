@@ -1,10 +1,11 @@
-"""Tells Django how an outbound call went: answered, ended, SIP status, latency.
+"""Tells Django how a phone call went: answered, ended, SIP status, latency.
 
 The worker never imports Django. It posts a small JSON message, signed with
 HMAC-SHA256, to CALL_EVENTS_URL. The message carries the room name, the outcome
-and timings only: never a phone number and never anything that was said. With
-CALL_EVENTS_URL or CALL_EVENTS_SECRET unset, reporting is off and Django infers
-the outcome from LiveKit room state instead.
+and timings, and never a phone number. What was said is sent only when the
+call's profile allows it (its organisation keeps transcripts), with any
+number-like text masked. With CALL_EVENTS_URL or CALL_EVENTS_SECRET unset,
+reporting is off and Django infers the outcome from LiveKit room state instead.
 """
 
 from __future__ import annotations
@@ -21,12 +22,17 @@ import aiohttp
 
 from .config import VoiceSettings
 from .observability import turn_row
+from .telephony import mask_phones_in
 
 logger = logging.getLogger("voice_agent")
 
 SIGNATURE_HEADER = "X-Call-Signature"
 TIMESTAMP_HEADER = "X-Call-Timestamp"
 TIMEOUT_SECONDS = 2.0
+# A transcript is cut to fit one report; Django accepts up to 64 kB.
+TRANSCRIPT_TURNS = 80
+TRANSCRIPT_TURN_CHARS = 600
+TRANSCRIPT_TOTAL_CHARS = 24_000
 
 
 def sign(secret: str, timestamp: str, body: bytes) -> str:
@@ -41,15 +47,41 @@ def _median(values: list[float]) -> float | None:
 
 
 class CallMetrics:
-    """Collects per-turn timings during a call and summarises them at the end."""
+    """Collects per-turn timings during a call and summarises them at the end.
+    With `keep_transcript`, it also keeps what each side said, masked."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, keep_transcript: bool = False) -> None:
         self.rows: list[dict[str, Any]] = []
+        self.keep_transcript = keep_transcript
+        self.turns: list[dict[str, str]] = []
 
     def observe(self, item: Any) -> None:
         row = turn_row(item)
         if row is not None:
             self.rows.append(row)
+        if self.keep_transcript:
+            role = getattr(item, "role", None)
+            text = getattr(item, "text_content", None)
+            if role in ("user", "assistant") and isinstance(text, str) and text.strip():
+                self.turns.append({"role": role, "text": text.strip()})
+
+    def transcript(self) -> list[dict[str, str]]:
+        """The kept turns, masked and cut to the report's size limits."""
+        kept, total = [], 0
+        for turn in self.turns[:TRANSCRIPT_TURNS]:
+            text = mask_phones_in(turn["text"])[:TRANSCRIPT_TURN_CHARS]
+            if total + len(text) > TRANSCRIPT_TOTAL_CHARS:
+                break
+            total += len(text)
+            kept.append({"role": turn["role"], "text": text})
+        return kept
+
+    def ended_fields(self) -> dict[str, Any]:
+        """Everything the "ended" report carries about the conversation."""
+        fields = self.summary()
+        if self.keep_transcript:
+            fields["transcript"] = self.transcript()
+        return fields
 
     def summary(self) -> dict[str, Any]:
         agent = [r for r in self.rows if r.get("role") == "assistant"]

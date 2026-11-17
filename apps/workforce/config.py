@@ -9,7 +9,9 @@ worker's per-call prompt, which has a small byte budget.
 import re
 from typing import Any
 
-SCHEMA = 1
+from .voices import DEFAULT_PACE, PACE_CHOICES, VOICE_NAMES
+
+SCHEMA = 2
 MAX_STEPS = 6
 MAX_QUESTIONS = 8
 MAX_OPEN_QUESTIONS = 8
@@ -26,6 +28,21 @@ LIMITS = {
     "open_question": 160,
 }
 DEFAULT_STRICTNESS = 3
+PACES = tuple(float(value) for value, _ in PACE_CHOICES)
+
+# What an employee may have the system do after a call, each switched on per
+# employee. Every action is carried out by Django and logged; an action that is
+# not listed here cannot be claimed by an employee.
+ACTIONS = {
+    "create_follow_up": (
+        "Create a follow-up task",
+        "When the person asks to be called back, add a follow-up to the lead.",
+    ),
+    "update_lead_stage": (
+        "Move the lead to a new stage",
+        "Set the lead to Interested, Follow up or Closed from the call's outcome.",
+    ),
+}
 
 
 def _text(value: Any, limit: int) -> str:
@@ -82,6 +99,17 @@ def normalize(raw: Any) -> dict[str, Any]:
     except (TypeError, ValueError):
         strictness = DEFAULT_STRICTNESS
 
+    voice = raw.get("voice") if isinstance(raw.get("voice"), dict) else {}
+    speaker = str(voice.get("speaker") or "").strip().lower()
+    try:
+        pace = float(voice.get("pace", DEFAULT_PACE))
+    except (TypeError, ValueError):
+        pace = DEFAULT_PACE
+    actions = []
+    for action in _items(raw.get("actions")):
+        if isinstance(action, str) and action in ACTIONS and action not in actions:
+            actions.append(action)
+
     return {
         "schema": SCHEMA,
         "agent_name": _text(raw.get("agent_name"), LIMITS["agent_name"]),
@@ -94,4 +122,9 @@ def normalize(raw: Any) -> dict[str, Any]:
         "ending": _text(raw.get("ending"), LIMITS["ending"]),
         "strictness": min(max(strictness, 1), 5),
         "open_questions": open_questions,
+        "voice": {
+            "speaker": speaker if speaker in VOICE_NAMES else "",
+            "pace": pace if pace in PACES else DEFAULT_PACE,
+        },
+        "actions": actions,
     }

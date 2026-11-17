@@ -88,6 +88,22 @@ class CallRecord(models.Model):
         on_delete=models.SET_NULL,
         related_name="call_records",
     )
+    # The person on the line, when the system knows who it is. Empty for a
+    # rehearsal, where the approved test number stands in for the contact.
+    contact = models.ForeignKey(
+        "crm.Contact",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="call_records",
+    )
+    # Exactly what the voice worker was given for this call: employee, version,
+    # script, voice and knowledge. Written once when the call starts.
+    context_snapshot = models.JSONField(default=dict, blank=True, editable=False)
+    # An inbound caller's number, encrypted and as a match value (apps/crm/crypto),
+    # so staff can turn the call into a lead without the number ever being shown.
+    remote_encrypted = models.TextField(blank=True, editable=False)
+    remote_lookup = models.CharField(max_length=64, blank=True, editable=False)
     notes = models.TextField(max_length=2000, blank=True)
 
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
@@ -127,6 +143,24 @@ class CallRecord(models.Model):
     @property
     def is_active(self) -> bool:
         return self.status in self.ACTIVE
+
+    @property
+    def is_rehearsal(self) -> bool:
+        """Placed to the approved test number on behalf of a lead's contact."""
+        return bool(self.context_snapshot.get("rehearsal"))
+
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        record = super().from_db(db, field_names, values)
+        record._loaded_snapshot = record.__dict__.get("context_snapshot")
+        return record
+
+    def save(self, *args, **kwargs):
+        loaded = getattr(self, "_loaded_snapshot", None)
+        if loaded and self.context_snapshot != loaded:
+            raise ValueError("A call's context snapshot cannot be changed.")
+        super().save(*args, **kwargs)
+        self._loaded_snapshot = self.context_snapshot
 
 
 class AgentProfile(models.Model):

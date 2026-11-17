@@ -174,16 +174,17 @@ def start_call(
     *,
     user=None,
     gateway: OutboundGateway | None = None,
-    employee_version=None,
-    profile: dict | None = None,
+    call_plan=None,
     campus=None,
+    lead=None,
 ) -> CallRecord:
     """Record and place one call to the allow-listed number.
 
-    With `employee_version` and its `profile` (see workforce/publishing.py) the
-    call uses that published AI employee and the record says so; otherwise it
-    uses the active agent profile, as before. Either way only the allow-listed
-    number is dialled.
+    With a `call_plan` (workforce.publishing.plan_call) the call uses that
+    published AI employee version, and the record keeps the plan's snapshot of
+    exactly what the worker was given; otherwise it uses the active agent
+    profile, as before. `lead` links the call to the lead it rehearses. Either
+    way only the allow-listed number is dialled.
     """
     outbound, plan = outbound_context()
     if not plan.ready:
@@ -206,11 +207,13 @@ def start_call(
                 room=new_room_name(),
                 masked_number=mask_phone(outbound.allowed_number),
                 placed_by=user if getattr(user, "is_authenticated", False) else None,
-                organisation=employee_version.employee.organisation
-                if employee_version
+                organisation=call_plan.version.employee.organisation
+                if call_plan
                 else organisation_of(user),
                 campus=campus,
-                employee_version=employee_version,
+                lead=lead,
+                employee_version=call_plan.version if call_plan else None,
+                context_snapshot=call_plan.snapshot if call_plan else {},
             )
     except IntegrityError:
         raise CallBusyError(
@@ -225,7 +228,9 @@ def start_call(
             to=outbound.allowed_number,
             agent_name=django_settings.LIVEKIT_AGENT_NAME,
             room=record.room,
-            extra_metadata=profile if employee_version else profiles.profile_metadata(),
+            extra_metadata=call_plan.metadata
+            if call_plan
+            else profiles.profile_metadata(),
         )
     except CallInProgressError as error:
         _close_failed(record, str(error))
@@ -474,11 +479,16 @@ def apply_worker_event(payload: dict) -> CallRecord:
             return True
 
     try:
-        return _update(record.pk, change)
+        record = _update(record.pk, change)
     except IntegrityError:
         # Re-opening this call would make two active calls; keep it as it is.
         record.refresh_from_db()
-        return record
+    if event == "ended" and "transcript" in payload:
+        # Kept only if the call's organisation allows it (apps/calling).
+        from apps.calling.analysis import store_transcript
+
+        store_transcript(record, payload["transcript"])
+    return record
 
 
 # --- presentation -------------------------------------------------------------

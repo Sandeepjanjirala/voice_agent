@@ -21,7 +21,7 @@ def record(scope, action: str, target=None, *, campus=None, **detail) -> AuditEv
     return AuditEvent.objects.create(
         organisation=scope.organisation,
         campus=campus or getattr(target, "campus", None),
-        actor=scope.user,
+        actor=scope.user if getattr(scope.user, "is_authenticated", False) else None,
         actor_name=scope.user.get_username(),
         action=action,
         target_type=type(target).__name__.lower() if target is not None else "",

@@ -4,10 +4,12 @@
     manage.py contactkeys status     are the keys set, and is everything on the newest?
     manage.py contactkeys rotate     re-encrypt every number with the newest key
     manage.py contactkeys rehash     recompute match values after changing the lookup key
+    manage.py contactkeys fingerprint  short fingerprints, to check a backup copy
 
 No command prints a phone number or an existing key.
 """
 
+import hashlib
 import secrets
 
 from django.core.management.base import BaseCommand, CommandError
@@ -28,7 +30,8 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser) -> None:
         parser.add_argument(
-            "action", choices=("generate", "status", "rotate", "rehash")
+            "action",
+            choices=("generate", "status", "rotate", "rehash", "fingerprint"),
         )
         parser.add_argument(
             "--dry-run", action="store_true", help="Report without changing anything."
@@ -48,6 +51,19 @@ class Command(BaseCommand):
         if problem:
             raise CommandError(problem)
         getattr(self, f"_{action}")(dry_run)
+
+    def _fingerprint(self, dry_run: bool) -> None:
+        """Fingerprints that identify each key without revealing it. Run the
+        same command against a backup copy: equal fingerprints, same keys."""
+        from django.conf import settings
+
+        def short(value: str) -> str:
+            return hashlib.sha256(value.encode()).hexdigest()[:16]
+
+        for index, key in enumerate(settings.CONTACT_ENCRYPTION_KEYS, start=1):
+            role = "encrypts and decrypts" if index == 1 else "decrypts only"
+            self.stdout.write(f"Encryption key {index} ({role}): {short(key)}")
+        self.stdout.write(f"Lookup key: {short(settings.CONTACT_LOOKUP_KEY)}")
 
     def _status(self, dry_run: bool) -> None:
         total = old = unreadable = 0

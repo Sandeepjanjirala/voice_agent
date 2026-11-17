@@ -27,7 +27,8 @@ class Command(BaseCommand):
             verb = "removed" if apply else "would remove"
             self.stdout.write(
                 f"{organisation.name}: {verb} {counts['contacts']} contacts, "
-                f"{counts['calls']} call records, {counts['audit']} access-log entries"
+                f"{counts['calls']} call records, {counts['transcripts']} transcripts, "
+                f"{counts['audit']} access-log entries"
             )
         if not apply:
             self.stdout.write("Nothing was changed. Add --apply to carry it out.")

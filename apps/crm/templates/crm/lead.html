@@ -54,7 +54,14 @@
       <div class="table-scroll"><table class="data"><thead><tr><th>Started</th><th>Result</th><th>Talk time</th></tr></thead><tbody>
         {% for call in calls %}<tr><td><a href="{% url 'conversation-detail' call.pk %}">{{ call.created_at|date:"j M, H:i" }}</a></td><td>{{ call.get_status_display }}</td><td>{% if call.duration_seconds is None %}–{% else %}{{ call.duration_seconds|floatformat:0 }} s{% endif %}</td></tr>{% endfor %}
       </tbody></table></div>
-      {% else %}<p class="help">No call is linked to this lead. Calls are linked when employees are connected to calling channels (Milestone D).</p>{% endif %}
+      {% else %}<p class="help">No call is linked to this lead yet.</p>{% endif %}
+      {% if rehearsal_employees %}
+      <form method="post" action="{% url 'lead-rehearse' lead.pk %}" class="inline-form" id="rehearse" style="margin-top:14px;border-top:1px solid #edf0eb;padding-top:14px" data-ask="Ring the approved test number {{ test_number }} now, as if calling {{ contact.name }}? It is a real call, charged by the provider.">{% csrf_token %}
+        <div class="field"><label for="rehearse-employee">Rehearse this call on the test number</label><select id="rehearse-employee" name="employee">{% for item in rehearsal_employees %}<option value="{{ item.pk }}"{% if item.pk == lead.employee_id %} selected{% endif %}>{{ item.name }}, version {{ item.live_version.number }}</option>{% endfor %}</select></div>
+        <button class="small" type="submit"{% if not test_number %} disabled{% endif %}>Call the test number</button>
+      </form>
+      <p class="help">{% if test_number %}Rings {{ test_number }} with this lead's context; {{ contact.name }} is not called.{% else %}The outbound test line is not ready.{% endif %}</p>
+      {% endif %}
     </section>
   </div>
 
