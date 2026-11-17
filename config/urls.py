@@ -87,6 +87,7 @@ urlpatterns = [
     path("leads/follow-ups/", crm_views.followups, name="followups"),
     path("leads/<uuid:pk>/", crm_views.lead_detail, name="lead-detail"),
     path("leads/<uuid:pk>/rehearse/", crm_views.lead_rehearse, name="lead-rehearse"),
+    path("leads/<uuid:pk>/call/", crm_views.lead_call, name="lead-call"),
     path("contacts/", crm_views.contact_list, name="contacts"),
     path("contacts/import/", crm_views.contact_import, name="contact-import"),
     path("contacts/export/", crm_views.contact_export, name="contact-export"),

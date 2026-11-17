@@ -32,7 +32,11 @@ async function latestCall(page) {
   return page.evaluate(async () => (await (await fetch('/api/telephony/calls/')).json()).calls[0]);
 }
 
-async function placeCall(page) {
+// The approved number in tests/browser/calls_server.py; typed by the operator.
+const APPROVED = '+919000000001';
+
+async function placeCall(page, to = APPROVED) {
+  await page.locator('#phone-number').fill(to);
   await page.locator('#call').click();
   await page.locator('#confirm').waitFor({ state: 'visible' });
   await page.locator('#confirm-call').click();
@@ -61,11 +65,23 @@ async function status(page, text, timeout = 12000) {
     await page.screenshot({ path: 'browser-artifacts/calls-desktop.png', fullPage: true });
 
     // Cancelling the confirmation places no call.
+    await page.locator('#phone-number').fill(APPROVED);
     await page.locator('#call').click();
     await page.locator('#confirm').waitFor({ state: 'visible' });
     await page.locator('#confirm-cancel').click();
     assert.equal(await page.locator('#confirm').isVisible(), false);
     assert.equal(await latestCall(page), undefined, 'a cancelled confirmation created a call');
+
+    // A number that is not on the allowlist is refused, and nothing is dialled.
+    await placeCall(page, '+919000000099');
+    await page.locator('#call-notice').filter({ hasText: 'not in OUTBOUND_ALLOWLIST_NUMBERS' }).waitFor();
+    assert.equal(await latestCall(page), undefined, 'a refused number created a call');
+    // A malformed number never reaches the confirmation.
+    await page.locator('#phone-number').fill('98765 43210');
+    await page.locator('#call').click();
+    assert.equal(await page.locator('#confirm').isVisible(), false);
+    // A refused attempt still counts towards the 5-second start throttle.
+    await page.waitForTimeout(5500);
 
     // Call 1: initiating -> ringing -> answered -> completed by a worker report.
     await placeCall(page);

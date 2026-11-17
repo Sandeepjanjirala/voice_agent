@@ -56,8 +56,10 @@ def calls_page(request):
     else:
         readiness.update(
             ready=plan.ready,
+            mode=outbound.policy.mode,
+            live_hours="{:02d}:00 and {:02d}:00".format(*calls.LIVE_CALLING_HOURS),
             blockers=[blocker.message for blocker in plan.blockers],
-            number=mask_phone(outbound.allowed_number),
+            number=mask_phone(outbound.rehearsal_number),
             caller_id=mask_phone(outbound.caller_id),
             ring_seconds=outbound.ringing_timeout_seconds,
             max_seconds=outbound.max_call_duration_seconds,
@@ -110,7 +112,7 @@ class CallListView(APIView):
             response["Retry-After"] = str(START_THROTTLE_SECONDS)
             return response
         try:
-            record = calls.start_call(user=request.user)
+            record = calls.start_call(user=request.user, to=request.data.get("to", ""))
         except calls.CallError as error:
             logger.warning("outbound call not started: %s", error)
             return _error(error)

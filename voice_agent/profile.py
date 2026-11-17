@@ -152,9 +152,24 @@ def voice_for(settings: VoiceSettings, profile: AgentProfile | None) -> VoiceSet
         return settings
     tts, stt = settings.tts, settings.stt
     if profile.speaker:
-        voices = MODEL_SPEAKER_COMPATIBILITY.get(tts.model, {}).get("all", ())
+        # Saved v3 employees retain their voice when the deployment moves to v4.
+        # Persona IDs are distinct from the classic v3 speaker names.
+        model = tts.model
+        if profile.speaker == "shubh_enhi_ads":
+            model = "bulbul:v4-flash"
+        elif (
+            model == "bulbul:v4-flash"
+            and profile.speaker in MODEL_SPEAKER_COMPATIBILITY["bulbul:v3"]["all"]
+        ):
+            model = "bulbul:v3"
+        voices = MODEL_SPEAKER_COMPATIBILITY.get(model, {}).get("all", ())
         if profile.speaker in voices:
-            tts = replace(tts, speaker=profile.speaker)
+            tts = replace(
+                tts,
+                model=model,
+                speaker=profile.speaker,
+                sample_rate=24000 if model == "bulbul:v4-flash" else tts.sample_rate,
+            )
         else:
             logger.warning(
                 "profile voice is not available; using the configured voice",

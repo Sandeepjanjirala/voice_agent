@@ -2,7 +2,7 @@
 {% block content %}
 <div id="voice-app" data-token-url="{{ token_url }}">
   {% if trial_employee %}<p class="notice" role="note" id="trial-note">Trying <strong>{{ trial_employee.name }}</strong> ({{ trial_source }}) in your browser. No phone call is placed. <a href="{% url 'employee-detail' trial_employee.pk %}">Back to {{ trial_employee.name }}</a></p>{% endif %}
-  <section class="intro"><div><p class="eyebrow">A CONVERSATION STARTS HERE</p><h1>Your voice. Your language.</h1><p class="muted">Meet your Telugu AI assistant. Speak naturally, and follow the conversation as it happens.</p></div><span class="phase">BROWSER VOICE · PHASE 1.5</span></section>
+  <section class="intro"><div><p class="eyebrow">SRI CHAITANYA &middot; VOICE STUDIO</p><h1>Better conversations.<br><span class="headline-accent">Stronger connections.</span></h1><p class="muted">A dedicated space to try your AI employee. Speak naturally in Telugu or English and follow every response in real time.</p></div><span class="phase">Browser conversation</span></section>
   <div class="studio-grid">
     <section class="card conversation" aria-label="Conversation controls">
       <div class="card-heading"><span>Live conversation</span><span id="connection" class="pill">Not connected</span></div>
@@ -15,12 +15,12 @@
       <p id="notice" class="error" role="alert" hidden></p>
       <div class="session-note">Use headphones for clearer audio. Speak in Telugu, English, or a mix of both.</div>
     </section>
-    <section class="card transcript-card" aria-labelledby="transcript-title"><div class="card-heading"><h2 id="transcript-title">Conversation transcript</h2><span class="live-label">LIVE</span></div>
-      <div id="transcript" role="log" aria-live="polite" aria-relevant="additions text"><div id="empty" class="empty"><span aria-hidden="true">“</span><h3>A little hello goes a long way.</h3><p>Your words and the assistant’s replies<br>will appear here in real time.</p></div></div>
+    <section class="card transcript-card" aria-labelledby="transcript-title"><div class="card-heading"><h2 id="transcript-title">Conversation transcript</h2><span class="live-label">TRANSCRIPT</span></div>
+      <div id="transcript" role="log" aria-live="polite" aria-relevant="additions text"><div id="empty" class="empty"><span class="transcript-symbol" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none"><path d="M10 10h28v21H24l-9 7v-7h-5V10Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M17 18h14M17 24h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span><h3>A little hello goes a long way.</h3><p>Your words and the assistant’s replies<br>will appear here in real time.</p></div></div>
       <div class="transcript-footer">Visible for this session · Cleared when you start again</div>
     </section>
   </div>
-  <div class="info-grid"><section><span class="step">01</span><h3>Make it a real conversation</h3><p>Try everyday questions, short replies, and Telugu-English mixed speech.</p></section><section><span class="step">02</span><h3>Stay in control</h3><p>Mute your microphone at any time. End the conversation when you’re done.</p></section><section><span class="step">03</span><h3>A space to test</h3><p>This is a browser conversation. Phone calls and appointment booking come later.</p></section></div>
+  <div class="info-grid"><section><span class="step">01</span><h3>Make it a real conversation</h3><p>Try everyday questions, short replies, and Telugu-English mixed speech.</p></section><section><span class="step">02</span><h3>Stay in control</h3><p>Mute your microphone at any time. End the conversation when you’re done.</p></section><section><span class="step">03</span><h3>A space to test</h3><p>Try greetings, admissions questions and campus enquiries before using your employee on a call.</p></section></div>
   <p class="privacy">Audio is processed by LiveKit and the configured AI providers. Worker logs may retain transcripts under your existing settings.</p>
   <form hidden>{% csrf_token %}</form>
 </div>

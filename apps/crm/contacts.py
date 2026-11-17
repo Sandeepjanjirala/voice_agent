@@ -159,8 +159,8 @@ def number_for_call(contact: Contact, *, actor, purpose: str) -> str:
         raise CallNotPermittedError(reason)
     if not settings.CONTACT_DIALING_ENABLED:
         raise CallNotPermittedError(
-            "Calling stored contacts is switched off on this installation. "
-            "Calls go only to the approved test number."
+            "Calling stored contacts is switched off on this installation "
+            "(CONTACT_DIALING_ENABLED). Rehearse on the test number instead."
         )
     number = crypto.decrypt(contact.phone_encrypted)
     audit.record_system(

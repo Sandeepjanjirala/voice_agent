@@ -7,6 +7,7 @@ record in another organisation or campus is a 404 here, whatever ID is typed.
 import csv
 from datetime import timedelta
 
+from django.conf import settings
 from django.contrib import messages
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -296,6 +297,7 @@ def lead_detail(request, pk):
             "can_edit": scope.can("leads.edit"),
             "rehearsal_employees": rehearsal_employees,
             "test_number": _test_number(),
+            "contact_dialing": settings.CONTACT_DIALING_ENABLED,
             "lead_actions": _lead_actions(scope, lead),
             "action_runs": lead.action_runs.select_related("actor", "call")[:20],
             "appointments": lead.appointments.select_related("campus").order_by(
@@ -965,7 +967,32 @@ def _test_number() -> str:
         outbound, plan = telephony_calls.outbound_context()
     except telephony_calls.CallError:
         return ""
-    return mask_phone(outbound.allowed_number) if plan.ready else ""
+    return mask_phone(outbound.rehearsal_number) if plan.ready else ""
+
+
+@scoped("employees.manage")
+@require_POST
+def lead_call(request, pk):
+    """Follow up using the lead's own permitted number, never a test substitute."""
+    from apps.calling.outbound import contact_call
+
+    scope = request.scope
+    lead = scope.get(_leads(scope), pk=pk)
+    employee = scope.get(
+        scope.limit_shared(Employee.objects.all()), pk=request.POST.get("employee")
+    )
+    if not cache.add(f"outbound-call:{scope.user.pk}", True, timeout=5):
+        messages.error(request, "Please wait a few seconds before calling again.")
+        return redirect("lead-detail", pk=lead.pk)
+    try:
+        record = contact_call(
+            contact=lead.contact, employee=employee, user=scope.user, lead=lead
+        )
+    except telephony_calls.CallError as error:
+        messages.error(request, "No call was placed. " + str(error))
+        return redirect("lead-detail", pk=lead.pk)
+    audit.record(scope, "lead.outbound_call", lead, call=str(record.pk))
+    return redirect("conversation-detail", pk=record.pk)
 
 
 @scoped("employees.manage")

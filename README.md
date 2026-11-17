@@ -198,9 +198,21 @@ keyed hash, and shown masked. Create the two keys once and add them to `.env.loc
 ```
 
 Keep the keys out of Git and out of database backups; in production use a secrets
-manager. Calling stored contacts is switched off (`CONTACT_DIALING_ENABLED` in
-`config/settings.py`): calls go only to `OUTBOUND_TEST_ALLOWED_NUMBER`. Use made-up
-contacts until real data is authorised.
+manager. Calling stored contacts is switched off (`CONTACT_DIALING_ENABLED=false`).
+Use made-up contacts until real data is authorised.
+
+### Who can be dialled
+
+One dialing policy, read by Django and the voice worker alike:
+
+| Setting | Meaning |
+| :--- | :--- |
+| `OUTBOUND_DIALING_MODE=allowlist` (default) | Only numbers in `OUTBOUND_ALLOWLIST_NUMBERS` (comma-separated, +91…). Anything else is refused with a message, before LiveKit is touched |
+| `OUTBOUND_DIALING_MODE=live` | Any valid number, between 09:00 and 21:00 and, for a campus, in its opening hours. Not to be used until real outbound calling is approved |
+| `CONTACT_DIALING_ENABLED=true` | A lead's **Call** button and `manage.py run_campaign_call <entry> --confirm` may dial the contact's own number, if they agreed to be called; the policy above still applies |
+
+Numbers are typed on the Phone calls page or come from the lead; none is fixed
+in code. Restart Django and the worker after changing these.
 
 ### Calling channels, campaigns and results
 
@@ -259,9 +271,9 @@ only when the plan has no blockers; `teardown` removes them. Settings are under
 
 ## Phone calls page (outbound, staff only)
 
-Staff users get a **Phone calls** link next to Voice studio. The page calls only
-`OUTBOUND_TEST_ALLOWED_NUMBER`, one call at a time, after you press **Call** and
-confirm. It shows the call live (initiating, ringing, answered, then completed,
+Staff users get a **Phone calls** link next to Voice studio. Type the number to
+call; it is checked against the dialing policy (above). One call at a time, after
+you press **Call** and confirm. It shows the call live (initiating, ringing, answered, then completed,
 rejected, no answer or failed), lets you end it, and lists recent calls. Every call,
 including `manage.py telephony call`, is stored as a record with a masked number,
 timestamps, talk time, SIP status and latency.

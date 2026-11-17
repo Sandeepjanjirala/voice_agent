@@ -432,7 +432,10 @@ def test_any_other_number_is_refused_before_livekit_is_touched(
     env(**READY_ENV)
     fake = livekit(FakeLiveKit([existing_trunk()]))
 
-    with pytest.raises(CommandError, match="not OUTBOUND_TEST_ALLOWED_NUMBER"):
+    with pytest.raises(
+        CommandError,
+        match=r"not in OUTBOUND_ALLOWLIST_NUMBERS|international format|caller",
+    ):
         run("call", "--to", number, "--yes-place-one-call", "--no-wait")
 
     assert fake.calls == []

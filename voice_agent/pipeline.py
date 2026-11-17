@@ -136,7 +136,13 @@ def build_turn_handling(settings: TurnSettings) -> TurnHandlingOptions:
             max_delay=settings.endpointing_max_delay,
         ),
         interruption=interruption,
-        preemptive_generation={"enabled": settings.preemptive_generation},
+        # Prepare audio while the turn is being confirmed; the session still
+        # controls when playback starts and cancels obsolete generations.
+        preemptive_generation={
+            "enabled": settings.preemptive_generation,
+            "preemptive_tts": settings.preemptive_generation
+            and settings.preemptive_tts,
+        },
     )
     if settings.detection == "livekit":
         # The LiveKit turn detector does not list Telugu among its supported

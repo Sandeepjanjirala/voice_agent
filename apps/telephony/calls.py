@@ -19,6 +19,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.tenancy.access import organisation_of
+from dialing import DialingPolicyError
 
 from . import profiles
 from .conf import TelephonyConfigError
@@ -76,6 +77,10 @@ METRIC_FIELDS = {
     "llm_ttft_p50": (float, 0, 60),
     "tts_ttfb_p50": (float, 0, 60),
 }
+
+
+# Live mode only: the local hours (from, to) in which any call may start.
+LIVE_CALLING_HOURS = (9, 21)
 
 
 class CallError(Exception):
@@ -170,9 +175,25 @@ def _finish(record, status, source, *, reason: str = "", now=None) -> None:
 # --- starting a call ----------------------------------------------------------
 
 
+def _check_live_hours(campus) -> None:
+    """In live mode, calls go out only in reasonable hours, and only while the
+    campus is open when the call is for a campus."""
+    from apps.tenancy import hours
+
+    opens, closes = LIVE_CALLING_HOURS
+    if not opens <= timezone.localtime().hour < closes:
+        raise CallError(
+            f"Calls go out only between {opens:02d}:00 and {closes:02d}:00 in live mode."
+        )
+    if campus is not None and not hours.is_open(campus):
+        raise CallError(f"{campus.name} is closed now. Try again in its opening hours.")
+
+
 def start_call(
     *,
     user=None,
+    to=None,
+    contact=None,
     gateway: OutboundGateway | None = None,
     call_plan=None,
     campus=None,
@@ -192,6 +213,17 @@ def start_call(
             "Outbound calling is not ready.",
             details=[blocker.message for blocker in plan.blockers],
         )
+    # No destination means a rehearsal: it rings the rehearsal number. The phone
+    # calls page, lead calls and campaigns always pass their destination.
+    to = outbound.rehearsal_number if to is None else str(to).strip()
+    try:
+        to = outbound.policy.validate(to)
+    except DialingPolicyError as error:
+        raise CallError(str(error)) from None
+    if to == outbound.caller_id:
+        raise CallError("The destination must differ from the caller ID.")
+    if outbound.policy.mode == "live":
+        _check_live_hours(campus)
     gateway = gateway or make_gateway()
 
     # A finished call must not block the next one: settle any active record.
@@ -205,13 +237,14 @@ def start_call(
         with transaction.atomic():
             record = CallRecord.objects.create(
                 room=new_room_name(),
-                masked_number=mask_phone(outbound.allowed_number),
+                masked_number=mask_phone(to),
                 placed_by=user if getattr(user, "is_authenticated", False) else None,
                 organisation=call_plan.version.employee.organisation
                 if call_plan
                 else organisation_of(user),
                 campus=campus,
                 lead=lead,
+                contact=contact,
                 employee_version=call_plan.version if call_plan else None,
                 context_snapshot=call_plan.snapshot if call_plan else {},
             )
@@ -225,7 +258,7 @@ def start_call(
             plan,
             outbound,
             gateway,
-            to=outbound.allowed_number,
+            to=to,
             agent_name=django_settings.LIVEKIT_AGENT_NAME,
             room=record.room,
             extra_metadata=call_plan.metadata

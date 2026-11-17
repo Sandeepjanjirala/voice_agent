@@ -16,6 +16,7 @@ PACE_CHOICES = (
 )
 
 VOICES = (
+    ("shubh_enhi_ads", "Shubh (Bulbul v4 Flash)"),
     ("kavitha", "Kavitha (female)"),
     ("kavya", "Kavya (female)"),
     ("pooja", "Pooja (female)"),
@@ -36,6 +37,8 @@ VOICES = (
     ("shubh", "Shubh (male)"),
 )
 VOICE_NAMES = frozenset(name for name, _ in VOICES)
+VOICE_MODELS = dict.fromkeys(VOICE_NAMES, TTS_MODEL)
+VOICE_MODELS["shubh_enhi_ads"] = "bulbul:v4-flash"
 
 # Employee.language -> the language code the worker uses for speech in and out.
 # Telugu + English uses Telugu recognition, which keeps English words as spoken.

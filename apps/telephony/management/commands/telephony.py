@@ -296,15 +296,9 @@ class Command(BaseCommand):
             raise CommandError(
                 f"Refused, nothing was changed: The outbound plan is blocked ({codes})."
             )
-        if to != self.outbound.allowed_number:
-            raise CommandError(
-                "Refused, nothing was changed: That number is not "
-                "OUTBOUND_TEST_ALLOWED_NUMBER. Only the one configured test number "
-                "can be called."
-            )
         gateway = OutboundGateway(**self._credentials())
         try:
-            record = calls.start_call(gateway=gateway)
+            record = calls.start_call(gateway=gateway, to=to)
         except calls.CallError as error:
             raise CommandError(str(error)) from None
         write = self.stdout.write

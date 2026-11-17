@@ -71,12 +71,31 @@ def test_no_profile_and_no_voice_change_nothing():
 
 def test_every_voice_django_offers_exists_in_the_worker():
     # Kept in step with apps/workforce/voices.py, which Django uses.
-    from apps.workforce.voices import TTS_MODEL, VOICES
+    from apps.workforce.voices import TTS_MODEL, VOICE_MODELS, VOICES
 
-    assert {voice for voice, _ in VOICES} <= set(
-        MODEL_SPEAKER_COMPATIBILITY[TTS_MODEL]["all"]
-    )
+    for voice, _ in VOICES:
+        assert voice in MODEL_SPEAKER_COMPATIBILITY[VOICE_MODELS[voice]]["all"]
     assert make_settings().tts.model == TTS_MODEL
+
+
+def test_approved_v4_voice_and_legacy_employee_voice_select_matching_models():
+    settings = make_settings(
+        SARVAM_TTS_MODEL="bulbul:v4-flash",
+        SARVAM_TTS_SPEAKER="shubh_enhi_ads",
+        SARVAM_TTS_PACE="1.0",
+        SARVAM_TTS_SAMPLE_RATE="24000",
+    )
+    approved = voice_for(
+        settings, parse_profile(meta(voice={"speaker": "shubh_enhi_ads", "pace": 1.0}))
+    )
+    assert (
+        approved.tts.model,
+        approved.tts.speaker,
+        approved.tts.pace,
+        approved.tts.sample_rate,
+    ) == ("bulbul:v4-flash", "shubh_enhi_ads", 1.0, 24000)
+    legacy = voice_for(settings, parse_profile(meta(voice={"speaker": "kavitha"})))
+    assert (legacy.tts.model, legacy.tts.speaker) == ("bulbul:v3", "kavitha")
 
 
 # --- context -------------------------------------------------------------------------

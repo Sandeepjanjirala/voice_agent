@@ -8,8 +8,8 @@
   <section class="intro">
     <div>
       <p class="eyebrow">PHONE CALLS</p>
-      <h1>Outbound test call</h1>
-      <p class="muted">Your Telugu AI assistant calls your own allow-listed phone. One call at a time, only when you press Call.</p>
+      <h1>Outbound phone call</h1>
+      <p class="muted">Enter a destination number. Your dialing policy is checked before each call.</p>
     </div>
     <span class="phase">OUTBOUND · PHASE 3</span>
   </section>
@@ -32,6 +32,11 @@
       {% if not reporting %}
         <p class="warning" role="note">Call outcomes are not reported by the voice worker yet (CALL_EVENTS_SECRET is not set). Status will be inferred from LiveKit, without SIP codes or latency.</p>
       {% endif %}
+      <div class="field destination">
+        <label for="phone-number">Number to call</label>
+        <input id="phone-number" type="tel" inputmode="tel" required pattern="\+[1-9][0-9]{7,14}" maxlength="16" placeholder="+91XXXXXXXXXX" autocomplete="off" aria-describedby="dialing-policy">
+        <p class="hint" id="dialing-policy">{% if readiness.mode == "live" %}Live dialing: any valid number, between {{ readiness.live_hours }}.{% else %}Allowlist: only numbers in OUTBOUND_ALLOWLIST_NUMBERS can be called.{% endif %} International format, for example +91 then 10 digits.</p>
+      </div>
       <div class="place-actions">
         <button id="call" class="primary call-button" {% if not readiness.ready %}disabled{% endif %}>Call</button>
       </div>

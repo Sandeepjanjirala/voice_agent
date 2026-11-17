@@ -1,8 +1,8 @@
 {% extends 'voice/base.html' %}
 {% block content %}
 <section class="login card">
-  <p class="eyebrow">YOUR VOICE WORKSPACE</p><h1>Welcome back.</h1>
-  <p class="muted">Sign in to talk with your Telugu AI assistant.</p>
+  <p class="eyebrow">SRI CHAITANYA TECHNO SCHOOLS</p><h1>Welcome back.</h1>
+  <p class="muted">Your campuses. Your team. One connected workspace. Sign in to manage your AI employees.</p>
   {% if form.errors %}<p role="alert" class="error">Your username or password was not recognized.</p>{% endif %}
   <form method="post">{% csrf_token %}
     <label for="id_username">Username</label><input id="id_username" name="username" autocomplete="username" required autofocus>

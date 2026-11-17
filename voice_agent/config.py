@@ -17,6 +17,8 @@ from pathlib import Path
 
 from livekit.plugins.sarvam.models import MODEL_SPEAKER_COMPATIBILITY
 
+from dialing import DialingPolicy, DialingPolicyError, load_policy
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 STT_MODES = ("standard", "realtime")
@@ -99,6 +101,7 @@ class TurnSettings:
     # LiveKit default; it is also the length of the pause a caller hears.
     false_interruption_timeout: float
     preemptive_generation: bool
+    preemptive_tts: bool
 
 
 @dataclass(frozen=True)
@@ -112,6 +115,7 @@ class VoiceSettings:
     can_end_call: bool
     # The only number the worker will dial. None disables outbound calls.
     outbound_allowed_number: str | None = field(repr=False)
+    outbound_policy: DialingPolicy = field(repr=False)
     # Where the worker reports outbound call outcomes to Django. Both unset
     # turns reporting off.
     call_events_url: str | None
@@ -148,6 +152,8 @@ class VoiceSettings:
             "turn_detection": self.turn.detection,
             "endpointing_min_delay": self.turn.endpointing_min_delay,
             "endpointing_max_delay": self.turn.endpointing_max_delay,
+            "preemptive_generation": self.turn.preemptive_generation,
+            "preemptive_tts": self.turn.preemptive_tts,
             "interruption_mode": self.turn.interruption_mode,
             "interruption_min_duration": self.turn.interruption_min_duration,
             "interruption_min_words": self.turn.interruption_min_words,
@@ -247,6 +253,13 @@ def _stt_settings(env: _Env) -> STTSettings:
     )
 
 
+def _dialing_policy(env):
+    try:
+        return load_policy(os.environ if env is None else env)
+    except DialingPolicyError as error:
+        raise ConfigError(str(error)) from None
+
+
 def _tts_settings(env: _Env) -> TTSSettings:
     model = env.str("SARVAM_TTS_MODEL", "bulbul:v3") or "bulbul:v3"
     speakers = MODEL_SPEAKER_COMPATIBILITY.get(model)
@@ -265,7 +278,7 @@ def _tts_settings(env: _Env) -> TTSSettings:
         model=model,
         language=env.str("SARVAM_TTS_LANGUAGE", "te-IN") or "te-IN",
         speaker=speaker,
-        pace=env.float("SARVAM_TTS_PACE", 1.0, 0.3, 3.0),
+        pace=env.float("SARVAM_TTS_PACE", 1.2, 0.3, 3.0),
         temperature=env.float("SARVAM_TTS_TEMPERATURE", 0.6, 0.01, 2.0),
         sample_rate=env.int_choice("SARVAM_TTS_SAMPLE_RATE", 22050, TTS_SAMPLE_RATES),
         min_buffer_size=env.int("SARVAM_TTS_MIN_BUFFER_SIZE", 50, 30, 200),
@@ -311,7 +324,7 @@ def _llm_settings(env: _Env) -> LLMSettings:
 
 
 def _turn_settings(env: _Env) -> TurnSettings:
-    min_delay = env.float("TURN_ENDPOINTING_MIN_DELAY", 0.5, 0.0, 10.0)
+    min_delay = env.float("TURN_ENDPOINTING_MIN_DELAY", 0.35, 0.0, 10.0)
     max_delay = env.float("TURN_ENDPOINTING_MAX_DELAY", 3.0, 0.0, 30.0)
     if max_delay < min_delay:
         raise ConfigError(
@@ -330,6 +343,7 @@ def _turn_settings(env: _Env) -> TurnSettings:
             "INTERRUPTION_FALSE_TIMEOUT", 2.0, 0.5, 5.0
         ),
         preemptive_generation=env.bool("PREEMPTIVE_GENERATION", True),
+        preemptive_tts=env.bool("PREEMPTIVE_TTS", True),
     )
 
 
@@ -384,6 +398,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> VoiceSettings:
         noise_cancellation=reader.bool("NOISE_CANCELLATION", True),
         can_end_call=reader.bool("AGENT_CAN_END_CALL", False),
         outbound_allowed_number=reader.str("OUTBOUND_TEST_ALLOWED_NUMBER"),
+        outbound_policy=_dialing_policy(env),
         **_call_events_settings(reader),
         log_level=reader.choice(
             "VOICE_LOG_LEVEL", "info", ("debug", "info", "warning", "error")

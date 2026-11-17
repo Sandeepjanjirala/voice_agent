@@ -209,7 +209,7 @@
     ui.call.disabled = true;
     notice("");
     try {
-      const result = await api(listUrl, { method: "POST", body: JSON.stringify({ confirm: true }) });
+      const result = await api(listUrl, { method: "POST", body: JSON.stringify({ confirm: true, to: $("phone-number").value }) });
       if (result.ok) {
         renderLive(result.data.call);
         await loadHistory();
@@ -245,6 +245,8 @@
   ui.call.dataset.ready = String(!ui.call.disabled);
   ui.call.addEventListener("click", () => {
     if (busy || ui.call.disabled) return;
+    if (!$("phone-number").reportValidity()) return;
+    $("confirm-number").textContent = $("phone-number").value;
     ui.confirm.showModal();
     ui["confirm-cancel"].focus();
   });

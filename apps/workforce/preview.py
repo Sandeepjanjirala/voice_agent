@@ -17,7 +17,13 @@ from django.core.cache import cache
 
 from apps.integrations import transport
 
-from .voices import DEFAULT_PACE, PACE_CHOICES, SPEECH_LANGUAGE, TTS_MODEL, VOICE_NAMES
+from .voices import (
+    DEFAULT_PACE,
+    PACE_CHOICES,
+    SPEECH_LANGUAGE,
+    VOICE_MODELS,
+    VOICE_NAMES,
+)
 
 SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech"
 SAMPLE_RATE = 22050
@@ -49,8 +55,10 @@ def options(text: str, speaker: str, pace: str, language: str) -> dict:
         "text": text,
         "speaker": speaker,
         "pace": pace,
-        "speech_sample_rate": SAMPLE_RATE,
-        "model": TTS_MODEL,
+        "speech_sample_rate": 24000
+        if VOICE_MODELS[speaker] == "bulbul:v4-flash"
+        else SAMPLE_RATE,
+        "model": VOICE_MODELS[speaker],
         "output_audio_bitrate": BITRATE,
         "output_audio_codec": "mp3",
     }

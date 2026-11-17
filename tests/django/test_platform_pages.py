@@ -401,6 +401,7 @@ def test_missed_callers_are_listed_by_campus_and_marked_handled(world):
 
 
 def test_voice_preview_speaks_the_line_without_a_call(world, monkeypatch, settings):
+    monkeypatch.setenv("SARVAM_TTS_SPEAKER", "kavitha")
     settings.SARVAM_API_KEY = "sk-test-key"
     employee = employee_for(world, publish=False)
     audio = b"ID3-fake-mp3"
@@ -445,6 +446,17 @@ def test_voice_preview_speaks_the_line_without_a_call(world, monkeypatch, settin
 
     assert world.client(world.staff_north).post(url, {}).status_code == 403
     assert world.client(world.admin_b).post(url, {}).status_code == 404
+
+
+def test_v4_preview_matches_approved_playground_settings():
+    from apps.workforce.preview import options
+
+    request = options("Hello", "shubh_enhi_ads", "1.0", "te-en")
+    assert request["model"] == "bulbul:v4-flash"
+    assert request["speaker"] == "shubh_enhi_ads"
+    assert request["pace"] == 1.0
+    assert request["speech_sample_rate"] == 24000
+    assert request["target_language_code"] == "te-IN"
 
 
 def test_voice_preview_explains_why_it_cannot_play(world, monkeypatch, settings):

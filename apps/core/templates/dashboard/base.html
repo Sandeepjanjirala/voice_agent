@@ -5,15 +5,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="same-origin">
-  <title>Telugu AI Calling Agent · {% block title %}Dashboard{% endblock %}</title>
+  <title>Sri Chaitanya Techno Schools &middot; {% block title %}Dashboard{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'voice/studio.css' %}">
   <link rel="stylesheet" href="{% static 'dashboard/dashboard.css' %}">
+  <link rel="stylesheet" href="{% static 'brand/school.css' %}">
   {% block head %}{% endblock %}
 </head>
 <body{% if nav_sections %} class="shell"{% endif %}>
 {% if nav_sections %}
   <aside class="sidebar" id="sidebar" aria-label="Main">
-    <a class="side-brand" href="{% if user.is_staff %}{% url 'home' %}{% else %}{% url 'voice' %}{% endif %}"><span class="brand-icon" aria-hidden="true">తె</span><span>Telugu AI<span class="brand-sub">CALLING AGENT</span></span></a>
+    <a class="side-brand" href="{% if user.is_staff %}{% url 'home' %}{% else %}{% url 'voice' %}{% endif %}"><img class="school-logo" src="{% static 'brand/sri-chaitanya-logo.png' %}" alt="Sri Chaitanya Techno Schools"><span class="brand-sub">AI EMPLOYEE PLATFORM</span></a>
     {% if scope %}<div class="side-org"><span class="side-org-name" id="organisation-name">{{ scope.organisation.name }}</span><span class="side-org-role">{{ scope.role_label }}</span>
       {% if switch_organisations|length > 1 %}<form action="{% url 'organisation-switch' %}" method="post">{% csrf_token %}<select name="organisation" aria-label="Work in organisation" data-autosubmit>{% for organisation in switch_organisations %}<option value="{{ organisation.pk }}"{% if organisation.pk == scope.organisation.pk %} selected{% endif %}>{{ organisation.name }}</option>{% endfor %}</select><noscript><button class="small">Switch</button></noscript></form>{% endif %}
     </div>{% endif %}
@@ -32,16 +33,16 @@
   <div class="page">
     <header class="pagebar">
       <button class="menu-button" id="menu-button" type="button" aria-controls="sidebar" aria-expanded="false">Menu</button>
-      <span class="pagebar-title">{% block bar_title %}{% endblock %}</span>
+      <span class="workspace-label">School workspace</span><span class="pagebar-divider" aria-hidden="true">/</span><span class="pagebar-title">{% block bar_title %}{% endblock %}</span>
       {% if scope %}<a class="bell" href="{% url 'notifications' %}" id="bell" aria-label="Notifications{% if unread_notifications %}, {{ unread_notifications }} unread{% endif %}">Notifications{% if unread_notifications %} <span class="badge">{{ unread_notifications }}</span>{% endif %}</a>{% endif %}
       {% if scope and scope.role != 'campus_staff' %}<a class="button primary small" href="{% url 'employee-hire' %}">Hire an employee</a>{% endif %}
     </header>
     {% if messages %}<div class="flashes" role="status">{% for message in messages %}<p class="flash {{ message.tags }}">{{ message }}</p>{% endfor %}</div>{% endif %}
 {% else %}
-  <header class="topbar"><a class="brand" href="{% url 'voice' %}"><span class="brand-icon" aria-hidden="true">తె</span><span>Telugu AI<span class="brand-sub">CALLING AGENT</span></span></a></header>
+  <header class="topbar"><a class="brand" href="{% url 'voice' %}"><img class="school-logo" src="{% static 'brand/sri-chaitanya-logo.png' %}" alt="Sri Chaitanya Techno Schools"><span class="brand-sub">AI EMPLOYEE PLATFORM</span></a></header>
 {% endif %}
   <main>{% block content %}{% endblock %}</main>
-  <footer>Telugu AI Calling Agent <span>Built for conversations that feel natural.</span></footer>
+  <footer>Sri Chaitanya Techno Schools <span>AI Employee Platform &middot; Connecting every campus.</span></footer>
 {% if nav_sections %}
   </div>
   <script src="{% static 'dashboard/dashboard.js' %}" defer></script>

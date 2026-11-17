@@ -109,13 +109,13 @@ def test_turn_handling_defaults_allow_barge_in() -> None:
     options = build_turn_handling(make_settings().turn)
 
     assert options["turn_detection"] == "vad"
-    assert options["endpointing"] == {"min_delay": 0.5, "max_delay": 3.0}
+    assert options["endpointing"] == {"min_delay": 0.35, "max_delay": 3.0}
     assert options["interruption"]["enabled"] is True
     assert options["interruption"]["resume_false_interruption"] is True
     assert options["interruption"]["false_interruption_timeout"] == 2.0
     # "auto" must leave the mode unset so the SDK picks adaptive vs VAD itself.
     assert "mode" not in options["interruption"]
-    assert options["preemptive_generation"] == {"enabled": True}
+    assert options["preemptive_generation"] == {"enabled": True, "preemptive_tts": True}
 
 
 def test_turn_handling_is_configurable() -> None:
@@ -134,7 +134,28 @@ def test_turn_handling_is_configurable() -> None:
     assert options["endpointing"] == {"min_delay": 0.8, "max_delay": 4.0}
     assert options["interruption"]["mode"] == "vad"
     assert options["interruption"]["min_duration"] == 0.3
-    assert options["preemptive_generation"] == {"enabled": False}
+    assert options["preemptive_generation"] == {
+        "enabled": False,
+        "preemptive_tts": False,
+    }
+
+
+def test_speculative_audio_can_be_disabled_without_disabling_early_llm():
+    options = build_turn_handling(make_settings(PREEMPTIVE_TTS="false").turn)
+    assert options["preemptive_generation"] == {
+        "enabled": True,
+        "preemptive_tts": False,
+    }
+
+
+async def test_fast_defaults_reach_the_speech_provider_and_session():
+    settings = make_settings()
+    engine = build_tts(settings.tts)
+    assert engine._opts.pace == 1.2
+    assert engine._opts.min_buffer_size == 50
+    options = build_turn_handling(settings.turn)
+    assert options["preemptive_generation"] == {"enabled": True, "preemptive_tts": True}
+    assert options["interruption"]["enabled"] is True
 
 
 async def test_livekit_turn_detector_is_opt_in() -> None:

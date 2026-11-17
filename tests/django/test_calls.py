@@ -561,7 +561,7 @@ def test_api_refuses_anonymous_and_non_staff(gateway, django_user_model) -> None
     assert anonymous.get(url).status_code == 403
     assert (
         anonymous.post(
-            url, {"confirm": True}, content_type="application/json"
+            url, {"confirm": True, "to": MOBILE}, content_type="application/json"
         ).status_code
         == 403
     )
@@ -571,7 +571,9 @@ def test_api_refuses_anonymous_and_non_staff(gateway, django_user_model) -> None
         django_user_model.objects.create_user(username="p", password="x-pass")
     )
     assert (
-        plain.post(url, {"confirm": True}, content_type="application/json").status_code
+        plain.post(
+            url, {"confirm": True, "to": MOBILE}, content_type="application/json"
+        ).status_code
         == 403
     )
     assert gateway.dispatches == []
@@ -583,10 +585,12 @@ def test_api_enforces_csrf(gateway, staff) -> None:
     client.get(reverse("calls"))
     url = reverse("telephony:calls")
 
-    rejected = client.post(url, {"confirm": True}, content_type="application/json")
+    rejected = client.post(
+        url, {"confirm": True, "to": MOBILE}, content_type="application/json"
+    )
     accepted = client.post(
         url,
-        {"confirm": True},
+        {"confirm": True, "to": MOBILE},
         content_type="application/json",
         HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value,
     )
@@ -608,7 +612,9 @@ def test_api_requires_an_explicit_confirmation(gateway, staff_client, body) -> N
 
 def test_api_start_returns_masked_details_only(gateway, staff_client) -> None:
     response = staff_client.post(
-        reverse("telephony:calls"), {"confirm": True}, content_type="application/json"
+        reverse("telephony:calls"),
+        {"confirm": True, "to": MOBILE},
+        content_type="application/json",
     )
     text = response.content.decode()
 
@@ -622,12 +628,16 @@ def test_api_start_returns_masked_details_only(gateway, staff_client) -> None:
 
 def test_api_throttles_then_refuses_a_duplicate(gateway, staff_client) -> None:
     url = reverse("telephony:calls")
-    staff_client.post(url, {"confirm": True}, content_type="application/json")
+    staff_client.post(
+        url, {"confirm": True, "to": MOBILE}, content_type="application/json"
+    )
 
-    quick = staff_client.post(url, {"confirm": True}, content_type="application/json")
+    quick = staff_client.post(
+        url, {"confirm": True, "to": MOBILE}, content_type="application/json"
+    )
     cache.clear()
     duplicate = staff_client.post(
-        url, {"confirm": True}, content_type="application/json"
+        url, {"confirm": True, "to": MOBILE}, content_type="application/json"
     )
 
     assert quick.status_code == 429
@@ -639,7 +649,9 @@ def test_api_not_ready_returns_reasons(gateway, env, staff_client) -> None:
     env.setenv("TELEPHONY_CONFIRMED", "")
 
     response = staff_client.post(
-        reverse("telephony:calls"), {"confirm": True}, content_type="application/json"
+        reverse("telephony:calls"),
+        {"confirm": True, "to": MOBILE},
+        content_type="application/json",
     )
 
     assert response.status_code == 503
@@ -648,7 +660,9 @@ def test_api_not_ready_returns_reasons(gateway, env, staff_client) -> None:
 
 def test_api_status_follows_the_call(gateway, staff_client) -> None:
     created = staff_client.post(
-        reverse("telephony:calls"), {"confirm": True}, content_type="application/json"
+        reverse("telephony:calls"),
+        {"confirm": True, "to": MOBILE},
+        content_type="application/json",
     ).json()["call"]
     url = reverse("telephony:call", args=[created["id"]])
 
@@ -667,7 +681,9 @@ def test_api_unknown_call_is_404(gateway, staff_client) -> None:
 
 def test_api_hang_up(gateway, staff_client) -> None:
     created = staff_client.post(
-        reverse("telephony:calls"), {"confirm": True}, content_type="application/json"
+        reverse("telephony:calls"),
+        {"confirm": True, "to": MOBILE},
+        content_type="application/json",
     ).json()["call"]
 
     response = staff_client.post(
@@ -819,7 +835,9 @@ def deliver(worker: CallReporter, event: str, **fields) -> int:
 
 def test_web_call_end_to_end_with_worker_reports(gateway, staff_client) -> None:
     created = staff_client.post(
-        reverse("telephony:calls"), {"confirm": True}, content_type="application/json"
+        reverse("telephony:calls"),
+        {"confirm": True, "to": MOBILE},
+        content_type="application/json",
     ).json()["call"]
     status_url = reverse("telephony:call", args=[created["id"]])
     room = gateway.dispatches[0].room

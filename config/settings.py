@@ -177,8 +177,8 @@ EMPLOYEE_DRAFT_MODEL = os.environ.get("EMPLOYEE_DRAFT_MODEL", "").strip()
 CONTACT_ENCRYPTION_KEYS = _env_list("CONTACT_ENCRYPTION_KEYS")
 CONTACT_LOOKUP_KEY = os.environ.get("CONTACT_LOOKUP_KEY", "").strip()
 # Decrypting a stored contact's number in order to dial it. Off on purpose:
-# until wider calling is authorised, calls go only to OUTBOUND_TEST_ALLOWED_NUMBER.
-CONTACT_DIALING_ENABLED = False
+# Stored-contact dialing remains separately gated; outbound destinations also use the dialing policy.
+CONTACT_DIALING_ENABLED = _env_bool("CONTACT_DIALING_ENABLED", False)
 
 # --- Integrations and actions (apps/integrations) ------------------------------
 # Off: no action reaches an outside service (calendar, WhatsApp, REST, webhooks).

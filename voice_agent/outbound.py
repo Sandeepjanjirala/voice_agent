@@ -19,6 +19,8 @@ from google.protobuf.duration_pb2 import Duration
 from livekit import api, rtc
 from livekit.agents import JobContext, room_io
 
+from dialing import DialingPolicyError
+
 from .assistant import TeluguAssistant, greet
 from .call_reporting import CallMetrics, CallReporter
 from .config import VoiceSettings
@@ -100,10 +102,13 @@ async def place_call(
 ) -> DialResult:
     """Dial and wait for an answer. Never raises."""
     callee = mask_phone(dial.to)
-    allowed = settings.outbound_allowed_number
-    if not (dial.to and dial.trunk_id and allowed and dial.to == allowed):
+    try:
+        settings.outbound_policy.validate(dial.to)
+        if not dial.trunk_id:
+            raise DialingPolicyError("Missing outbound trunk.")
+    except DialingPolicyError:
         logger.error(
-            "outbound call refused: number is not the allowed test number",
+            "outbound call refused by dialing policy",
             extra={"callee": callee},
         )
         return DialResult(REFUSED)

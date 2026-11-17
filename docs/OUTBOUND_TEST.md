@@ -6,14 +6,16 @@ No call has been placed yet; the code has only been run against a fake LiveKit.
 
 ## How it works
 
-1. `manage.py telephony call` checks the number against `OUTBOUND_TEST_ALLOWED_NUMBER`
-   and asks the existing `telugu-agent` worker to place the call.
-2. The worker checks the number again, dials through the stored LiveKit trunk and waits.
+1. `manage.py telephony call` (or the Phone calls page) checks the number against the
+   dialing policy (`OUTBOUND_DIALING_MODE`, `OUTBOUND_ALLOWLIST_NUMBERS`; see the
+   README) and asks the existing `telugu-agent` worker to place the call.
+2. The worker checks the number against the same policy, dials through the stored
+   LiveKit trunk and waits.
 3. Only when you answer does the conversation start, with the usual Telugu greeting.
 4. When either side hangs up, or the call was busy, rejected, unanswered or failed, the
    worker deletes the room, which releases the phone line. Nothing is retried.
 
-Limits built in: one allowed number, one call at a time, 30 s ringing, 5 minutes per
+Limits built in: only allowlisted numbers (by default), one call at a time, 30 s ringing, 5 minutes per
 call, caller's number hidden from logs.
 
 ## What Vobiz needs from you
@@ -64,7 +66,7 @@ SIP_OUTBOUND_ADDRESS=<id>.sip.vobiz.ai
 SIP_OUTBOUND_AUTH_USERNAME=<credential username>
 SIP_OUTBOUND_AUTH_PASSWORD=<credential password>
 SIP_OUTBOUND_CALLER_ID=+91XXXXXXXXXX        # your Vobiz number
-OUTBOUND_TEST_ALLOWED_NUMBER=+91XXXXXXXXXX  # your own mobile
+OUTBOUND_ALLOWLIST_NUMBERS=+91XXXXXXXXXX    # your own mobile (comma-separate more)
 TELEPHONY_CONFIRMED=provider_outbound_ready
 ```
 
@@ -135,7 +137,7 @@ status.
 | `failed` 403 with "Violates Media Anchoring" | LiveKit did not dial from India; tell me, this is the regional routing question |
 | `failed` 404 / 484 | Number format; Vobiz may want a different form of the dialled number |
 | `failed` 488 / 503 right after dialling | TLS or SRTP not accepted by Vobiz; see "Configure" above |
-| `refused` | The number is not `OUTBOUND_TEST_ALLOWED_NUMBER`, or the worker was not restarted |
+| `refused` | The number is not allowed by the dialing policy, or the worker was not restarted after a change |
 
 To remove the trunk from LiveKit:
 

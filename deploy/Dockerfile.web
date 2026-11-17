@@ -13,11 +13,12 @@ WORKDIR /app
 
 # Dependencies first, for layer caching. No dev tools (pytest, ruff) in production.
 COPY pyproject.toml uv.lock ./
-RUN mkdir -p voice_agent apps config && uv sync --locked --no-dev --no-install-project
+RUN mkdir -p voice_agent apps config dialing && uv sync --locked --no-dev --no-install-project
 
 COPY manage.py ./
 COPY config ./config
 COPY apps ./apps
+COPY dialing ./dialing
 RUN uv sync --locked --no-dev
 
 # Static files are collected at build time and served by Caddy from a volume.

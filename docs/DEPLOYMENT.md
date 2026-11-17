@@ -151,8 +151,8 @@ Session recording options and Data residency):
 | Switch | Effect while off |
 | :--- | :--- |
 | `INTEGRATIONS_LIVE_ENABLED=false` | Bookings, WhatsApp messages, REST requests and webhooks are checked and logged as "simulated"; nothing leaves the server |
-| `CONTACT_DIALING_ENABLED = False` (code) | Stored contacts cannot be dialled; campaigns and instant leads are dry runs |
-| `OUTBOUND_TEST_ALLOWED_NUMBER` | The one number a test call may reach |
+| `CONTACT_DIALING_ENABLED=false` | Stored contacts cannot be dialled; campaigns and instant leads stay dry runs |
+| `OUTBOUND_DIALING_MODE=allowlist` | Only numbers in `OUTBOUND_ALLOWLIST_NUMBERS` can be dialled, by Django and by the worker |
 | `TELEPHONY_CONFIRMED` without `livekit_allowed_addresses_enforced` | No inbound trunk is created ([INBOUND.md](INBOUND.md)) |
 
 ## What was verified locally (17 November 2026)

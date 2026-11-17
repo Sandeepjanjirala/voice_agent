@@ -15,6 +15,8 @@ from uuid import uuid4
 
 from livekit import api
 
+from dialing import DialingPolicy, DialingPolicyError, load_policy
+
 from . import providers
 from .conf import (
     _E164,
@@ -57,8 +59,15 @@ class OutboundSettings:
     destination_country: str = "in"
     ringing_timeout_seconds: int = 30
     max_call_duration_seconds: int = 300
-    allowed_number: str = ""
+    allowed_number: str = ""  # Deprecated: OUTBOUND_TEST_ALLOWED_NUMBER.
+    policy: DialingPolicy = field(default_factory=DialingPolicy)
     confirmed: frozenset[str] = frozenset()
+
+    @property
+    def rehearsal_number(self) -> str:
+        """Where rehearsals and test calls ring: the old test number if it is
+        still set, otherwise the first number on the allowlist."""
+        return self.allowed_number or self.policy.first_number
 
 
 @dataclass(frozen=True)
@@ -129,6 +138,10 @@ def load_outbound_settings(env: Mapping[str, str] | None = None) -> OutboundSett
         raise TelephonyConfigError(
             f"TELEPHONY_CONFIRMED has unknown entries: {', '.join(unknown)}."
         )
+    try:
+        policy = load_policy(env)
+    except DialingPolicyError as error:
+        raise TelephonyConfigError(str(error)) from None
     return OutboundSettings(
         address=address,
         auth_username=username,
@@ -146,6 +159,7 @@ def load_outbound_settings(env: Mapping[str, str] | None = None) -> OutboundSett
             env, "SIP_OUTBOUND_MAX_CALL_DURATION_SECONDS", 300, 30, 600
         ),
         allowed_number=_number(env, "OUTBOUND_TEST_ALLOWED_NUMBER"),
+        policy=policy,
         confirmed=confirmed,
     )
 
@@ -182,21 +196,20 @@ def build_outbound_plan(settings: OutboundSettings) -> OutboundPlan:
             CONFIG,
             "Domestic Indian calls must present an Indian (+91) caller ID.",
         )
-    if not settings.allowed_number:
+    if settings.policy.mode == "allowlist" and not settings.policy.numbers:
         block(
             "allowed_number_missing",
             CONFIG,
-            "Set OUTBOUND_TEST_ALLOWED_NUMBER to your own mobile. It is the only "
-            "number that can be dialled.",
+            "Set OUTBOUND_ALLOWLIST_NUMBERS to approved E.164 destinations.",
         )
-    elif not settings.allowed_number.startswith("+91"):
+    elif settings.rehearsal_number and not settings.rehearsal_number.startswith("+91"):
         block(
             "allowed_number_not_indian",
             CONFIG,
             "The test number must be an Indian (+91) number: the trunk is pinned "
             "to India and media must stay in India.",
         )
-    elif settings.allowed_number == settings.caller_id:
+    elif settings.rehearsal_number and settings.rehearsal_number == settings.caller_id:
         block(
             "allowed_number_is_caller_id",
             CONFIG,
@@ -445,11 +458,10 @@ async def place_test_call(
     if not plan.ready:
         codes = ", ".join(blocker.code for blocker in plan.blockers)
         raise ProvisioningRefusedError(f"The outbound plan is blocked ({codes}).")
-    if to != settings.allowed_number:
-        raise ProvisioningRefusedError(
-            "That number is not OUTBOUND_TEST_ALLOWED_NUMBER. Only the one "
-            "configured test number can be called."
-        )
+    try:
+        settings.policy.validate(to)
+    except DialingPolicyError as error:
+        raise ProvisioningRefusedError(str(error)) from None
     trunk_id = await find_trunk(plan, gateway)
     if not trunk_id:
         raise ProvisioningRefusedError(
@@ -463,6 +475,7 @@ async def place_test_call(
         )
     room = room or new_room_name()
     metadata = {
+        **(extra_metadata or {}),
         METADATA_KEY: {
             "to": to,
             "trunk_id": trunk_id,
@@ -471,7 +484,6 @@ async def place_test_call(
             # The worker refuses requests older than this would allow.
             "requested_at": round(time.time(), 3),
         },
-        **(extra_metadata or {}),
     }
     await gateway.dispatch(
         api.CreateAgentDispatchRequest(

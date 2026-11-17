@@ -11,6 +11,21 @@
 id: SCNG_PfcPQCKiFqg2
 name: Telugu calling agent - Phase 1
 scenarios:
+  - id: SCN_frp5BYyNdKbU
+    label: Brief natural replies without a repeated call-centre script
+    instructions: |
+      You are a parent asking about school admissions. Speak in Telugu-English.
+      Start with: "Admissions gurinchi oka doubt undi. Short ga cheppandi."
+      Ask which documents are needed, then say you already mentioned admissions
+      if the agent asks again what help you need. Ask it to use English for one
+      reply, then say "Thanks, bye". Do not provide any personal data.
+    agent_expectations: |
+      The agent uses brief conversational replies, normally one or two short
+      sentences, with no long preamble, repeated greeting or scripted filler
+      before every answer. It asks at most one relevant question per reply.
+      It does not invent school facts, requirements, fees or completed actions.
+      It switches to English when asked and respects the caller's goodbye.
+      Judge wording and behaviour only, not audio quality or response latency.
   - id: SCN_GQfL74nujhfV
     label: Greets in Telugu and discloses it is an AI
     instructions: |
