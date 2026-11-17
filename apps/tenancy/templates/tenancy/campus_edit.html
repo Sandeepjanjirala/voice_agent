@@ -1,0 +1,15 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}{{ campus.name }}{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow"><a href="{% url 'campuses' %}">CAMPUSES &amp; STAFF</a></p>
+    <h1>{{ campus.name }}</h1>
+    <p class="muted">A campus that is not in use keeps its records but cannot be chosen for new ones, and its staff lose access to it.</p>
+  </div>
+</section>
+<form method="post" class="panel" style="max-width:560px" novalidate>{% csrf_token %}
+  {% include 'dashboard/_fields.html' %}
+  <div class="form-actions"><a href="{% url 'campuses' %}">Cancel</a><button class="primary" type="submit">Save campus</button></div>
+</form>
+{% endblock %}

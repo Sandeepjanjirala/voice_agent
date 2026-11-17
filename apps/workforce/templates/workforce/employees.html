@@ -1,0 +1,42 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}AI employees{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">TEAM</p>
+    <h1>AI employees</h1>
+    <p class="muted">One employee per job. Only a published version is ever used on a call.</p>
+  </div>
+</section>
+
+<section class="panel">
+  {% if total %}
+  <form class="filters" method="get" role="search">
+    <input type="search" name="q" value="{{ query }}" placeholder="Search name or role" aria-label="Search name or role">
+    <select name="channel" aria-label="Kind of calls">
+      <option value="">All kinds of calls</option>
+      {% for value, label in channels %}<option value="{{ value }}"{% if value == channel %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <select name="status" aria-label="Status">
+      <option value="">Any status</option>
+      {% for value, label in statuses %}<option value="{{ value }}"{% if value == status %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <button class="small" type="submit">Filter</button>
+  </form>
+  {% endif %}
+  {% if employees %}
+    <ul class="plain-list roster" id="roster">
+      {% for employee in employees %}
+      <li>
+        <a class="person" href="{% url 'employee-detail' employee.pk %}"><span class="avatar" aria-hidden="true">{{ employee.initial }}</span><span class="person-text"><span class="person-name">{{ employee.name }}</span><span class="person-role">{{ employee.role }}</span></span></a>
+        <span class="roster-meta"><span class="tag {{ employee.status }}">{{ employee.status_label }}</span><span>{{ employee.get_channel_display }}</span><span>{{ employee.get_language_display }}</span><span>Updated {{ employee.updated_at|date:"j M, H:i" }}</span></span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% elif total %}
+    <div class="empty-state"><strong>No employee matches</strong><a href="{% url 'employees' %}">Clear the filter</a></div>
+  {% else %}
+    <div class="empty-state"><strong>No employees yet</strong>Describe a job in a sentence or two and get an editable draft.<br><a class="button primary small" href="{% url 'employee-hire' %}">Hire your first employee</a></div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -12,5 +12,11 @@ os.environ["DJANGO_ALLOWED_HOSTS"] = "testserver"
 # Set TEST_DATABASE_URL=postgres://... to run the suite against PostgreSQL.
 os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL") or "sqlite://:memory:"
 os.environ["CALL_EVENTS_SECRET"] = ""
+# Throwaway keys for stored contacts; never used outside the tests.
+os.environ["CONTACT_ENCRYPTION_KEYS"] = "x2k1-oZ9bXKQ3kJ6m0Qy8v5wD4nL7pR1sT2uV3wX4yY="
+os.environ["CONTACT_LOOKUP_KEY"] = "test-only-lookup-key-0123456789abcdef"
 
 from config.settings import *  # noqa: F403
+
+# Tests create many users; real password hashing would dominate the run time.
+PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]

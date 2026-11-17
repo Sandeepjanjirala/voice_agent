@@ -1,0 +1,37 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Follow-ups{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">OUTCOMES</p>
+    <h1>Follow-ups</h1>
+    <p class="muted">Work people have to do about a lead, soonest first.</p>
+  </div>
+</section>
+{% include 'crm/_tabs.html' with tab='followups' %}
+<section class="panel">
+  <form class="filters" method="get">
+    <select name="who" aria-label="Whose follow-ups" data-autosubmit><option value="me"{% if who == 'me' %} selected{% endif %}>Mine</option><option value="none"{% if who == 'none' %} selected{% endif %}>Not assigned</option><option value="all"{% if who == 'all' %} selected{% endif %}>Everyone's</option></select>
+    <noscript><button class="small" type="submit">Show</button></noscript>
+  </form>
+  {% if page.object_list %}
+  <div class="table-scroll"><table class="data" id="task-table">
+    <thead><tr><th>What to do</th><th>Lead</th><th>Due</th><th>Assigned to</th><th></th></tr></thead>
+    <tbody>
+      {% for item in page %}
+      <tr>
+        <td class="wrap">{{ item.title }}</td>
+        <td class="wrap"><a href="{% url 'lead-detail' item.lead.pk %}">{{ item.lead.subject }}</a><small>{{ item.lead.contact.name }} · {{ item.campus.name }}</small></td>
+        <td{% if item.due_at <= now %} class="overdue"{% endif %}>{{ item.due_at|date:"j M, H:i" }}</td>
+        <td>{{ item.assigned_to.get_username|default:"–" }}</td>
+        <td><form method="post" action="?who={{ who }}">{% csrf_token %}<input type="hidden" name="task" value="{{ item.pk }}"><button class="small" type="submit">Mark done</button></form></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% include 'dashboard/_pager.html' with querystring='who='|add:who %}
+  {% else %}
+  <div class="empty-state"><strong>Nothing to follow up</strong>Follow-ups are added from a lead.</div>
+  {% endif %}
+</section>
+{% endblock %}

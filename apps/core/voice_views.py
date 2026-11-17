@@ -8,20 +8,45 @@ from uuid import uuid4
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.shortcuts import render
+from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 from livekit import api
 
 from apps.telephony.profiles import profile_metadata
+from apps.tenancy.access import scope_for
+from apps.workforce import publishing
+from apps.workforce.models import Employee
+
+TRIAL_SOURCES = {"draft": "draft", "published": "published version"}
 
 
-def _agent_dispatch() -> api.RoomAgentDispatch:
-    """Dispatch the existing agent, with the active agent profile if there is one.
+def _trial(request) -> tuple[Employee, str] | None:
+    """The employee a staff member asked to try, and which copy of it.
+    None means an ordinary conversation with the active agent profile."""
+    employee_id = request.GET.get("employee")
+    scope = scope_for(request)
+    if not employee_id or scope is None or not scope.can("employees.view"):
+        return None
+    try:
+        employee = (
+            scope.limit_shared(Employee.objects.all()).filter(pk=employee_id).first()
+        )
+    except (ValidationError, ValueError):
+        employee = None
+    if employee is None:
+        return None
+    source = request.GET.get("source")
+    return employee, source if source in TRIAL_SOURCES else "draft"
+
+
+def _agent_dispatch(profile: dict) -> api.RoomAgentDispatch:
+    """Dispatch the existing agent, with a profile if there is one.
     The profile holds wording and business facts only, never credentials."""
-    profile = profile_metadata()
     if not profile:
         return api.RoomAgentDispatch(agent_name=settings.LIVEKIT_AGENT_NAME)
     return api.RoomAgentDispatch(
@@ -33,7 +58,17 @@ def _agent_dispatch() -> api.RoomAgentDispatch:
 @login_required
 @ensure_csrf_cookie
 def workspace(request):
-    return render(request, "voice/workspace.html")
+    token_url = reverse("voice-token")
+    trial = _trial(request)
+    context = {"token_url": token_url}
+    if trial:
+        employee, source = trial
+        context.update(
+            token_url=f"{token_url}?employee={employee.pk}&source={source}",
+            trial_employee=employee,
+            trial_source=TRIAL_SOURCES[source],
+        )
+    return render(request, "voice/workspace.html", context)
 
 
 @never_cache
@@ -56,6 +91,22 @@ def token(request):
             {"error": "Voice service is not configured. Contact the administrator."},
             status=503,
         )
+    profile = profile_metadata()
+    if request.GET.get("employee"):
+        trial = _trial(request)
+        if trial is None:
+            return JsonResponse(
+                {"error": "That employee cannot be tried from this account."},
+                status=404,
+            )
+        try:
+            profile = publishing.trial_metadata(*trial)
+        except publishing.PublishError as error:
+            reasons = " ".join(error.reasons)
+            return JsonResponse(
+                {"error": f"This employee is not ready to try. {reasons}"},
+                status=400,
+            )
     # Atomic within the local cache. Production requires a shared cache / gateway limit.
     if not cache.add(f"voice-token:{request.user.pk}", True, timeout=5):
         response = JsonResponse(
@@ -85,7 +136,7 @@ def token(request):
                 max_participants=2,
                 empty_timeout=60,
                 departure_timeout=20,
-                agents=[_agent_dispatch()],
+                agents=[_agent_dispatch(profile)],
             )
         )
         .to_jwt()

@@ -1,0 +1,31 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Access log{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow"><a href="{% url 'settings' %}">PRIVACY &amp; SETTINGS</a></p>
+    <h1>Access log</h1>
+    <p class="muted">Who opened or changed personal data in {{ scope.organisation.name }}, and when. Phone numbers are never written here.</p>
+  </div>
+</section>
+<section class="panel">
+  <form class="filters" method="get" role="search">
+    <select name="action" aria-label="Action"><option value="">Every action</option>{% for name in actions %}<option value="{{ name }}"{% if name == action %} selected{% endif %}>{{ name }}</option>{% endfor %}</select>
+    <input type="search" name="actor" value="{{ actor }}" placeholder="Person" aria-label="Person">
+    <button class="small" type="submit">Filter</button>
+  </form>
+  {% if page.object_list %}
+  <div class="table-scroll"><table class="data" id="audit-table">
+    <thead><tr><th>When</th><th>Person</th><th>Action</th><th>Campus</th><th>Details</th></tr></thead>
+    <tbody>
+      {% for event in page %}
+      <tr><td><time datetime="{{ event.created_at|date:'c' }}" data-local-time>{{ event.created_at|date:"j M, H:i" }}</time></td><td>{{ event.actor_name }}</td><td>{{ event.action }}</td><td>{{ event.campus.name|default:"–" }}</td><td class="wrap">{% for key, value in event.detail.items %}{{ key }}: {{ value }}{% if not forloop.last %}; {% endif %}{% endfor %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% include 'dashboard/_pager.html' %}
+  {% else %}
+  <div class="empty-state"><strong>Nothing logged</strong>Entries appear when someone opens a contact, imports, exports or changes permissions.</div>
+  {% endif %}
+</section>
+{% endblock %}

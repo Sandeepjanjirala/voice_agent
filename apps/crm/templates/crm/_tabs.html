@@ -1,0 +1,6 @@
+<nav class="tabs" aria-label="Leads and contacts">
+  <a href="{% url 'leads' %}"{% if tab == 'leads' %} aria-current="true"{% endif %}>Leads</a>
+  <a href="{% url 'followups' %}"{% if tab == 'followups' %} aria-current="true"{% endif %}>Follow-ups</a>
+  <a href="{% url 'contacts' %}"{% if tab == 'contacts' %} aria-current="true"{% endif %}>Contacts</a>
+  <a href="{% url 'contact-import' %}"{% if tab == 'import' %} aria-current="true"{% endif %}>Import</a>
+</nav>

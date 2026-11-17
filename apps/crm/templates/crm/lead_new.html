@@ -1,0 +1,19 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Add a lead{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow"><a href="{% url 'leads' %}">LEADS &amp; CONTACTS</a></p>
+    <h1>Add a lead</h1>
+    <p class="muted">If the number already belongs to a contact, the lead is added to that contact. Use test data only until real contact data is authorised.</p>
+  </div>
+</section>
+{% if problem %}<p class="notice" role="alert">Contacts cannot be stored yet: {{ problem }} Run <code>python manage.py contactkeys generate</code> and add the two lines to .env.local.</p>{% endif %}
+<form method="post" class="panel" style="max-width:680px" novalidate>{% csrf_token %}
+  {% include 'dashboard/_fields.html' %}
+  <div class="form-actions">
+    <p class="fine">Recording that someone agreed to be called needs a note of how and when. Without it the contact cannot be called.</p>
+    <button class="primary" type="submit"{% if problem %} disabled{% endif %}>Add lead</button>
+  </div>
+</form>
+{% endblock %}

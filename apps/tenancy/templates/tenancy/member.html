@@ -1,0 +1,15 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}{% if member %}{{ member.user.get_username }}{% else %}Add a staff member{% endif %}{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow"><a href="{% url 'campuses' %}">CAMPUSES &amp; STAFF</a></p>
+    <h1>{% if member %}{{ member.user.get_username }}{% else %}Add a staff member{% endif %}</h1>
+    <p class="muted">An organisation admin manages every campus, employee, lead and report of {{ scope.organisation.name }}. Campus staff work only in the campuses ticked for them.</p>
+  </div>
+</section>
+<form method="post" class="panel" style="max-width:560px" novalidate>{% csrf_token %}
+  {% include 'dashboard/_fields.html' %}
+  <div class="form-actions"><a href="{% url 'campuses' %}">Cancel</a><button class="primary" type="submit">{% if member %}Save{% else %}Add staff member{% endif %}</button></div>
+</form>
+{% endblock %}

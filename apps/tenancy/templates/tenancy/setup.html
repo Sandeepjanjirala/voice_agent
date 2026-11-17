@@ -1,0 +1,18 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Set up an organisation{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">PLATFORM SUPERUSER</p>
+    <h1>{% if first %}Set up your organisation{% else %}Add an organisation{% endif %}</h1>
+    <p class="muted">An organisation owns its campuses, staff, AI employees, contacts and calls. Nothing is shared between organisations.{% if first %} Employees and call records made so far will be moved into this one.{% endif %}</p>
+  </div>
+</section>
+<form method="post" class="panel" style="max-width:560px" novalidate>{% csrf_token %}
+  {% include 'dashboard/_fields.html' %}
+  <div class="form-actions">
+    <p class="fine">You stay the platform superuser. Add the organisation's own admins and staff afterwards.</p>
+    <button class="primary" type="submit">Create organisation</button>
+  </div>
+</form>
+{% endblock %}

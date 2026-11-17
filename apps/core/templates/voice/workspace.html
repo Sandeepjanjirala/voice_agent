@@ -1,6 +1,7 @@
 {% extends 'voice/base.html' %}{% load static %}
 {% block content %}
-<div id="voice-app" data-token-url="{% url 'voice-token' %}">
+<div id="voice-app" data-token-url="{{ token_url }}">
+  {% if trial_employee %}<p class="notice" role="note" id="trial-note">Trying <strong>{{ trial_employee.name }}</strong> ({{ trial_source }}) in your browser. No phone call is placed. <a href="{% url 'employee-detail' trial_employee.pk %}">Back to {{ trial_employee.name }}</a></p>{% endif %}
   <section class="intro"><div><p class="eyebrow">A CONVERSATION STARTS HERE</p><h1>Your voice. Your language.</h1><p class="muted">Meet your Telugu AI assistant. Speak naturally, and follow the conversation as it happens.</p></div><span class="phase">BROWSER VOICE · PHASE 1.5</span></section>
   <div class="studio-grid">
     <section class="card conversation" aria-label="Conversation controls">

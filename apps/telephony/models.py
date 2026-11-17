@@ -57,6 +57,39 @@ class CallRecord(models.Model):
         related_name="placed_calls",
     )
 
+    # Whose call this is. Empty on records made before organisations existed
+    # and on calls placed from the command line.
+    organisation = models.ForeignKey(
+        "tenancy.Organisation",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="call_records",
+    )
+    campus = models.ForeignKey(
+        "tenancy.Campus",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="call_records",
+    )
+    lead = models.ForeignKey(
+        "crm.Lead",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="call_records",
+    )
+    # The published employee version the call used, once calls use employees.
+    employee_version = models.ForeignKey(
+        "workforce.EmployeeVersion",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="call_records",
+    )
+    notes = models.TextField(max_length=2000, blank=True)
+
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
     ringing_at = models.DateTimeField(null=True, blank=True)
     answered_at = models.DateTimeField(null=True, blank=True)

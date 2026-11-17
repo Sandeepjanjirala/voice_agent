@@ -11,6 +11,8 @@ secure trunk authentication. Nothing is deployed. See [docs/ROADMAP.md](docs/ROA
 
 | Document | What it covers |
 | :--- | :--- |
+| [docs/PROGRESS.md](docs/PROGRESS.md) | Dashboard build: what each milestone delivered and how it was checked |
+| [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) | Feature-by-feature comparison with the reference product, and what is still missing |
 | [docs/OUTBOUND_TEST.md](docs/OUTBOUND_TEST.md) | The first real call: one outbound test call to your own mobile |
 | [docs/VOBIZ_SETUP.md](docs/VOBIZ_SETUP.md) | Step-by-step account, number and trunk setup for the first real inbound call |
 | [docs/PHASE2_IMPLEMENTATION.md](docs/PHASE2_IMPLEMENTATION.md) | Inbound telephony integration: what was built, verified, and what is not yet proven |
@@ -153,6 +155,49 @@ Django's existing SQLite fallback stores login/session data locally. PostgreSQL 
 business records remain Phase 4. See [the verification and testing guide](docs/PHASE1_5_VERIFICATION.md)
 for exact browser coverage and pending human checks.
 
+## Dashboard and AI employees (staff only)
+
+Signing in as a staff user opens <http://127.0.0.1:8000/home/>: your AI employees,
+this week's calls and a setup checklist. **Hire an employee** takes a job described
+in plain language and drafts an editable employee: name, opening line, steps,
+details to collect, limits and ending. Edit it, press **Try the draft** to talk to
+it in the Voice studio, then **Publish**. Each publish is a numbered version; older
+versions can be copied back into the draft. **Call the test number** on a published
+employee places one real call to the approved test number with that version. Sections marked *Planned* in the sidebar open a page that
+says what works today and what is still to come.
+
+Drafting uses the same `LLM_*` settings as the voice worker, so it needs no extra
+key. If the LLM cannot be reached, the draft starts from a plain template and says so.
+
+### Organisations, campuses and roles
+
+| Role | Sees and does |
+| :--- | :--- |
+| Platform superuser (Django superuser) | Creates organisations; works in one at a time, chosen in the sidebar |
+| Organisation admin | Everything in their organisation: campuses, staff, employees, leads, reports, access log, retention |
+| Campus staff | Leads, contacts, calls and reports of the campuses ticked for them |
+
+On first sign-in the superuser is asked to set up an organisation; existing
+employees and call records move into it. Add staff under **Campuses & staff**.
+A record in another organisation or campus is a 404, whatever ID is typed.
+
+### Contacts and phone numbers
+
+Contact numbers are encrypted before they reach the database, matched through a
+keyed hash, and shown masked. Create the two keys once and add them to `.env.local`:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py contactkeys generate   # prints the two lines
+.\.venv\Scripts\python.exe manage.py contactkeys status
+.\.venv\Scripts\python.exe manage.py contactkeys rotate     # after putting a new key first
+.\.venv\Scripts\python.exe manage.py retention              # preview; add --apply to carry out
+```
+
+Keep the keys out of Git and out of database backups; in production use a secrets
+manager. Calling stored contacts is switched off (`CONTACT_DIALING_ENABLED` in
+`config/settings.py`): calls go only to `OUTBOUND_TEST_ALLOWED_NUMBER`. Use made-up
+contacts until real data is authorised.
+
 ## Inbound telephony
 
 These commands buy nothing and place no call. The first three change nothing:
@@ -286,6 +331,11 @@ $env:TEST_DATABASE_URL = "postgres://telugu_agent:<password>@127.0.0.1:5432/telu
 .\.venv\Scripts\python.exe -m pytest
 Remove-Item Env:TEST_DATABASE_URL
 
+# Dashboard and Hire wizard in Chromium (canned LLM answer; restart the server per run)
+.\.venv\Scripts\python.exe -m tests.browser.dashboard_server   # window 1
+node tests/browser/dashboard.cjs                               # window 2
+node tests/browser/crm.cjs                                     # window 2, same server
+
 # Browser: real Chromium and Django, simulated LiveKit, fake numbers
 .\.venv\Scripts\python.exe -m tests.browser.calls_server   # window 1; Ctrl+C when done
 node tests/browser/calls.cjs                                 # window 2
@@ -322,6 +372,9 @@ voice_agent/          LiveKit worker (separate process)
 config/               Django project (settings, urls, asgi)
 apps/core/            health API, voice views, templates and static assets
 apps/telephony/       telephony: trunk planning, outbound calls, call records, calls page
+apps/workforce/       AI employees: hire wizard, LLM drafting, draft editor, dashboard home
+apps/tenancy/         organisations, campuses, roles and scope, access log
+apps/crm/             encrypted contacts, leads, follow-ups, import, reports, retention
 scenarios/            proposed scenarios that are not yet run in CI
 scripts/              latency_report.py, llm_bakeoff.py
 tests/                django/, voice/, test_process_boundary.py

@@ -1,0 +1,64 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">HOME</p>
+    <h1>Your calling team</h1>
+    <p class="muted">{{ scope.organisation.name }}: its AI employees, leads and calls{% if not scope.all_campuses %} for your campuses{% endif %}, and what still needs setting up.</p>
+  </div>
+</section>
+
+<div class="tiles six">
+  <div class="tile"><p class="tile-label">AI employees</p><p class="tile-value" id="stat-employees">{{ stats.employees }}</p><p class="tile-note">{% if stats.employees %}{{ stats.published }} published{% else %}None hired yet{% endif %}</p></div>
+  <a class="tile" href="{% url 'leads' %}?stage=open"><p class="tile-label">Open leads</p><p class="tile-value" id="stat-open-leads">{{ stats.open_leads }}</p><p class="tile-note">Not yet converted or closed</p></a>
+  <a class="tile" href="{% url 'followups' %}?who=all"><p class="tile-label">Follow-ups due</p><p class="tile-value">{{ stats.tasks_due }}</p><p class="tile-note">Due now or overdue</p></a>
+  <div class="tile"><p class="tile-label">Calls today</p><p class="tile-value">{{ stats.calls_today }}</p><p class="tile-note">{{ stats.week_total }} in the last 7 days</p></div>
+  <div class="tile"><p class="tile-label">Answered</p><p class="tile-value">{% if stats.answer_rate is None %}–{% else %}{{ stats.answer_rate }}%{% endif %}</p><p class="tile-note">Of calls in the last 7 days</p></div>
+  <div class="tile"><p class="tile-label">Response time</p><p class="tile-value">{% if stats.response is None %}–{% else %}{{ stats.response }} s{% endif %}</p><p class="tile-note">Median, caller stops to agent speaks</p></div>
+</div>
+
+<div class="grid-2">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Your team</h2><a href="{% url 'employees' %}">All employees</a></div>
+      {% if team %}
+        <ul class="plain-list roster">
+          {% for employee in team %}
+          <li>
+            <a class="person" href="{% url 'employee-detail' employee.pk %}"><span class="avatar" aria-hidden="true">{{ employee.initial }}</span><span class="person-text"><span class="person-name">{{ employee.name }}</span><span class="person-role">{{ employee.role }}</span></span></a>
+            <span class="roster-meta"><span class="tag {{ employee.status }}">{{ employee.status_label }}</span>{{ employee.get_channel_display }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="empty-state"><strong>No employees yet</strong>Describe a job in a sentence or two and get an editable draft.<br><a class="button primary small" href="{% url 'employee-hire' %}">Hire your first employee</a></div>
+      {% endif %}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Recent calls</h2><a href="{% url 'conversations' %}">All conversations</a></div>
+      {% if recent %}
+        <div class="table-scroll"><table class="data">
+          <thead><tr><th>Number</th><th>Result</th><th>Talk time</th><th>Started</th></tr></thead>
+          <tbody>
+            {% for call in recent %}
+            <tr><td><a href="{% url 'conversation-detail' call.id %}">{{ call.masked_number }}</a></td><td><span class="tag{% if call.status == 'completed' or call.status == 'answered' %} good{% elif call.active %}{% else %} bad{% endif %}">{{ call.status_label }}</span></td><td>{% if call.duration_seconds is None %}–{% else %}{{ call.duration_seconds|floatformat:0 }} s{% endif %}</td><td><time datetime="{{ call.created_at }}" data-local-time>{{ call.created_at|slice:":16" }}</time></td></tr>
+            {% endfor %}
+          </tbody>
+        </table></div>
+      {% else %}
+        <div class="empty-state"><strong>No calls yet</strong>Calls appear here as they are placed.</div>
+      {% endif %}
+    </section>
+  </div>
+  <section class="panel">
+    <div class="panel-head"><h2>Getting ready</h2><span class="tag{% if setup_done == setup|length %} good{% endif %}">{{ setup_done }} of {{ setup|length }}</span></div>
+    <ul class="plain-list checklist">
+      {% for item in setup %}
+      <li><span class="check{% if item.done %} done{% endif %}" aria-hidden="true"></span><span>{{ item.label }}<span class="visually-hidden"> ({% if item.done %}done{% else %}not done{% endif %})</span>{% if not item.done %}<small>{% if item.url_name %}<a href="{% url item.url_name %}">{{ item.help }}</a>{% else %}{{ item.help }}{% endif %}</small>{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+    <p class="help">Campuses and calling channels arrive in later milestones. Real calls stay limited to the one approved test number.</p>
+  </section>
+</div>
+{% endblock %}

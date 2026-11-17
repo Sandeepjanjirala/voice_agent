@@ -1,0 +1,50 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="same-origin">
+  <title>Telugu AI Calling Agent · {% block title %}Dashboard{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'voice/studio.css' %}">
+  <link rel="stylesheet" href="{% static 'dashboard/dashboard.css' %}">
+  {% block head %}{% endblock %}
+</head>
+<body{% if nav_sections %} class="shell"{% endif %}>
+{% if nav_sections %}
+  <aside class="sidebar" id="sidebar" aria-label="Main">
+    <a class="side-brand" href="{% if user.is_staff %}{% url 'home' %}{% else %}{% url 'voice' %}{% endif %}"><span class="brand-icon" aria-hidden="true">తె</span><span>Telugu AI<span class="brand-sub">CALLING AGENT</span></span></a>
+    {% if scope %}<div class="side-org"><span class="side-org-name" id="organisation-name">{{ scope.organisation.name }}</span><span class="side-org-role">{{ scope.role_label }}</span>
+      {% if switch_organisations|length > 1 %}<form action="{% url 'organisation-switch' %}" method="post">{% csrf_token %}<select name="organisation" aria-label="Work in organisation" data-autosubmit>{% for organisation in switch_organisations %}<option value="{{ organisation.pk }}"{% if organisation.pk == scope.organisation.pk %} selected{% endif %}>{{ organisation.name }}</option>{% endfor %}</select><noscript><button class="small">Switch</button></noscript></form>{% endif %}
+    </div>{% endif %}
+    <nav class="side-nav" aria-label="Sections">
+      {% for section in nav_sections %}
+        {% if section.title %}<p class="side-title">{{ section.title }}</p>{% endif %}
+        {% for item in section.items %}<a href="{{ item.url }}"{% if item.current %} aria-current="page"{% endif %}{% if item.soon %} class="soon" title="Planned, not built yet"{% endif %}>{{ item.label }}</a>{% endfor %}
+      {% endfor %}
+    </nav>
+    <div class="side-foot">
+      <span class="side-user" title="Signed in">{{ user.get_username }}</span>
+      <form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text-button">Sign out</button></form>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="page">
+    <header class="pagebar">
+      <button class="menu-button" id="menu-button" type="button" aria-controls="sidebar" aria-expanded="false">Menu</button>
+      <span class="pagebar-title">{% block bar_title %}{% endblock %}</span>
+      {% if scope and scope.role != 'campus_staff' %}<a class="button primary small" href="{% url 'employee-hire' %}">Hire an employee</a>{% endif %}
+    </header>
+    {% if messages %}<div class="flashes" role="status">{% for message in messages %}<p class="flash {{ message.tags }}">{{ message }}</p>{% endfor %}</div>{% endif %}
+{% else %}
+  <header class="topbar"><a class="brand" href="{% url 'voice' %}"><span class="brand-icon" aria-hidden="true">తె</span><span>Telugu AI<span class="brand-sub">CALLING AGENT</span></span></a></header>
+{% endif %}
+  <main>{% block content %}{% endblock %}</main>
+  <footer>Telugu AI Calling Agent <span>Built for conversations that feel natural.</span></footer>
+{% if nav_sections %}
+  </div>
+  <script src="{% static 'dashboard/dashboard.js' %}" defer></script>
+{% endif %}
+  {% block scripts %}{% endblock %}
+</body>
+</html>

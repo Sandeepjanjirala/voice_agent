@@ -1,0 +1,61 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Performance{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">OUTCOMES</p>
+    <h1>Performance</h1>
+    <p class="muted">Calls and leads of the last {{ days }} days{% if campus %} at {{ campus.name }}{% elif not scope.all_campuses %} in your campuses{% endif %}.</p>
+  </div>
+  <a class="button small" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}format=csv">Export CSV</a>
+</section>
+
+<form class="filters" method="get">
+  <select name="days" aria-label="Period" data-autosubmit>{% for value in ranges %}<option value="{{ value }}"{% if value == days %} selected{% endif %}>Last {{ value }} days</option>{% endfor %}</select>
+  <select name="campus" aria-label="Campus" data-autosubmit><option value="">Every campus</option>{% for item in campuses %}<option value="{{ item.pk }}"{% if campus and item.pk == campus.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
+  <noscript><button class="small" type="submit">Show</button></noscript>
+</form>
+
+<div class="tiles six">
+  <div class="tile"><p class="tile-label">Calls</p><p class="tile-value" id="perf-calls">{{ summary.total }}</p><p class="tile-note">{{ summary.answered }} answered</p></div>
+  <div class="tile"><p class="tile-label">Answer rate</p><p class="tile-value">{% if summary.answer_rate is None %}–{% else %}{{ summary.answer_rate }}%{% endif %}</p><p class="tile-note">Of calls placed</p></div>
+  <div class="tile"><p class="tile-label">Talk time</p><p class="tile-value">{{ summary.talk_minutes }} min</p><p class="tile-note">{% if summary.average_talk is None %}No talk time yet{% else %}{{ summary.average_talk }} s per call{% endif %}</p></div>
+  <div class="tile"><p class="tile-label">Response time</p><p class="tile-value">{% if summary.response is None %}–{% else %}{{ summary.response }} s{% endif %}</p><p class="tile-note">Median, caller stops to agent speaks</p></div>
+  <div class="tile"><p class="tile-label">New leads</p><p class="tile-value" id="perf-leads">{{ lead_total }}</p><p class="tile-note">Added in this period</p></div>
+  <div class="tile"><p class="tile-label">Converted</p><p class="tile-value">{{ lead_won }}</p><p class="tile-note">Of those leads</p></div>
+</div>
+
+<div class="grid-2">
+  <section class="panel">
+    <div class="panel-head"><h2>Calls per day</h2></div>
+    <div class="days" role="img" aria-label="Calls per day: {% for day in by_day %}{{ day.label }} {{ day.count }}{% if not forloop.last %}, {% endif %}{% endfor %}">{% for day in by_day %}<span style="height:{{ day.width }}%" title="{{ day.label }}: {{ day.count }}"{% if not day.count %} data-zero{% endif %}></span>{% endfor %}</div>
+    <div class="days-ends"><span>{{ by_day.0.label }}</span><span>{% with last=by_day|last %}{{ last.label }}{% endwith %}</span></div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>How calls ended</h2></div>
+    {% if by_status %}<ul class="barlist">{% for row in by_status %}<li><span>{{ row.label }}</span><span class="track"><span class="fill" style="width:{{ row.width }}%"></span></span><span class="n">{{ row.count }}</span></li>{% endfor %}</ul>{% else %}<p class="help">No calls in this period.</p>{% endif %}
+  </section>
+</div>
+
+<section class="panel" style="margin-top:20px">
+  <div class="panel-head"><h2>Leads by stage</h2></div>
+  <ul class="barlist" id="stage-bars">{% for row in by_stage %}<li><span>{{ row.label }}</span><span class="track"><span class="fill" style="width:{{ row.width }}%"></span></span><span class="n">{{ row.count }}</span></li>{% endfor %}</ul>
+</section>
+
+<section class="panel" style="margin-top:20px">
+  <div class="panel-head"><h2>By campus</h2></div>
+  <div class="table-scroll"><table class="data" id="campus-report">
+    <thead><tr><th>Campus</th><th class="num">Leads</th><th class="num">Open</th><th class="num">Converted</th><th class="num">Calls</th><th class="num">Answered</th><th class="num">Talk min</th></tr></thead>
+    <tbody>{% for row in campus_rows %}<tr><td>{{ row.name }}</td><td class="num">{{ row.leads }}</td><td class="num">{{ row.open }}</td><td class="num">{{ row.won }}</td><td class="num">{{ row.total }}</td><td class="num">{% if row.answer_rate is None %}–{% else %}{{ row.answer_rate }}%{% endif %}</td><td class="num">{{ row.talk_minutes }}</td></tr>{% empty %}<tr><td colspan="7">No campus yet.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+
+<section class="panel" style="margin-top:20px">
+  <div class="panel-head"><h2>By AI employee</h2></div>
+  <div class="table-scroll"><table class="data" id="employee-report">
+    <thead><tr><th>Employee</th><th>Status</th><th class="num">Leads</th><th class="num">Converted</th><th class="num">Calls</th><th class="num">Answered</th><th class="num">Talk min</th></tr></thead>
+    <tbody>{% for row in employee_rows %}<tr><td>{{ row.name }}<small>{{ row.role }}</small></td><td>{{ row.status }}</td><td class="num">{{ row.leads }}</td><td class="num">{{ row.won }}</td><td class="num">{{ row.total }}</td><td class="num">{% if row.answer_rate is None %}–{% else %}{{ row.answer_rate }}%{% endif %}</td><td class="num">{{ row.talk_minutes }}</td></tr>{% empty %}<tr><td colspan="7">No AI employee yet.</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="help">A call counts for an employee when it was placed with one of its published versions.</p>
+</section>
+{% endblock %}

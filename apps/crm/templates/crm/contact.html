@@ -1,0 +1,64 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}{{ contact.name }}{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow"><a href="{% url 'contacts' %}">CONTACTS</a> · {{ contact.campus.name }}</p>
+    <h1>{{ contact.name }}</h1>
+    <p class="muted" id="contact-number">{% if contact.is_erased %}Personal details erased {{ contact.erased_at|date:"j M Y" }}.{% else %}{{ contact.phone_masked }} · the full number is stored encrypted and is never shown.{% endif %}</p>
+  </div>
+  <span id="call-block">{% if call_block %}<span class="tag bad">May not be called</span>{% else %}<span class="tag good">May be called</span>{% endif %}</span>
+</section>
+{% if call_block %}<p class="notice" role="note">{{ call_block }}</p>{% endif %}
+
+<div class="grid-2">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Details</h2></div>
+      {% if can_edit %}
+      <form method="post" novalidate>{% csrf_token %}<input type="hidden" name="action" value="details">
+        {% include 'dashboard/_fields.html' with form=details %}
+        <button class="primary small" type="submit">Save details</button>
+      </form>
+      {% else %}
+      <dl class="facts-grid"><dt>From</dt><dd>{{ contact.get_origin_display }}</dd><dt>May call about</dt><dd>{{ contact.calling_purpose|default:"–" }}</dd><dt>Language</dt><dd>{{ contact.get_preferred_language_display }}</dd></dl>
+      {% endif %}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Leads</h2></div>
+      {% if leads %}
+      <ul class="timeline">{% for lead in leads %}<li><a href="{% url 'lead-detail' lead.pk %}">{{ lead.subject }}</a> <span class="tag">{{ lead.get_stage_display }}</span><small>{{ lead.created_at|date:"j M Y" }}</small></li>{% endfor %}</ul>
+      {% else %}<p class="help">No leads for this contact.</p>{% endif %}
+    </section>
+  </div>
+
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Permission to call</h2></div>
+      <dl class="facts-grid" style="margin-bottom:14px">
+        <dt>Status</dt><dd id="consent-status">{{ contact.get_consent_display }}</dd>
+        <dt>Recorded</dt><dd>{% if contact.consent_at %}{{ contact.consent_at|date:"j M Y, H:i" }}{% if contact.consent_by %} by {{ contact.consent_by.get_username }}{% endif %}{% else %}–{% endif %}</dd>
+        <dt>Do-not-call list</dt><dd>{% if opted_out %}<span class="tag bad">On the list</span>{% else %}Not on the list{% endif %}</dd>
+      </dl>
+      {% if can_edit %}
+      <form method="post" novalidate>{% csrf_token %}<input type="hidden" name="action" value="consent">
+        {% include 'dashboard/_fields.html' with form=consent %}
+        <button class="small" type="submit">Record permission</button>
+      </form>
+      {% if not opted_out %}
+      <form method="post" class="inline-form" style="margin-top:16px;border-top:1px solid #edf0eb;padding-top:14px" data-ask="Add this number to the do-not-call list? Nobody in the organisation will be able to call it.">{% csrf_token %}<input type="hidden" name="action" value="opt_out">
+        <div class="field"><label for="dnc-reason">Asked not to be called? Reason (optional)</label><input type="text" id="dnc-reason" name="reason" maxlength="200"></div>
+        <button class="danger small" type="submit">Do not call</button>
+      </form>
+      {% endif %}
+      {% endif %}
+    </section>
+    {% if can_erase %}
+    <section class="panel danger-zone">
+      <p>Erase the name, number and notes. Reports keep an empty record; a do-not-call entry is kept.</p>
+      <form method="post" data-ask="Erase {{ contact.name }}'s personal details? This cannot be undone.">{% csrf_token %}<input type="hidden" name="action" value="erase"><button class="danger small" type="submit">Erase</button></form>
+    </section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Import contacts{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">OUTCOMES</p>
+    <h1>Import contacts</h1>
+    <p class="muted">Every row is checked first: invalid numbers, repeats, existing contacts and do-not-call numbers are left out. Use test data only until real contact data is authorised.</p>
+  </div>
+</section>
+{% include 'crm/_tabs.html' with tab='import' %}
+{% if problem %}<p class="notice" role="alert">Contacts cannot be stored yet: {{ problem }} Run <code>python manage.py contactkeys generate</code> and add the two lines to .env.local.</p>{% endif %}
+
+{% if rows %}
+<section class="panel" id="preview" style="margin-bottom:20px">
+  <div class="panel-head"><h2>Check before importing</h2><span class="tag good" id="preview-new">{{ counts.new }} will be added</span></div>
+  <p class="status-line">{% if counts.existing %}<span class="tag">{{ counts.existing }} already contacts</span>{% endif %}{% if counts.repeated %}<span class="tag">{{ counts.repeated }} repeated</span>{% endif %}{% if counts.invalid %}<span class="tag bad">{{ counts.invalid }} invalid</span>{% endif %}{% if counts.opted_out %}<span class="tag bad">{{ counts.opted_out }} do not call</span>{% endif %}</p>
+  <div class="table-scroll"><table class="data">
+    <thead><tr><th>Line</th><th>Name</th><th>Number</th><th>Subject</th><th>Result</th></tr></thead>
+    <tbody>{% for row in rows|slice:":200" %}<tr><td>{{ row.line }}</td><td>{{ row.name|default:"–" }}</td><td>{{ row.masked|default:"–" }}</td><td>{{ row.subject|default:"–" }}</td><td class="wrap">{% if row.status == 'new' %}<span class="tag good">{{ row.status_label }}</span>{% else %}<span class="tag{% if row.status == 'invalid' or row.status == 'opted_out' %} bad{% endif %}">{{ row.status_label }}</span> {{ row.reason }}{% endif %}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% if rows|length > 200 %}<p class="help">Showing the first 200 of {{ rows|length }} rows.</p>{% endif %}
+</section>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" class="panel" style="max-width:760px" novalidate>{% csrf_token %}
+  {% include 'dashboard/_fields.html' %}
+  <div class="form-actions">
+    <p class="fine">Ticking the agreement box records, with your name and the time, that these people agreed to be called. Leave it unticked if you are not sure: the contacts are stored but cannot be called.</p>
+    <span class="button-row">
+      <button type="submit" name="action" value="preview"{% if problem %} disabled{% endif %}>Check the list</button>
+      {% if rows and counts.new %}<button class="primary" type="submit" name="action" value="import" id="import-button">Import {{ counts.new }} contact{{ counts.new|pluralize }}</button>{% endif %}
+    </span>
+  </div>
+</form>
+{% endblock %}

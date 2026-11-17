@@ -1,0 +1,41 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Contacts{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">OUTCOMES</p>
+    <h1>Contacts</h1>
+    <p class="muted">People this organisation may call. Numbers are stored encrypted and shown masked. Opening a contact is written to the access log.</p>
+  </div>
+  {% if can_export %}<a class="button small" href="{% url 'contact-export' %}">Export (masked numbers)</a>{% endif %}
+</section>
+{% include 'crm/_tabs.html' with tab='contacts' %}
+<section class="panel">
+  <form class="filters" method="get" role="search">
+    <input type="search" name="q" value="{{ query }}" placeholder="Name or full phone number" aria-label="Search contacts">
+    <select name="consent" aria-label="Permission to call"><option value="">Any permission</option>{% for value, label in consents %}<option value="{{ value }}"{% if value == consent %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    <select name="campus" aria-label="Campus"><option value="">Every campus</option>{% for item in campuses %}<option value="{{ item.pk }}"{% if campus and item.pk == campus.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
+    <button class="small" type="submit">Filter</button>
+  </form>
+  {% if page.object_list %}
+  <div class="table-scroll"><table class="data" id="contact-table">
+    <thead><tr><th>Contact</th><th>Number</th><th>Permission to call</th><th>Campus</th><th>From</th><th>Added</th></tr></thead>
+    <tbody>
+      {% for contact in page %}
+      <tr>
+        <td><a href="{% url 'contact-detail' contact.pk %}">{{ contact.name }}</a></td>
+        <td>{{ contact.phone_masked }}</td>
+        <td>{% if contact.opted_out %}<span class="tag bad">Do not call</span>{% else %}<span class="tag{% if contact.consent == 'granted' %} good{% elif contact.consent == 'unknown' %} draft{% else %} bad{% endif %}">{{ contact.get_consent_display }}</span>{% endif %}</td>
+        <td>{{ contact.campus.name }}</td>
+        <td>{{ contact.get_origin_display }}</td>
+        <td>{{ contact.created_at|date:"j M Y" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% include 'dashboard/_pager.html' %}
+  {% else %}
+  <div class="empty-state"><strong>No contacts{% if query or consent or campus %} match{% else %} yet{% endif %}</strong>{% if query or consent or campus %}<a href="{% url 'contacts' %}">Clear the filters</a>{% else %}Add a lead, or import a list.{% endif %}</div>
+  {% endif %}
+</section>
+{% endblock %}

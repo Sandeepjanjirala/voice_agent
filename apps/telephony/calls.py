@@ -18,6 +18,8 @@ from django.conf import settings as django_settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from apps.tenancy.access import organisation_of
+
 from . import profiles
 from .conf import TelephonyConfigError
 from .livekit_gateway import TelephonyGatewayError
@@ -168,8 +170,21 @@ def _finish(record, status, source, *, reason: str = "", now=None) -> None:
 # --- starting a call ----------------------------------------------------------
 
 
-def start_call(*, user=None, gateway: OutboundGateway | None = None) -> CallRecord:
-    """Record and place one call to the allow-listed number."""
+def start_call(
+    *,
+    user=None,
+    gateway: OutboundGateway | None = None,
+    employee_version=None,
+    profile: dict | None = None,
+    campus=None,
+) -> CallRecord:
+    """Record and place one call to the allow-listed number.
+
+    With `employee_version` and its `profile` (see workforce/publishing.py) the
+    call uses that published AI employee and the record says so; otherwise it
+    uses the active agent profile, as before. Either way only the allow-listed
+    number is dialled.
+    """
     outbound, plan = outbound_context()
     if not plan.ready:
         raise CallNotReadyError(
@@ -191,6 +206,11 @@ def start_call(*, user=None, gateway: OutboundGateway | None = None) -> CallReco
                 room=new_room_name(),
                 masked_number=mask_phone(outbound.allowed_number),
                 placed_by=user if getattr(user, "is_authenticated", False) else None,
+                organisation=employee_version.employee.organisation
+                if employee_version
+                else organisation_of(user),
+                campus=campus,
+                employee_version=employee_version,
             )
     except IntegrityError:
         raise CallBusyError(
@@ -205,7 +225,7 @@ def start_call(*, user=None, gateway: OutboundGateway | None = None) -> CallReco
             to=outbound.allowed_number,
             agent_name=django_settings.LIVEKIT_AGENT_NAME,
             room=record.room,
-            extra_metadata=profiles.profile_metadata(),
+            extra_metadata=profile if employee_version else profiles.profile_metadata(),
         )
     except CallInProgressError as error:
         _close_failed(record, str(error))

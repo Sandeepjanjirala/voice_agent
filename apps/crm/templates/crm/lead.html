@@ -1,0 +1,80 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}{{ lead.subject }}{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow"><a href="{% url 'leads' %}">LEADS &amp; CONTACTS</a> · {{ lead.campus.name }}</p>
+    <h1>{{ lead.subject }}</h1>
+    <p class="muted">{{ contact.name }} · {{ contact.phone_masked|default:"erased" }} · added {{ lead.created_at|date:"j M Y" }}</p>
+  </div>
+  <span class="tag{% if lead.stage == 'won' %} good{% elif lead.stage == 'lost' %}{% else %} draft{% endif %}" id="lead-stage">{{ lead.get_stage_display }}</span>
+</section>
+
+<div class="grid-2">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Notes</h2></div>
+      {% if lead.details %}<blockquote class="brief">{{ lead.details|linebreaksbr }}</blockquote>{% endif %}
+      {% if can_edit %}
+      <form method="post" class="inline-form" style="margin-bottom:12px">{% csrf_token %}<input type="hidden" name="action" value="note">
+        <div class="field"><label for="note-text">Add a note</label><textarea id="note-text" name="text" rows="2" maxlength="2000" required></textarea></div>
+        <button class="small" type="submit">Add note</button>
+      </form>
+      {% endif %}
+      {% if notes %}
+      <ul class="timeline" id="notes">{% for note in notes %}<li>{{ note.text|linebreaksbr }}<small>{{ note.author.get_username|default:"someone" }} · {{ note.created_at|date:"j M, H:i" }}</small></li>{% endfor %}</ul>
+      {% else %}<p class="help">No notes yet.</p>{% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Follow-ups</h2></div>
+      {% if tasks %}
+      <ul class="timeline" id="tasks">
+        {% for item in tasks %}
+        <li>
+          {% if item.done_at %}<s>{{ item.title }}</s><small>Done {{ item.done_at|date:"j M, H:i" }}</small>
+          {% else %}{{ item.title }}<small>Due {{ item.due_at|date:"j M, H:i" }}{% if item.assigned_to %} · {{ item.assigned_to.get_username }}{% endif %}</small>
+            {% if can_edit %}<form method="post" style="margin-top:6px">{% csrf_token %}<input type="hidden" name="action" value="task_done"><input type="hidden" name="task" value="{{ item.pk }}"><button class="small" type="submit">Mark done</button></form>{% endif %}
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="help">Nothing planned.</p>{% endif %}
+      {% if can_edit %}
+      <form method="post" style="margin-top:14px" novalidate>{% csrf_token %}<input type="hidden" name="action" value="task">
+        {% include 'dashboard/_fields.html' with form=task %}
+        <button class="small" type="submit">Add follow-up</button>
+      </form>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Calls</h2></div>
+      {% if calls %}
+      <div class="table-scroll"><table class="data"><thead><tr><th>Started</th><th>Result</th><th>Talk time</th></tr></thead><tbody>
+        {% for call in calls %}<tr><td><a href="{% url 'conversation-detail' call.pk %}">{{ call.created_at|date:"j M, H:i" }}</a></td><td>{{ call.get_status_display }}</td><td>{% if call.duration_seconds is None %}–{% else %}{{ call.duration_seconds|floatformat:0 }} s{% endif %}</td></tr>{% endfor %}
+      </tbody></table></div>
+      {% else %}<p class="help">No call is linked to this lead. Calls are linked when employees are connected to calling channels (Milestone D).</p>{% endif %}
+    </section>
+  </div>
+
+  <div class="stack">
+    {% if can_edit %}
+    <form method="post" class="panel" novalidate>{% csrf_token %}<input type="hidden" name="action" value="update">
+      <div class="panel-head"><h2>Stage and owner</h2></div>
+      {% include 'dashboard/_fields.html' with form=update %}
+      <button class="primary small" type="submit">Save</button>
+    </form>
+    {% endif %}
+    <section class="panel">
+      <div class="panel-head"><h2>Contact</h2><a href="{% url 'contact-detail' contact.pk %}">Open contact</a></div>
+      <dl class="facts-grid">
+        <dt>Name</dt><dd>{{ contact.name }}</dd>
+        <dt>Number</dt><dd>{{ contact.phone_masked|default:"erased" }}</dd>
+        <dt>Permission to call</dt><dd>{{ contact.get_consent_display }}</dd>
+        <dt>May be called</dt><dd id="call-block">{% if call_block %}<span class="tag bad">No</span> {{ call_block }}{% else %}<span class="tag good">Yes</span>{% endif %}</dd>
+      </dl>
+    </section>
+  </div>
+</div>
+{% endblock %}

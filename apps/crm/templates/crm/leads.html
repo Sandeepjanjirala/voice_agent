@@ -1,0 +1,53 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Leads{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">OUTCOMES</p>
+    <h1>Leads &amp; contacts</h1>
+    <p class="muted">Each lead is one enquiry with one contact, moving from new to converted or closed.{% if tasks_due %} <a href="{% url 'followups' %}?who=all" class="overdue">{{ tasks_due }} follow-up{{ tasks_due|pluralize }} due.</a>{% endif %}</p>
+  </div>
+  <a class="button primary" href="{% url 'lead-new' %}">Add a lead</a>
+</section>
+{% include 'crm/_tabs.html' with tab='leads' %}
+
+<div class="stage-row" id="stage-row">
+  {% for item in stages %}<a href="?stage={{ item.value }}"{% if item.value == stage %} aria-current="true"{% endif %}><b>{{ item.count }}</b><span>{{ item.label }}</span></a>{% endfor %}
+</div>
+
+<section class="panel">
+  <form class="filters" method="get" role="search">
+    <input type="search" name="q" value="{{ query }}" placeholder="Name, subject or full phone number" aria-label="Search leads">
+    <select name="stage" aria-label="Stage">
+      <option value="">Every stage</option>
+      <option value="open"{% if stage == 'open' %} selected{% endif %}>All open</option>
+      {% for item in stages %}<option value="{{ item.value }}"{% if item.value == stage %} selected{% endif %}>{{ item.label }}</option>{% endfor %}
+    </select>
+    <select name="campus" aria-label="Campus"><option value="">Every campus</option>{% for item in campuses %}<option value="{{ item.pk }}"{% if campus and item.pk == campus.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
+    <select name="assigned" aria-label="Assigned to"><option value="">Anyone</option><option value="me"{% if assigned == 'me' %} selected{% endif %}>Assigned to me</option><option value="none"{% if assigned == 'none' %} selected{% endif %}>Not assigned</option></select>
+    <button class="small" type="submit">Filter</button>
+  </form>
+  {% if page.object_list %}
+  <div class="table-scroll"><table class="data" id="lead-table">
+    <thead><tr><th>Lead</th><th>Contact</th><th>Stage</th><th>Campus</th><th>Assigned to</th><th>Added</th></tr></thead>
+    <tbody>
+      {% for lead in page %}
+      <tr>
+        <td class="wrap"><a href="{% url 'lead-detail' lead.pk %}">{{ lead.subject }}</a></td>
+        <td>{{ lead.contact.name }}<small>{{ lead.contact.phone_masked|default:"erased" }}</small></td>
+        <td><span class="tag{% if lead.stage == 'won' %} good{% elif lead.stage == 'lost' %}{% else %} draft{% endif %}">{{ lead.get_stage_display }}</span></td>
+        <td>{{ lead.campus.name }}</td>
+        <td>{% if lead.assigned_to %}{{ lead.assigned_to.get_username }}{% elif lead.employee %}{{ lead.employee.name }} (AI){% else %}–{% endif %}</td>
+        <td>{{ lead.created_at|date:"j M" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% include 'dashboard/_pager.html' %}
+  {% elif total %}
+  <div class="empty-state"><strong>No lead matches</strong><a href="{% url 'leads' %}">Clear the filters</a></div>
+  {% else %}
+  <div class="empty-state"><strong>No leads yet</strong>Add one by hand, or import a list of contacts.<br><a class="button primary small" href="{% url 'lead-new' %}">Add a lead</a></div>
+  {% endif %}
+</section>
+{% endblock %}

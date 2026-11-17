@@ -49,6 +49,9 @@ INSTALLED_APPS = [
     "rest_framework",
     "apps.core",
     "apps.telephony",
+    "apps.tenancy",
+    "apps.workforce",
+    "apps.crm",
 ]
 
 MIDDLEWARE = [
@@ -73,6 +76,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.core.navigation.navigation",
             ],
         },
     },
@@ -108,7 +112,7 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 LOGIN_URL = "login"
-LOGIN_REDIRECT_URL = "voice"
+LOGIN_REDIRECT_URL = "home"
 LOGOUT_REDIRECT_URL = "login"
 
 # Server-only credentials; never included in template context.
@@ -121,6 +125,23 @@ LIVEKIT_AGENT_NAME = (
 
 # Shared with the voice worker, which signs call-outcome reports with it.
 CALL_EVENTS_SECRET = os.environ.get("CALL_EVENTS_SECRET", "").strip()
+
+# Drafting AI employees uses the same LLM settings as the voice worker.
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "").strip() or "livekit"
+LLM_MODEL = os.environ.get("LLM_MODEL", "").strip()
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "").strip()
+LLM_API_KEY = os.environ.get("LLM_API_KEY", "").strip()
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
+LIVEKIT_INFERENCE_URL = os.environ.get("LIVEKIT_INFERENCE_URL", "").strip()
+# Optional: a different model for drafting than for calls.
+EMPLOYEE_DRAFT_MODEL = os.environ.get("EMPLOYEE_DRAFT_MODEL", "").strip()
+
+# Stored phone numbers (apps/crm/crypto.py). Newest encryption key first.
+CONTACT_ENCRYPTION_KEYS = _env_list("CONTACT_ENCRYPTION_KEYS")
+CONTACT_LOOKUP_KEY = os.environ.get("CONTACT_LOOKUP_KEY", "").strip()
+# Decrypting a stored contact's number in order to dial it. Off on purpose:
+# until wider calling is authorised, calls go only to OUTBOUND_TEST_ALLOWED_NUMBER.
+CONTACT_DIALING_ENABLED = False
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

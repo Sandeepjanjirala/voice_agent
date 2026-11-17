@@ -1,0 +1,27 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}{{ module.title }}{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">PLANNED · MILESTONE {{ module.milestone }}</p>
+    <h1>{{ module.title }}</h1>
+    <p class="muted">{{ module.lead }}</p>
+  </div>
+  <span class="tag draft">Not built yet</span>
+</section>
+<p class="notice" role="note">This section is not available yet. Nothing here is a mock-up: the page lists what already works elsewhere and what this section will do when it is built.{% if module.note %} {{ module.note }}{% endif %}</p>
+<div class="module-cols">
+  <section class="panel">
+    <h2>Works today</h2>
+    {% if today_links %}
+      <ul class="plain-list">{% for url, text in today_links %}<li><a href="{{ url }}">{{ text }}</a></li>{% endfor %}</ul>
+    {% else %}
+      <p class="muted">Nothing in this section yet.</p>
+    {% endif %}
+  </section>
+  <section class="panel">
+    <h2>Planned</h2>
+    <ul class="plain-list">{% for item in module.planned %}<li>{{ item }}</li>{% endfor %}</ul>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Conversations{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">OUTCOMES</p>
+    <h1>Conversations</h1>
+    <p class="muted">Every call of {{ scope.organisation.name }}{% if not scope.all_campuses %} in your campuses{% endif %}. Numbers are masked; no recording or transcript is stored.</p>
+  </div>
+  {% if can_export %}<a class="button small" href="{% url 'conversations-export' %}{% if querystring %}?{{ querystring }}{% endif %}">Export CSV</a>{% endif %}
+</section>
+
+<div class="tiles">
+  <div class="tile"><p class="tile-label">Calls</p><p class="tile-value" id="call-total">{{ summary.total }}</p><p class="tile-note">Matching the filters</p></div>
+  <div class="tile"><p class="tile-label">Answered</p><p class="tile-value">{% if summary.answer_rate is None %}–{% else %}{{ summary.answer_rate }}%{% endif %}</p><p class="tile-note">{{ summary.answered }} answered</p></div>
+  <div class="tile"><p class="tile-label">Talk time</p><p class="tile-value">{{ summary.talk_minutes }} min</p><p class="tile-note">{% if summary.average_talk is None %}No talk time yet{% else %}{{ summary.average_talk }} s on average{% endif %}</p></div>
+  <div class="tile"><p class="tile-label">Response time</p><p class="tile-value">{% if summary.response is None %}–{% else %}{{ summary.response }} s{% endif %}</p><p class="tile-note">Median</p></div>
+</div>
+
+<section class="panel">
+  <form class="filters" method="get">
+    <select name="days" aria-label="Period"><option value="">All time</option><option value="1"{% if filters.days == '1' %} selected{% endif %}>Last 24 hours</option><option value="7"{% if filters.days == '7' %} selected{% endif %}>Last 7 days</option><option value="30"{% if filters.days == '30' %} selected{% endif %}>Last 30 days</option><option value="90"{% if filters.days == '90' %} selected{% endif %}>Last 90 days</option></select>
+    <select name="status" aria-label="Result"><option value="">Any result</option>{% for value, label in statuses %}<option value="{{ value }}"{% if value == filters.status %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    <select name="direction" aria-label="Direction"><option value="">Both directions</option>{% for value, label in directions %}<option value="{{ value }}"{% if value == filters.direction %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    <select name="campus" aria-label="Campus"><option value="">Every campus</option>{% for item in campuses %}<option value="{{ item.pk }}"{% if filters.campus and item.pk == filters.campus.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
+    <button class="small" type="submit">Filter</button>
+  </form>
+  {% if page.object_list %}
+  <div class="table-scroll"><table class="data" id="call-table">
+    <thead><tr><th>Started</th><th>Number</th><th>Result</th><th>Talk time</th><th>Campus</th><th>AI employee</th><th>Placed by</th></tr></thead>
+    <tbody>
+      {% for call in page %}
+      <tr>
+        <td><a href="{% url 'conversation-detail' call.pk %}"><time datetime="{{ call.created_at|date:'c' }}" data-local-time>{{ call.created_at|date:"j M, H:i" }}</time></a></td>
+        <td>{{ call.masked_number }}<small>{{ call.get_direction_display }}</small></td>
+        <td><span class="tag{% if call.status == 'completed' or call.status == 'answered' %} good{% elif call.is_active %}{% else %} bad{% endif %}">{{ call.get_status_display }}</span></td>
+        <td>{% if call.duration_seconds is None %}–{% else %}{{ call.duration_seconds|floatformat:0 }} s{% endif %}</td>
+        <td>{{ call.campus.name|default:"–" }}</td>
+        <td>{% if call.employee_version %}{{ call.employee_version.employee.name }} v{{ call.employee_version.number }}{% else %}–{% endif %}</td>
+        <td>{{ call.placed_by.get_username|default:"command line" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% include 'dashboard/_pager.html' %}
+  {% else %}
+  <div class="empty-state"><strong>No calls{% if querystring %} match{% else %} yet{% endif %}</strong>{% if querystring %}<a href="{% url 'conversations' %}">Clear the filters</a>{% else %}Calls appear here as they are placed.{% endif %}</div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -161,7 +161,11 @@ def test_login_rejects_bad_password_and_external_redirect(client, django_user_mo
         },
     )
     assert response.status_code == 302
-    assert response["Location"] == reverse("voice")
+    # Sign-in lands on the dashboard home, which sends non-staff to the studio.
+    assert response["Location"] == reverse("home")
+    onward = client.get(reverse("home"))
+    assert onward.status_code == 302
+    assert onward["Location"] == reverse("voice")
 
 
 def test_tokens_have_distinct_identities_and_reject_tampering(signed_in, configured):

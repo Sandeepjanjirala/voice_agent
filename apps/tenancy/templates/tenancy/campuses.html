@@ -1,0 +1,64 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Campuses &amp; staff{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">TEAM</p>
+    <h1>Campuses &amp; staff</h1>
+    <p class="muted">Contacts, leads and calls belong to a campus. Campus staff see only the campuses they are given; organisation admins see all of them.</p>
+  </div>
+  {% if user.is_superuser %}<a class="button small" href="{% url 'organisation-setup' %}">Add an organisation</a>{% endif %}
+</section>
+
+<div class="grid-2">
+  <section class="panel">
+    <div class="panel-head"><h2>Campuses</h2></div>
+    {% if campuses %}
+    <div class="table-scroll"><table class="data" id="campus-table">
+      <thead><tr><th>Campus</th><th class="num">Contacts</th><th class="num">Leads</th><th class="num">Staff</th><th></th></tr></thead>
+      <tbody>
+        {% for campus in campuses %}
+        <tr>
+          <td>{{ campus.name }}{% if campus.city or campus.code %}<small>{{ campus.city }}{% if campus.city and campus.code %} · {% endif %}{{ campus.code }}</small>{% endif %}</td>
+          <td class="num">{{ campus.contact_count }}</td><td class="num">{{ campus.lead_count }}</td><td class="num">{{ campus.staff_count }}</td>
+          <td>{% if not campus.is_active %}<span class="tag">Not in use</span> {% endif %}{% if manage %}<a href="{% url 'campus-edit' campus.pk %}">Edit</a>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+    <div class="empty-state"><strong>No campus yet</strong>{% if manage %}Add the first one on the right.{% else %}Ask an organisation admin to give you a campus.{% endif %}</div>
+    {% endif %}
+  </section>
+  {% if manage %}
+  <form method="post" class="panel" novalidate>{% csrf_token %}
+    <div class="panel-head"><h2>Add a campus</h2></div>
+    {% include 'dashboard/_fields.html' %}
+    <button class="primary small" type="submit">Add campus</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if manage %}
+<section class="panel" style="margin-top:20px">
+  <div class="panel-head"><h2>Staff</h2><a class="button small" href="{% url 'member-add' %}">Add a staff member</a></div>
+  {% if members %}
+  <div class="table-scroll"><table class="data" id="member-table">
+    <thead><tr><th>Person</th><th>Role</th><th>Campuses</th><th></th></tr></thead>
+    <tbody>
+      {% for member in members %}
+      <tr>
+        <td>{{ member.user.get_username }}{% if member.user.first_name %}<small>{{ member.user.first_name }}</small>{% endif %}</td>
+        <td>{{ member.get_role_display }}{% if not member.user.is_active %} <span class="tag bad">Cannot sign in</span>{% endif %}</td>
+        <td class="wrap">{% if member.role == 'org_admin' %}All campuses{% else %}{% for campus in member.campuses.all %}{{ campus.name }}{% if not forloop.last %}, {% endif %}{% empty %}None{% endfor %}{% endif %}</td>
+        <td><a href="{% url 'member-edit' member.pk %}">Edit</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <div class="empty-state"><strong>No staff yet</strong>Add an organisation admin or campus staff. The platform superuser is not listed here.</div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

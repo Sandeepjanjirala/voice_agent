@@ -1,0 +1,64 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Call {{ call.masked_number }}{% endblock %}
+{% block head %}{% if call.is_active %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow"><a href="{% url 'conversations' %}">CONVERSATIONS</a></p>
+    <h1>{{ call.get_direction_display }} call · {{ call.masked_number }}</h1>
+    <p class="muted">Started <time datetime="{{ call.created_at|date:'c' }}" data-local-time>{{ call.created_at|date:"j M Y, H:i" }}</time>{% if call.placed_by %} by {{ call.placed_by.get_username }}{% endif %}.</p>
+  </div>
+  <span class="tag{% if call.status == 'completed' or call.status == 'answered' %} good{% elif call.is_active %}{% else %} bad{% endif %}" id="call-status">{{ call.get_status_display }}</span>
+</section>
+{% if call.failure_reason %}<p class="notice" role="note">{{ call.failure_reason }}</p>{% endif %}
+{% if call.is_active %}
+<div class="notice status-line" role="status" id="live-call"><span>This call is in progress. The page updates every few seconds.</span>
+  {% if may_end %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="hang_up"><button class="danger small" type="submit">End call</button></form>{% endif %}
+</div>
+{% endif %}
+
+<div class="grid-2">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>What happened</h2></div>
+      <dl class="facts-grid">
+        <dt>Placed</dt><dd>{{ call.created_at|date:"H:i:s" }}</dd>
+        <dt>Ringing</dt><dd>{{ call.ringing_at|date:"H:i:s"|default:"–" }}</dd>
+        <dt>Answered</dt><dd>{{ call.answered_at|date:"H:i:s"|default:"–" }}</dd>
+        <dt>Ended</dt><dd>{{ call.ended_at|date:"H:i:s"|default:"–" }}</dd>
+        <dt>Talk time</dt><dd>{% if call.duration_seconds is None %}–{% else %}{{ call.duration_seconds|floatformat:0 }} seconds{% endif %}</dd>
+        <dt>Phone network result</dt><dd>{% if call.sip_status_code %}{{ call.sip_status_code }} {{ call.sip_status }}{% else %}–{% endif %}</dd>
+        <dt>Status reported by</dt><dd>{{ call.get_status_source_display }}</dd>
+      </dl>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Conversation quality</h2></div>
+      <dl class="facts-grid">
+        <dt>Agent turns</dt><dd>{{ call.agent_turns|default_if_none:"–" }}</dd>
+        <dt>Caller turns</dt><dd>{{ call.user_turns|default_if_none:"–" }}</dd>
+        <dt>Interruptions</dt><dd>{{ call.interruptions|default_if_none:"–" }}</dd>
+        <dt>Response time, median</dt><dd>{% if call.e2e_latency_p50 is None %}–{% else %}{{ call.e2e_latency_p50|floatformat:2 }} s{% endif %}</dd>
+        <dt>Response time, slowest</dt><dd>{% if call.e2e_latency_max is None %}–{% else %}{{ call.e2e_latency_max|floatformat:2 }} s{% endif %}</dd>
+        <dt>Language model, first word</dt><dd>{% if call.llm_ttft_p50 is None %}–{% else %}{{ call.llm_ttft_p50|floatformat:2 }} s{% endif %}</dd>
+        <dt>Voice, first sound</dt><dd>{% if call.tts_ttfb_p50 is None %}–{% else %}{{ call.tts_ttfb_p50|floatformat:2 }} s{% endif %}</dd>
+      </dl>
+      <p class="help">These come from the voice worker's report. No recording, transcript or summary is stored yet.</p>
+    </section>
+  </div>
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Belongs to</h2></div>
+      <dl class="facts-grid">
+        <dt>Campus</dt><dd>{{ call.campus.name|default:"Whole organisation" }}</dd>
+        <dt>AI employee</dt><dd>{% if call.employee_version %}{{ call.employee_version.employee.name }}, version {{ call.employee_version.number }}{% else %}None: this call used the Agent profile{% endif %}</dd>
+        <dt>Lead</dt><dd>{% if call.lead %}<a href="{% url 'lead-detail' call.lead.pk %}">{{ call.lead.subject }}</a>{% else %}–{% endif %}</dd>
+      </dl>
+    </section>
+    <form method="post" class="panel">{% csrf_token %}
+      <div class="panel-head"><h2>Staff notes</h2></div>
+      <div class="field"><label for="call-notes" class="visually-hidden">Notes about this call</label><textarea id="call-notes" name="notes" rows="5" maxlength="2000">{{ call.notes }}</textarea><p class="help">Do not write full phone numbers here.</p></div>
+      <button class="primary small" type="submit">Save notes</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
