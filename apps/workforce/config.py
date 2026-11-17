@@ -12,6 +12,7 @@ from typing import Any
 from .voices import DEFAULT_PACE, PACE_CHOICES, VOICE_NAMES
 
 SCHEMA = 2
+CUSTOM_ACTION = re.compile(r"custom:[a-z0-9_-]{1,40}")
 MAX_STEPS = 6
 MAX_QUESTIONS = 8
 MAX_OPEN_QUESTIONS = 8
@@ -107,7 +108,11 @@ def normalize(raw: Any) -> dict[str, Any]:
         pace = DEFAULT_PACE
     actions = []
     for action in _items(raw.get("actions")):
-        if isinstance(action, str) and action in ACTIONS and action not in actions:
+        if not isinstance(action, str) or action in actions:
+            continue
+        # Built-in actions, or an organisation's approved action by its key
+        # (checked against the organisation when the employee is saved).
+        if action in ACTIONS or CUSTOM_ACTION.fullmatch(action):
             actions.append(action)
 
     return {

@@ -7,8 +7,13 @@ LLM, LiveKit or a phone. Every person and number in it is made up. Never use
 it for normal operation or deployment.
 """
 
+import base64
+import json
 import os
+import struct
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar
 
@@ -53,6 +58,7 @@ call_command("migrate", verbosity=0)
 from django.contrib.auth import get_user_model  # noqa: E402
 from django.utils import timezone  # noqa: E402
 
+from apps.integrations import transport  # noqa: E402
 from apps.telephony import calls, outbound  # noqa: E402
 from apps.telephony.models import CallRecord  # noqa: E402
 from apps.tenancy.models import (  # noqa: E402
@@ -61,7 +67,7 @@ from apps.tenancy.models import (  # noqa: E402
     Organisation,
     RetentionPolicy,
 )
-from apps.workforce import llm, views  # noqa: E402
+from apps.workforce import llm, preview, views  # noqa: E402
 
 User = get_user_model()
 staff, _ = User.objects.get_or_create(
@@ -195,7 +201,72 @@ class SimulatedGateway:
         SimulatedGateway.deleted.add(room)
 
 
+class Receiver(BaseHTTPRequestHandler):
+    """A webhook receiver on loopback: keeps what it is sent, and lists it at
+    GET /received for the browser test to check the signatures."""
+
+    received: ClassVar[list[dict]] = []
+
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        Receiver.received.append(
+            {
+                "path": self.path,
+                "headers": {k.lower(): v for k, v in self.headers.items()},
+                "body": body.decode(),
+            }
+        )
+        self.send_response(204)
+        self.end_headers()
+
+    def do_GET(self):
+        payload = json.dumps(Receiver.received).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, *args):
+        pass
+
+
+# One second of silence as WAV: what the "voice service" answers here.
+SILENCE = base64.b64encode(
+    b"RIFF"
+    + struct.pack("<I", 36 + 16000)
+    + b"WAVEfmt "
+    + struct.pack("<IHHIIHH", 16, 1, 1, 8000, 16000, 2, 16)
+    + b"data"
+    + struct.pack("<I", 16000)
+    + bytes(16000)
+).decode()
+real_send = transport.send
+
+
+def loopback_only(method, url, **kwargs):
+    """Actions may reach the receiver above; the voice service is answered
+    here; anything else is refused, so this server never leaves the machine."""
+    if url.startswith(preview.SARVAM_TTS_URL):
+        time.sleep(0.3)
+        return transport.Response(200, json.dumps({"audios": [SILENCE]}).encode())
+    if not url.startswith(f"http://127.0.0.1:{RECEIVER_PORT}/"):
+        raise transport.TransportError("The QA server only reaches its own receiver.")
+    return real_send(method, url, **kwargs)
+
+
+RECEIVER_PORT = 8768
+threading.Thread(
+    target=ThreadingHTTPServer(("127.0.0.1", RECEIVER_PORT), Receiver).serve_forever,
+    daemon=True,
+).start()
+# Live actions, but only towards the loopback receiver (loopback_only above).
+settings.INTEGRATIONS_LIVE_ENABLED = True
+settings.INTEGRATIONS_ALLOW_LOCAL = True
+settings.SARVAM_API_KEY = "qa-sarvam-key-not-real"
+transport.send = loopback_only
 calls.make_gateway = SimulatedGateway
 llm.complete_json = canned_draft
 views.DRAFT_THROTTLE_SECONDS = 0
+views.PREVIEW_THROTTLE_SECONDS = 0
 call_command("runserver", "127.0.0.1:8767", use_reloader=False)

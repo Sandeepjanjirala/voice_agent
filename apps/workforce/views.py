@@ -10,6 +10,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.db.models import Q
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
@@ -20,9 +21,10 @@ from apps.crm.models import FollowUp, Lead
 from apps.telephony import calls
 from apps.telephony.masking import mask_phone
 from apps.telephony.models import CallRecord
+from apps.tenancy import audit
 from apps.tenancy.access import scope_for, scoped
 
-from . import llm, publishing
+from . import llm, preview, publishing
 from .config import ACTIONS, LIMITS, MAX_QUESTIONS, MAX_STEPS, normalize
 from .drafting import EXAMPLES, draft_employee
 from .forms import BriefForm, EmployeeForm
@@ -33,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 DRAFT_THROTTLE_SECONDS = 10
 CALL_THROTTLE_SECONDS = 5
+PREVIEW_THROTTLE_SECONDS = 2
+ACTIVITY_SHOWN = 8
 HOME_CALLS = 5
 HOME_EMPLOYEES = 4
 VERSIONS_SHOWN = 5
@@ -280,6 +284,16 @@ def employee_detail(request, pk):
     if request.method == "POST" and form.is_valid():
         employee = form.save(commit=False)
         employee.draft = _posted_config(request.POST, employee.draft)
+        # Only the organisation's own approved actions can be ticked.
+        unknown = publishing.unknown_actions(employee, employee.draft["actions"])
+        if unknown:
+            gone = {f"custom:{key}" for key in unknown}
+            employee.draft["actions"] = [
+                key for key in employee.draft["actions"] if key not in gone
+            ]
+            messages.warning(
+                request, "Left out actions that do not exist: " + ", ".join(unknown)
+            )
         employee.save()
         # Only campuses of this organisation can be chosen, whatever was posted.
         employee.campuses.set(
@@ -318,8 +332,87 @@ def employee_detail(request, pk):
             "versions": employee.versions.select_related("published_by")[
                 :VERSIONS_SHOWN
             ],
+            "approved_actions": _approved_actions(employee),
+            "missing_actions": publishing.unknown_actions(employee, config["actions"]),
+            "preview_ready": bool(settings.SARVAM_API_KEY),
+            **_where_it_works(request.scope, employee),
         },
     )
+
+
+def _approved_actions(employee):
+    from apps.integrations.models import ApprovedAction
+
+    if employee.organisation_id is None:
+        return ApprovedAction.objects.none()
+    return ApprovedAction.objects.filter(
+        organisation_id=employee.organisation_id
+    ).select_related("integration")
+
+
+def _where_it_works(scope, employee) -> dict:
+    """Numbers, campaigns and lead sources that use the employee, and what it
+    did lately."""
+    from apps.integrations.models import ActionRun
+
+    calls_made = scope.limit(
+        CallRecord.objects.filter(employee_version__employee=employee)
+    ).select_related("contact", "employee_version", "result")
+    return {
+        "numbers": scope.limit(employee.numbers.select_related("campus")),
+        "employee_campaigns": scope.limit(employee.campaigns.select_related("campus")),
+        "sources": scope.limit(employee.lead_sources.select_related("campus")),
+        "recent_calls": calls_made[:ACTIVITY_SHOWN],
+        "call_count": calls_made.count(),
+        "recent_runs": ActionRun.objects.filter(
+            organisation=scope.organisation, call__in=calls_made
+        ).select_related("actor", "call")[:ACTIVITY_SHOWN],
+    }
+
+
+@scoped("employees.manage")
+@require_POST
+def employee_voice_preview(request, pk):
+    """The opening line in the chosen voice, as MP3. No phone call is made.
+    The form's unsaved choices are used, so a voice can be heard before saving."""
+    employee = _employee(request, pk)
+    draft = normalize(employee.draft)
+    saved_pace = draft["voice"].get("pace")
+    language = request.POST.get("language", "")
+    try:
+        body = preview.options(
+            (request.POST.get("text") or draft["greeting"])[: LIMITS["greeting"]],
+            request.POST.get("speaker") or draft["voice"].get("speaker", ""),
+            request.POST.get("pace") or (f"{saved_pace:.1f}" if saved_pace else ""),
+            language
+            if language in dict(Employee.Language.choices)
+            else employee.language,
+        )
+    except preview.PreviewError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+    if not cache.add(
+        f"voice-preview:{request.user.pk}", True, timeout=PREVIEW_THROTTLE_SECONDS
+    ):
+        return JsonResponse(
+            {"error": "Please wait a moment before playing again."}, status=429
+        )
+    try:
+        audio, cached = preview.speak(body)
+    except preview.PreviewError as error:
+        logger.warning("voice preview failed: %s", error)
+        return JsonResponse({"error": str(error)}, status=502)
+    if not cached:
+        # Counted on Usage & costs: each uncached preview is one paid request.
+        audit.record(
+            request.scope,
+            "voice.preview",
+            employee,
+            speaker=body["speaker"],
+            characters=len(body["text"]),
+        )
+    response = HttpResponse(audio, content_type="audio/mpeg")
+    response["Cache-Control"] = "private, no-store"
+    return response
 
 
 def _test_line() -> dict:

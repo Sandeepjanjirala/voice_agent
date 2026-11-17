@@ -1,0 +1,19 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Notifications{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">NOTIFICATIONS</p>
+    <h1>Notifications</h1>
+    <p class="muted">Follow-ups that are due, missed callers, callers who asked for a person, and failed actions or webhooks.</p>
+  </div>
+  {% if unread %}<form method="post">{% csrf_token %}<button class="small" type="submit">Mark all as read</button></form>{% endif %}
+</section>
+<section class="panel">
+  {% if items %}
+  <ul class="timeline" id="notification-list">{% for item in items %}<li>{% if not item.read_at %}<span class="tag draft">New</span> {% endif %}{% if item.url %}<a href="{{ item.url }}">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}<small>{{ item.get_kind_display }} · {{ item.created_at|date:"j M, H:i" }}</small></li>{% endfor %}</ul>
+  {% else %}
+  <div class="empty-state"><strong>Nothing needs you</strong>Notifications appear here when something needs a person.</div>
+  {% endif %}
+</section>
+{% endblock %}

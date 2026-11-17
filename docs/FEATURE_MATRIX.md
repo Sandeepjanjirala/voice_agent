@@ -73,7 +73,7 @@ observed on the live screen. `Assumed` = our inference; treat as a guess.
 | Pre-call variables | `{{placeholders}}` filled from the lead | Docs, Seen | Partial (D): the contact's name and the lead's subject reach the call | Custom variables from campaign columns (E) |
 | Captured variables | Details extracted from the call | Docs | Partial (A): "details to collect" list | Extraction after the call (C) |
 | Change the script by instruction | "Tap and say your change" | Seen | Partial (A): "Draft again" from the original brief | Instruction-based edits (B) |
-| Voice | Tiers, preview, ambient background sound | Docs | Done (D): per-employee Sarvam voice, speed and language, applied per call | Voice preview, background sound (E) |
+| Voice | Tiers, preview, ambient background sound | Docs | Done (D, E): per-employee Sarvam voice, speed and language, applied per call; a preview speaks the opening line with the chosen voice, no call placed | Background sound |
 | Rehearse in text chat | Chat with the employee, no phone | Docs, Seen | Partial (B): voice rehearsal in the browser | Text rehearsal (E) |
 | Test call | One-off call to a typed number | Docs, Seen | Done (D): "Call the test number" on a published employee uses that version and records it; the approved number only | Typed numbers stay unavailable until wider dialling is authorised |
 | Publish | Script, actions and webhooks need "Apply to live calls"; voice and training apply at once | Docs | Done (B): Publish and Discard changes; publishing is blocked with reasons if the script cannot be used | – |
@@ -140,8 +140,8 @@ authorised, so campaigns will run in dry-run mode first.
 | :--- | :--- | :--- | :--- | :--- |
 | Receptionist employee | Answers every call to its number | Docs | Done (D), switched off: routed number, published employee, caller recognised from contacts | Secure trunk authentication is the blocker |
 | Setup checklist | Number, receptionist, attach | Seen | Done (D): readiness checks on Numbers and Incoming calls | – |
-| Sections | Overview, Calls, Messages, Missed callers | Seen | Partial (D): overview and calls | Messages and missed callers (E) |
-| Recording notice, opening hours, call back missed callers | Described | Docs | None | Opening hours and missed callers (E); recording notice when recordings exist |
+| Sections | Overview, Calls, Messages, Missed callers | Seen | Done (D, E): overview, calls and missed callers with "Called back" | Messages, once inbound is live |
+| Recording notice, opening hours, call back missed callers | Described | Docs | Done (E): opening hours and holidays per campus; after hours the employee takes a message; missed callers listed and notified | Recording notice, if recordings are ever kept |
 | Leads calling back | The outbound employee answers its own call-backs | Docs | None | (E) |
 
 Inbound SIP routing stays off until it can be authenticated securely.
@@ -163,20 +163,20 @@ Inbound SIP routing stays off until it can be authenticated securely.
 | Facts and rules | Typed, spoken or photographed; sorted into facts and rules; reviewed before saving | Docs | Done (D): typed facts and rules, per campus or organisation-wide, used from the next call | Spoken or photographed input (E) |
 | Documents | Uploaded and consulted only when needed | Docs | None | (E) |
 | Suggestions from real calls | Moments where the employee struggled | Docs | None | Needs transcripts (after E) |
-| Actions | Calendar, Sheets, custom API, WhatsApp; each opt-in per employee | Docs | Partial (D): follow-up task and lead stage, opt-in per employee, carried out by Django and logged | Calendar, WhatsApp and custom API (E) |
-| Result webhooks | Every call, completed only, voicemail only; test send | Docs | None | (E) |
+| Actions | Calendar, Sheets, custom API, WhatsApp; each opt-in per employee | Docs | Done (E): campus calendar, Google Calendar, WhatsApp templates, fixed REST requests, lead updates, follow-ups and escalation; approved by an admin, opt-in per employee, schema-checked, logged; outside services simulated until switched on | Google Sheets; turning live integrations on |
+| Result webhooks | Every call, completed only, voicemail only; test send | Docs | Done (E): signed webhooks for call analysed, lead created, stage changed and appointment booked; test send; retries | Filters by outcome |
 | Public API | `/v1` calls, campaigns, leads, do-not-call, employees; dry run | Docs | None | (E) |
 
 ## 13. Usage, credits and settings
 
 | Feature | Reference behaviour | Evidence | Our status | Missing work |
 | :--- | :--- | :--- | :--- | :--- |
-| Prepaid credits | Per-minute billing, top-ups, statements | Docs, Seen | Not planned: this is our own deployment, not a resold service | Usage report (minutes per employee and campus) instead (E) |
+| Prepaid credits | Per-minute billing, top-ups, statements | Docs, Seen | Not planned: this is our own deployment, not a resold service. Done instead (E): Usage & costs, by month, employee and campus, with an estimate from your rates | – |
 | Business settings | Name, default language | Docs, Seen | Done (C): organisation name, campuses, staff and roles | Default language per organisation |
 | Caller memory and call-backs | Off by default; remembers callers, books call-backs | Docs, Seen | None | Only with a stated privacy basis (E) |
 | Do-not-call list | Add singly or in bulk; auto-added on request | Docs, Seen | Done (C, D): added automatically when a caller asks during a call, where their number is known | Bulk add |
-| Privacy and data | Export, remembered callers, credentials | Seen | Done (C): encrypted numbers, access log, retention policy, erase a contact, masked exports | Scheduled retention job (E) |
-| Notification preferences | Bell and pop-up per event type | Seen | None | (E) |
+| Privacy and data | Export, remembered callers, credentials | Seen | Done (C, E): encrypted numbers, access log, retention policy run daily by the scheduler, erase a contact, masked exports, transcripts analysed then deleted, LiveKit Cloud asked to keep nothing | – |
+| Notification preferences | Bell and pop-up per event type | Seen | Partial (E): bell and list for follow-ups, missed callers, escalations and failures, by campus or person | Per-person preferences |
 
 ## Where we differ on purpose
 

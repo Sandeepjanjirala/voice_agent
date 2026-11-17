@@ -34,7 +34,7 @@
     <form method="post" class="panel" novalidate>{% csrf_token %}<input type="hidden" name="action" value="organisation">
       <div class="panel-head"><h2>Organisation</h2></div>
       {% include 'dashboard/_fields.html' with form=organisation_form %}
-      <button class="small" type="submit">Save name</button>
+      <button class="small" type="submit">Save</button>
     </form>
     <section class="panel" id="retention">
       <div class="panel-head"><h2>How long data is kept</h2></div>

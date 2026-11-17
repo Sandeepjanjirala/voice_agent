@@ -1,0 +1,39 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}{{ action.label }}{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow"><a href="{% url 'integrations' %}">INTEGRATIONS &amp; ACTIONS</a></p>
+    <h1>{{ action.label }}</h1>
+    <p class="muted">{{ action.get_kind_display }}{% if action.integration %} through {{ action.integration.name }}{% endif %} · employees switch it on as <code>{{ action.employee_key }}</code></p>
+  </div>
+  {% if action.is_enabled %}<span class="tag good">On</span>{% else %}<span class="tag">Off</span>{% endif %}
+</section>
+{% if not live and action.kind in 'check_availability book_appointment whatsapp_template rest_request' and action.integration.kind != 'campus_calendar' %}<p class="notice" role="note">Live integrations are off: runs are simulated and show the request they would send.</p>{% endif %}
+<div class="grid-2">
+  <div class="stack">
+    {% if manage %}
+    <form method="post" class="panel" id="test-run" novalidate>{% csrf_token %}<input type="hidden" name="form" value="test">
+      <div class="panel-head"><h2>Test run</h2></div>
+      <div class="field"><label for="test-lead">Lead</label><select id="test-lead" name="lead"><option value="">No lead</option>{% for lead in leads %}<option value="{{ lead.pk }}">{{ lead.contact.name }}: {{ lead.subject }}</option>{% endfor %}</select><p class="help">Calendar, WhatsApp and lead actions need a lead. Use made-up contacts only.</p></div>
+      {% include 'dashboard/_fields.html' with form=test %}
+      <button class="primary small" type="submit">Run it</button>
+    </form>
+    {% endif %}
+    <section class="panel">
+      <div class="panel-head"><h2>Runs</h2></div>
+      {% include 'integrations/_runs.html' with runs=runs %}
+    </section>
+  </div>
+  {% if manage %}
+  <div class="stack">
+    <form method="post" class="panel" novalidate>{% csrf_token %}<input type="hidden" name="form" value="save">
+      <div class="panel-head"><h2>Settings</h2></div>
+      {% include 'integrations/_action_fields.html' %}
+      <button class="small" type="submit">Save</button>
+    </form>
+    <form method="post" class="panel danger-zone" data-ask="Remove “{{ action.label }}”? Employees that use it will stop doing so.">{% csrf_token %}<input type="hidden" name="form" value="delete"><p>Remove the action. Past runs are kept.</p><button class="danger small" type="submit">Remove</button></form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

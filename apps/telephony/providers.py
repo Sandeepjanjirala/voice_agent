@@ -104,8 +104,10 @@ PROVIDERS: dict[str, Provider] = {
                 "paid number. 140, 160 and 92-series numbers need extra approval."
             ),
             REGIONAL_ENDPOINT: (
-                "Vobiz says domestic media must stay in India. Its LiveKit guide "
-                "uses the global endpoint, so the regional one is untested."
+                "LiveKit confirmed on 16 Nov 2026 that region-based telephony "
+                "endpoints work on every plan, Build included, with no project "
+                "enablement (community.livekit.io/t/2530). Vobiz says domestic "
+                "media must stay in India; its guide uses the global endpoint."
             ),
             INBOUND_DIGEST_AUTH: (
                 "Vobiz's origination URI has no username or password field, so "
@@ -113,7 +115,10 @@ PROVIDERS: dict[str, Provider] = {
             ),
             ALLOWED_ADDRESSES_ENFORCED: (
                 "Vobiz documents three source addresses for delivered calls. "
-                "LiveKit ignores the list until its support enables enforcement."
+                "LiveKit said on 16 Nov 2026 it can enable enforcement for a "
+                "Build project on request (community.livekit.io/t/2530). List "
+                "this only once LiveKit says it is on for this project and a call "
+                "from an unlisted address is rejected."
             ),
             INBOUND_SRTP: (
                 "Vobiz trunks have a 'secure' setting for SRTP and a TLS transport "

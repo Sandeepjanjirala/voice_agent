@@ -1,0 +1,15 @@
+{% if runs %}
+<ul class="timeline run-list">
+  {% for run in runs %}
+  <li>
+    <span class="tag{% if run.status == 'succeeded' %} good{% elif run.status == 'failed' or run.status == 'refused' %} bad{% else %} draft{% endif %}">{{ run.get_status_display }}</span>
+    <b>{{ run.action_label }}</b> {{ run.message }}
+    <small>{{ run.created_at|date:"j M, H:i" }} · {{ run.get_trigger_display }}{% if run.actor %} ({{ run.actor.get_username }}){% endif %}{% if run.lead %} · <a href="{% url 'lead-detail' run.lead_id %}">{{ run.lead.subject }}</a>{% endif %}{% if run.call_id %} · <a href="{% url 'conversation-detail' run.call_id %}">call</a>{% endif %} · {{ run.duration_ms }} ms</small>
+    {% if run.output.request %}<details><summary class="help">The request{% if run.status == 'simulated' %} that would be sent{% endif %}</summary><pre class="code">{{ run.output.request.method }} {{ run.output.request.url }}{% if run.output.request.json %}
+{{ run.output.request.json|pprint }}{% endif %}</pre></details>{% elif run.output.slots %}<small>Free: {{ run.output.slots|join:", "|default:"none" }}</small>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="help">No runs yet.</p>
+{% endif %}

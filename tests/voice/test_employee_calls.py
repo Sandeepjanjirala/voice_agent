@@ -257,3 +257,64 @@ async def test_without_the_setting_nothing_is_asked():
 def test_bad_inbound_settings_are_rejected(env, message):
     with pytest.raises(ConfigError, match=message):
         make_settings(**env)
+
+
+# --- LiveKit Cloud recording --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (False, {"record": False}),
+        (True, {"record": {"redaction": True}}),
+        ("no", {}),
+        (None, {}),
+    ],
+)
+def test_a_profile_decides_whether_livekit_cloud_records_the_session(value, expected):
+    from voice_agent.profile import recording_options
+
+    fields = {} if value is None else {"observability": value}
+    assert recording_options(parse_profile(meta(**fields))) == expected
+    assert recording_options(None) == {}
+
+
+def test_every_session_start_passes_the_recording_choice():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2] / "voice_agent"
+    for name in ("agent.py", "outbound.py", "inbound.py"):
+        assert "**recording_options(profile)" in (root / name).read_text(
+            encoding="utf-8"
+        ), name
+
+
+@pytest.mark.parametrize("allowed", [False, True])
+async def test_the_recording_choice_reaches_a_real_session_start(allowed):
+    """The SDK accepts both choices: a text-only session starts and closes."""
+    from livekit.agents import AgentSession
+
+    from voice_agent.assistant import TeluguAssistant
+    from voice_agent.profile import recording_options
+
+    from .fakes import FakeLLM
+
+    profile = parse_profile(meta(observability=allowed))
+    async with AgentSession(llm=FakeLLM()) as session:
+        await session.start(
+            TeluguAssistant(make_settings(), profile), **recording_options(profile)
+        )
+
+
+def test_a_notice_reaches_the_prompt_within_budget():
+    profile = parse_profile(meta(notice="  The office is closed.  Take a message. "))
+    assert "- Right now: The office is closed. Take a message." in profile_instructions(
+        profile
+    )
+    assert len(parse_profile(meta(notice="n" * 900)).notice) == 300
+    long = parse_profile(
+        meta(purpose="అ" * 300, objectives="ఆ" * 400, notice="ఇ" * 300)
+    )
+    from voice_agent.profile import PROFILE_BUDGET_BYTES
+
+    assert len(profile_instructions(long).encode()) <= PROFILE_BUDGET_BYTES

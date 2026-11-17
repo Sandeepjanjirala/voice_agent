@@ -1,0 +1,37 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Usage &amp; costs{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">SETUP</p>
+    <h1>Usage &amp; costs</h1>
+    <p class="muted">Calls, minutes, analyses and messages for {{ start|date:"F Y" }}{% if not scope.all_campuses %} in your campuses{% endif %}.</p>
+  </div>
+  <form method="get"><select name="month" aria-label="Month" data-autosubmit>{% for month in months %}<option value="{{ month|date:'Y-m' }}"{% if month == start %} selected{% endif %}>{{ month|date:"F Y" }}</option>{% endfor %}</select><noscript><button class="small">Show</button></noscript></form>
+</section>
+<div class="tiles six">
+  <div class="tile"><p class="tile-label">Calls</p><p class="tile-value" id="usage-calls">{{ totals.calls }}</p><p class="tile-note">{{ totals.answered }} answered</p></div>
+  <div class="tile"><p class="tile-label">Talk minutes</p><p class="tile-value">{{ totals.minutes }}</p><p class="tile-note">Answered time</p></div>
+  <div class="tile"><p class="tile-label">Call summaries</p><p class="tile-value">{{ totals.analyses }}</p><p class="tile-note">AI analyses done</p></div>
+  <div class="tile"><p class="tile-label">WhatsApp messages</p><p class="tile-value">{{ totals.messages }}</p><p class="tile-note">Actually sent</p></div>
+  <div class="tile"><p class="tile-label">Voice previews</p><p class="tile-value">{{ totals.previews }}</p><p class="tile-note">Text-to-speech requests</p></div>
+  <div class="tile"><p class="tile-label">Estimated cost</p><p class="tile-value" id="usage-cost">₹{{ totals.cost }}</p><p class="tile-note">{% if has_rates %}From your rates{% else %}Set your rates in Privacy &amp; settings{% endif %}</p></div>
+</div>
+<p class="help">An estimate from the rates you set (₹{{ rates.cost_per_minute }} a minute, ₹{{ rates.cost_per_message }} a message, ₹{{ rates.cost_per_analysis }} an analysis). The bills from LiveKit, Vobiz, Sarvam, the LLM provider and Meta are what count.</p>
+<div class="grid-2" style="margin-top:16px">
+  <section class="panel">
+    <div class="panel-head"><h2>By AI employee</h2></div>
+    <div class="table-scroll"><table class="data" id="usage-employees"><thead><tr><th>Employee</th><th class="num">Calls</th><th class="num">Answered</th><th class="num">Minutes</th><th class="num">Est. cost</th></tr></thead>
+    <tbody>{% for row in by_employee %}<tr><td>{{ row.name }}</td><td class="num">{{ row.calls }}</td><td class="num">{{ row.answered }}</td><td class="num">{{ row.minutes }}</td><td class="num">₹{{ row.cost }}</td></tr>{% empty %}<tr><td colspan="5">No calls this month.</td></tr>{% endfor %}</tbody></table></div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>By campus</h2></div>
+    <div class="table-scroll"><table class="data"><thead><tr><th>Campus</th><th class="num">Calls</th><th class="num">Answered</th><th class="num">Minutes</th><th class="num">Est. cost</th></tr></thead>
+    <tbody>{% for row in by_campus %}<tr><td>{{ row.name }}</td><td class="num">{{ row.calls }}</td><td class="num">{{ row.answered }}</td><td class="num">{{ row.minutes }}</td><td class="num">₹{{ row.cost }}</td></tr>{% empty %}<tr><td colspan="5">No calls this month.</td></tr>{% endfor %}</tbody></table></div>
+  </section>
+</div>
+<section class="panel" style="margin-top:20px">
+  <div class="panel-head"><h2>Actions</h2><a href="{% url 'action-runs' %}">History</a></div>
+  <p class="status-line">{% for label, count in runs.items %}<span class="tag">{{ label }}: {{ count }}</span>{% endfor %}</p>
+</section>
+{% endblock %}

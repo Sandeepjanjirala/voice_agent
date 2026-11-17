@@ -16,10 +16,20 @@ class Organisation(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=120, unique=True)
-    # Off unless the organisation chooses: what a caller says is personal data.
+    # What a caller says is personal data: by default it is used for the call
+    # summary and then deleted (owner's decision, 17 Nov 2026).
     transcripts = models.CharField(
-        max_length=8, choices=Transcripts.choices, default=Transcripts.OFF
+        max_length=8, choices=Transcripts.choices, default=Transcripts.ANALYSE
     )
+    # Whether LiveKit Cloud may keep each call's audio, transcript, traces and
+    # logs (Agent observability). Off: every call opts out, whatever the
+    # LiveKit project setting is. Deleting data here never deletes theirs.
+    cloud_observability = models.BooleanField(default=False)
+    # Your own rates, for the usage page's cost estimate (rupees). The
+    # providers' bills are what counts; these only make an estimate.
+    cost_per_minute = models.DecimalField(max_digits=7, decimal_places=2, default=0)
+    cost_per_message = models.DecimalField(max_digits=7, decimal_places=2, default=0)
+    cost_per_analysis = models.DecimalField(max_digits=7, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -40,6 +50,18 @@ class Campus(models.Model):
     code = models.CharField(max_length=20, blank=True)
     city = models.CharField(max_length=80, blank=True)
     is_active = models.BooleanField(default=True)
+    # Length of one appointment in the built-in campus calendar.
+    slot_minutes = models.PositiveSmallIntegerField(default=30)
+    # Said by an employee answering after hours, before taking a message.
+    after_hours_message = models.CharField(max_length=200, blank=True)
+    # Who is told when a caller asks for a person.
+    escalation_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -140,3 +162,37 @@ class AuditEvent(models.Model):
 
     def __str__(self) -> str:
         return f"{self.created_at:%Y-%m-%d %H:%M} {self.actor_name} {self.action}"
+
+
+class OpeningHours(models.Model):
+    """When a campus is open on one weekday (Monday = 0). A campus with no
+    rows is treated as always open."""
+
+    campus = models.ForeignKey(Campus, on_delete=models.CASCADE, related_name="hours")
+    weekday = models.PositiveSmallIntegerField()
+    opens = models.TimeField()
+    closes = models.TimeField()
+
+    class Meta:
+        ordering = ("weekday", "opens")
+        constraints = (
+            models.UniqueConstraint(
+                fields=["campus", "weekday"], name="one_opening_per_campus_weekday"
+            ),
+        )
+
+
+class Holiday(models.Model):
+    """A closed day, for one campus or the whole organisation."""
+
+    organisation = models.ForeignKey(
+        Organisation, on_delete=models.CASCADE, related_name="holidays"
+    )
+    campus = models.ForeignKey(
+        Campus, null=True, blank=True, on_delete=models.CASCADE, related_name="holidays"
+    )
+    date = models.DateField(db_index=True)
+    name = models.CharField(max_length=80)
+
+    class Meta:
+        ordering = ("date",)

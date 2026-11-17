@@ -24,7 +24,7 @@ from voice_agent.inbound import run_inbound_call
 from voice_agent.observability import attach_session_observers, configure_logging
 from voice_agent.outbound import parse_dial_request, run_outbound_call
 from voice_agent.pipeline import build_audio_input, build_session
-from voice_agent.profile import parse_profile, voice_for
+from voice_agent.profile import parse_profile, recording_options, voice_for
 from voice_agent.telephony import log_callers
 
 logger = logging.getLogger("voice_agent")
@@ -65,6 +65,7 @@ async def entrypoint(ctx: JobContext) -> None:
         agent=TeluguAssistant(voice, profile),
         room=ctx.room,
         room_options=room_io.RoomOptions(audio_input=build_audio_input(settings)),
+        **recording_options(profile),
     )
     await ctx.connect()
     log_callers(ctx.room)

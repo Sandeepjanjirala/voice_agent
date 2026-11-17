@@ -71,3 +71,16 @@ GEMINI.md
 .github/copilot-instructions.md
 .github/personal-instructions.md
 .github/instructions/
+
+# Local data: databases, logs, recordings, test output and backups never go
+# into an image.
+db.sqlite3
+*.sqlite3
+*.sqlite3-journal
+logs/
+console-recordings/
+recordings/
+staticfiles/
+.test-tmp/
+backups/
+deploy/.env.production

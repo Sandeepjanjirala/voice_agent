@@ -17,7 +17,9 @@ load_dotenv(BASE_DIR / ".env.local")
 
 
 def _env_bool(name: str, default: bool) -> bool:
-    return os.environ.get(name, str(default)).strip().lower() in ("1", "true", "yes")
+    """An empty value means "not set": `NAME=` in .env.local keeps the default."""
+    value = os.environ.get(name, "").strip().lower()
+    return default if not value else value in ("1", "true", "yes")
 
 
 def _env_list(name: str) -> list[str]:
@@ -39,6 +41,38 @@ ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS")
 if DEBUG and not ALLOWED_HOSTS:
     ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]"]
 
+# --- HTTPS and cookies ------------------------------------------------------------
+# With DJANGO_DEBUG=false the site is HTTPS only: plain requests are redirected and
+# cookies are sent over HTTPS alone. The health checks stay reachable over plain
+# HTTP so a container or load balancer can probe them. Behind a proxy that ends
+# TLS (deploy/Caddyfile), set DJANGO_BEHIND_PROXY=true so Django trusts the
+# proxy's X-Forwarded-Proto header; never set it when Django faces the internet.
+SECURE_SSL_REDIRECT = _env_bool("DJANGO_SSL_REDIRECT", not DEBUG)
+SECURE_REDIRECT_EXEMPT = [r"^api/health/"]
+SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = _env_bool(
+    "DJANGO_SECURE_COOKIES", not DEBUG
+)
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = CSRF_COOKIE_SAMESITE = "Lax"
+try:
+    SESSION_COOKIE_AGE = int(os.environ.get("DJANGO_SESSION_HOURS", "12")) * 3600
+    SECURE_HSTS_SECONDS = int(
+        os.environ.get("DJANGO_HSTS_SECONDS", "0" if DEBUG else "3600")
+    )
+except ValueError as error:
+    raise ImproperlyConfigured(
+        "DJANGO_SESSION_HOURS and DJANGO_HSTS_SECONDS must be whole numbers."
+    ) from error
+SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool("DJANGO_HSTS_INCLUDE_SUBDOMAINS", False)
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
+CSRF_TRUSTED_ORIGINS = _env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
+if _env_bool("DJANGO_BEHIND_PROXY", False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# HSTS preload is a long-lived commitment for the whole domain; decide at go-live.
+SILENCED_SYSTEM_CHECKS = ["security.W021"]
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -53,6 +87,8 @@ INSTALLED_APPS = [
     "apps.workforce",
     "apps.crm",
     "apps.calling",
+    "apps.operations",
+    "apps.integrations",
 ]
 
 MIDDLEWARE = [
@@ -143,6 +179,55 @@ CONTACT_LOOKUP_KEY = os.environ.get("CONTACT_LOOKUP_KEY", "").strip()
 # Decrypting a stored contact's number in order to dial it. Off on purpose:
 # until wider calling is authorised, calls go only to OUTBOUND_TEST_ALLOWED_NUMBER.
 CONTACT_DIALING_ENABLED = False
+
+# --- Integrations and actions (apps/integrations) ------------------------------
+# Off: no action reaches an outside service (calendar, WhatsApp, REST, webhooks).
+# Each run is checked and logged as "simulated" with the request it would send.
+# Turn on only on an installation authorised to act on real customers' behalf.
+INTEGRATIONS_LIVE_ENABLED = _env_bool("INTEGRATIONS_LIVE_ENABLED", False)
+# Development only: allow http:// and private or loopback hosts (a local test
+# receiver). Never on in production.
+INTEGRATIONS_ALLOW_LOCAL = DEBUG and _env_bool("INTEGRATIONS_ALLOW_LOCAL", False)
+# Voice previews in the employee editor call Sarvam's text-to-speech API.
+SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "").strip()
+
+# --- Background jobs (config/celery.py) -----------------------------------------
+# Redis is the Celery broker and, when set, the shared cache (rate limits must
+# hold across processes). Without REDIS_URL the cache is per process and jobs
+# can only run with CELERY_TASK_ALWAYS_EAGER, which is for development only.
+REDIS_URL = os.environ.get("REDIS_URL", "").strip()
+CELERY_BROKER_URL = REDIS_URL or "redis://127.0.0.1:6379/0"
+CELERY_RESULT_BACKEND = None
+CELERY_TASK_ALWAYS_EAGER = _env_bool("CELERY_TASK_ALWAYS_EAGER", False)
+CELERY_TASK_EAGER_PROPAGATES = True
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_TIME_LIMIT = 300
+CELERY_TASK_SOFT_TIME_LIMIT = 240
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BEAT_SCHEDULE = {
+    "analyse-calls": {"task": "operations.analyse_calls", "schedule": 120.0},
+    "deliver-webhooks": {"task": "operations.deliver_webhooks", "schedule": 60.0},
+    "follow-up-reminders": {
+        "task": "operations.follow_up_reminders",
+        "schedule": 900.0,
+    },
+    "campaign-eligibility": {
+        "task": "operations.campaign_eligibility",
+        "schedule": 3600.0,
+    },
+    "usage-report": {"task": "operations.usage_report", "schedule": 3600.0},
+    "retention": {"task": "operations.retention", "schedule": 86400.0},
+}
+if REDIS_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": REDIS_URL,
+            "KEY_PREFIX": "telugu-agent",
+        }
+    }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

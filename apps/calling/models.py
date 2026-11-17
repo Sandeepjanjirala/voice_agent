@@ -284,8 +284,16 @@ class CallResult(models.Model):
     callback_requested = models.BooleanField(default=False)
     callback_when = models.CharField(max_length=80, blank=True)
     opt_out_requested = models.BooleanField(default=False)
+    # A specific day and time the person agreed to, for a booking action.
+    appointment_at = models.DateTimeField(null=True, blank=True)
+    whatsapp_requested = models.BooleanField(default=False)
+    human_requested = models.BooleanField(default=False)
     model = models.CharField(max_length=80, blank=True)
     error = models.CharField(max_length=200, blank=True)
+    # Failed analyses are retried with growing gaps, then given up (and, in the
+    # "analyse then delete" mode, the transcript is deleted all the same).
+    attempts = models.PositiveSmallIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(null=True, blank=True)
     analysed_at = models.DateTimeField(null=True, blank=True)
     actions_applied_at = models.DateTimeField(null=True, blank=True)
 
@@ -309,3 +317,26 @@ class CallAction(models.Model):
 
     class Meta:
         ordering = ("created_at", "id")
+
+
+class MissedCall(models.Model):
+    """An inbound caller someone must call back: the number was not routed to
+    a ready employee, or the call came after hours."""
+
+    class Reason(models.TextChoices):
+        NOT_ROUTED = "not_routed", "No employee was ready to answer"
+        AFTER_HOURS = "after_hours", "Called after hours"
+
+    call = models.OneToOneField(
+        "telephony.CallRecord", on_delete=models.CASCADE, related_name="missed"
+    )
+    reason = models.CharField(max_length=12, choices=Reason.choices)
+    detail = models.CharField(max_length=200, blank=True)
+    handled_at = models.DateTimeField(null=True, blank=True)
+    handled_by = models.ForeignKey(
+        USER, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ("-created_at",)

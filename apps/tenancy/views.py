@@ -6,15 +6,31 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.shortcuts import redirect, render
+from django.utils import timezone
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
 
-from . import audit
+from . import audit, hours
 from .access import SESSION_KEY, scoped
-from .forms import CampusForm, MemberAddForm, MemberEditForm, OrganisationSetupForm
-from .models import AuditEvent, Campus, Membership, Organisation, RetentionPolicy
+from .forms import (
+    CampusCallsForm,
+    CampusForm,
+    HolidayForm,
+    HoursForm,
+    MemberAddForm,
+    MemberEditForm,
+    OrganisationSetupForm,
+)
+from .models import (
+    AuditEvent,
+    Campus,
+    Holiday,
+    Membership,
+    Organisation,
+    RetentionPolicy,
+)
 
 User = get_user_model()
 AUDIT_PAGE = 50
@@ -115,15 +131,93 @@ def campuses(request):
 def campus_edit(request, pk):
     scope = request.scope
     campus = scope.campus(pk)
+    action = request.POST.get("action", "campus") if request.method == "POST" else ""
+    posted = request.POST if action else None
     form = CampusForm(
-        request.POST or None, instance=campus, organisation=scope.organisation
+        posted if action == "campus" else None,
+        instance=campus,
+        organisation=scope.organisation,
     )
-    if request.method == "POST" and form.is_valid():
+    calls_form = CampusCallsForm(
+        posted if action == "calls" else None, instance=campus, prefix="calls"
+    )
+    hours_form = HoursForm(
+        posted if action == "hours" else None, campus=campus, prefix="hours"
+    )
+    holiday_form = HolidayForm(
+        posted if action == "holiday" else None, campus=campus, prefix="holiday"
+    )
+    here = redirect("campus-edit", pk=campus.pk)
+    if action == "campus" and form.is_valid():
         form.save()
         audit.record(scope, "campus.changed", campus, in_use=campus.is_active)
         messages.success(request, f"{campus.name} is saved.")
         return redirect("campuses")
-    return render(request, "tenancy/campus_edit.html", {"form": form, "campus": campus})
+    if action == "calls" and calls_form.is_valid():
+        calls_form.save()
+        audit.record(scope, "campus.calls_changed", campus)
+        messages.success(request, "Call handling saved.")
+        return here
+    if action == "hours" and hours_form.is_valid():
+        with transaction.atomic():
+            days = hours_form.save()
+        audit.record(scope, "campus.hours_changed", campus, open_days=days)
+        messages.success(
+            request,
+            f"Opening hours saved: {hours.describe(campus)}."
+            if days
+            else "Opening hours cleared: the campus counts as always open.",
+        )
+        return here
+    if action == "holiday" and holiday_form.is_valid():
+        holiday = holiday_form.save()
+        audit.record(
+            scope,
+            "holiday.added",
+            campus,
+            date=holiday.date.isoformat(),
+            everywhere=holiday.campus_id is None,
+        )
+        messages.success(
+            request, f"{holiday.name} on {holiday.date:%d %b %Y} is added."
+        )
+        return here
+    if action == "holiday_remove":
+        holiday = (
+            Holiday.objects.filter(
+                organisation=scope.organisation, pk=request.POST.get("holiday")
+            )
+            .filter(Q(campus=campus) | Q(campus__isnull=True))
+            .first()
+            if str(request.POST.get("holiday", "")).isdigit()
+            else None
+        )
+        if holiday is not None:
+            holiday.delete()
+            audit.record(
+                scope, "holiday.removed", campus, date=holiday.date.isoformat()
+            )
+            messages.success(request, f"{holiday.name} is removed.")
+        return here
+    return render(
+        request,
+        "tenancy/campus_edit.html",
+        {
+            "form": form,
+            "campus": campus,
+            "calls_form": calls_form,
+            "hours_form": hours_form,
+            "holiday_form": holiday_form,
+            "hours_summary": hours.describe(campus),
+            "open_now": hours.is_open(campus),
+            "holidays": Holiday.objects.filter(
+                organisation=scope.organisation,
+                date__gte=timezone.localdate(),
+            )
+            .filter(Q(campus=campus) | Q(campus__isnull=True))
+            .order_by("date"),
+        },
+    )
 
 
 @scoped("organisation.manage")

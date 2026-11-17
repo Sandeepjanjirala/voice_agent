@@ -5,11 +5,54 @@
   <div>
     <p class="eyebrow"><a href="{% url 'campuses' %}">CAMPUSES &amp; STAFF</a></p>
     <h1>{{ campus.name }}</h1>
-    <p class="muted">A campus that is not in use keeps its records but cannot be chosen for new ones, and its staff lose access to it.</p>
+    <p class="muted" id="hours-summary">{% if hours_summary %}Open {{ hours_summary }}{% else %}No opening hours set: AI employees treat the campus as always open, except on holidays.{% endif %}</p>
   </div>
+  <span>{% if open_now %}<span class="tag good">Open now</span>{% else %}<span class="tag">Closed now</span>{% endif %}</span>
 </section>
-<form method="post" class="panel" style="max-width:560px" novalidate>{% csrf_token %}
-  {% include 'dashboard/_fields.html' %}
-  <div class="form-actions"><a href="{% url 'campuses' %}">Cancel</a><button class="primary" type="submit">Save campus</button></div>
-</form>
+
+<div class="grid-2">
+  <div class="stack">
+    <form method="post" class="panel" id="campus-details" novalidate>{% csrf_token %}<input type="hidden" name="action" value="campus">
+      <div class="panel-head"><h2>Details</h2></div>
+      <p class="help" style="margin-top:0">A campus that is not in use keeps its records but cannot be chosen for new ones, and its staff lose access to it.</p>
+      {% include 'dashboard/_fields.html' %}
+      <div class="form-actions"><a href="{% url 'campuses' %}">Cancel</a><button class="primary" type="submit">Save campus</button></div>
+    </form>
+
+    <form method="post" class="panel" id="campus-calls" novalidate>{% csrf_token %}<input type="hidden" name="action" value="calls">
+      <div class="panel-head"><h2>Calls and appointments</h2></div>
+      {% include 'dashboard/_fields.html' with form=calls_form %}
+      <button class="small" type="submit">Save call handling</button>
+    </form>
+  </div>
+
+  <div class="stack">
+    <form method="post" class="panel" id="campus-hours" novalidate>{% csrf_token %}<input type="hidden" name="action" value="hours">
+      <div class="panel-head"><h2>Opening hours</h2></div>
+      <p class="help" style="margin-top:0">Inbound calls outside these hours are answered with the closed message and listed as missed callers. Appointments are offered only inside them. Leave every day unticked for no hours.</p>
+      {% if hours_form.errors %}<div class="error" role="alert">Check the hours below.</div>{% endif %}
+      <div class="hours-grid" role="group" aria-label="Opening hours">
+        {% for name, open, opens, closes in hours_form.rows %}
+        <label class="check-label"><input type="checkbox" name="{{ open.html_name }}" id="{{ open.id_for_label }}"{% if open.value %} checked{% endif %}> <span>{{ name }}</span></label>
+        <input type="time" name="{{ opens.html_name }}" value="{{ opens.value|time:'H:i'|default:opens.value|default:'' }}" aria-label="{{ name }} opens">
+        <input type="time" name="{{ closes.html_name }}" value="{{ closes.value|time:'H:i'|default:closes.value|default:'' }}" aria-label="{{ name }} closes">
+        {% for error in opens.errors %}<p class="field-error hours-error" role="alert">{{ error }}</p>{% endfor %}{% for error in closes.errors %}<p class="field-error hours-error" role="alert">{{ error }}</p>{% endfor %}
+        {% endfor %}
+      </div>
+      <button class="small" type="submit">Save hours</button>
+    </form>
+
+    <section class="panel" id="campus-holidays">
+      <div class="panel-head"><h2>Holidays</h2></div>
+      {% if holidays %}
+      <ul class="timeline">{% for item in holidays %}<li><b>{{ item.date|date:"D j M Y" }}</b> {{ item.name }}{% if not item.campus_id %} <span class="tag">Every campus</span>{% endif %}
+        <form method="post" class="inline-form" data-ask="Remove {{ item.name }}{% if not item.campus_id %} for every campus{% endif %}?">{% csrf_token %}<input type="hidden" name="action" value="holiday_remove"><input type="hidden" name="holiday" value="{{ item.pk }}"><button class="danger small" type="submit">Remove</button></form></li>{% endfor %}</ul>
+      {% else %}<p class="help">No holidays ahead.</p>{% endif %}
+      <form method="post" novalidate style="margin-top:14px">{% csrf_token %}<input type="hidden" name="action" value="holiday">
+        {% include 'dashboard/_fields.html' with form=holiday_form %}
+        <button class="small" type="submit">Add holiday</button>
+      </form>
+    </section>
+  </div>
+</div>
 {% endblock %}

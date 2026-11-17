@@ -6,6 +6,8 @@ from apps.calling import views as calling_views
 from apps.core import dashboard_views, voice_views
 from apps.core.navigation import MODULES
 from apps.crm import views as crm_views
+from apps.integrations import views as integration_views
+from apps.operations import views as operations_views
 from apps.telephony import views as telephony_views
 from apps.tenancy import views as tenancy_views
 from apps.workforce import views as workforce_views
@@ -55,6 +57,11 @@ urlpatterns = [
         "employees/<uuid:pk>/switch/",
         workforce_views.employee_switch,
         name="employee-switch",
+    ),
+    path(
+        "employees/<uuid:pk>/voice-preview/",
+        workforce_views.employee_voice_preview,
+        name="employee-voice-preview",
     ),
     path(
         "employees/<uuid:pk>/delete/",
@@ -115,6 +122,31 @@ urlpatterns = [
     path("numbers/<uuid:pk>/", calling_views.number_edit, name="number-edit"),
     path("knowledge/", calling_views.knowledge_list, name="knowledge"),
     path("knowledge/<int:pk>/", calling_views.knowledge_edit, name="knowledge-edit"),
+    path("integrations/", integration_views.overview, name="integrations"),
+    path(
+        "integrations/new/", integration_views.integration_new, name="integration-new"
+    ),
+    path(
+        "integrations/<uuid:pk>/",
+        integration_views.integration_detail,
+        name="integration-detail",
+    ),
+    path("integrations/actions/new/", integration_views.action_new, name="action-new"),
+    path(
+        "integrations/actions/<uuid:pk>/",
+        integration_views.action_detail,
+        name="action-detail",
+    ),
+    path("integrations/runs/", integration_views.runs, name="action-runs"),
+    path(
+        "leads/<uuid:pk>/actions/<uuid:action_pk>/",
+        integration_views.run_on_lead,
+        name="lead-action",
+    ),
+    path("notifications/", operations_views.notifications, name="notifications"),
+    path("operations/", operations_views.operations, name="operations"),
+    path("usage/", operations_views.usage, name="usage"),
+    path("api/health/ready/", operations_views.readiness, name="readiness"),
     # Planned modules: each has a page saying what works today and what is to come.
     *(
         path(f"{slug}/", dashboard_views.module, {"slug": slug}, name=slug)

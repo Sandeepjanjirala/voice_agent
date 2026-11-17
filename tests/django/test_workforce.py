@@ -652,6 +652,7 @@ def test_a_publishable_script_reaches_the_worker_whole():
     parsed = worker_profile.parse_profile(json.dumps(metadata))
     # Nothing was clamped on the way.
     voice = payload.pop("voice")
+    assert payload.pop("observability") is False and parsed.cloud_recording is False
     for field, value in payload.items():
         assert getattr(parsed, field) == value, field
     assert (parsed.speaker, parsed.pace, parsed.language) == (

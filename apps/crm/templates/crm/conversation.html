@@ -39,9 +39,11 @@
       <div class="panel-head"><h2>What the system did</h2></div>
       {% if actions %}
       <ul class="timeline">{% for item in actions %}<li><span class="tag{% if item.status == 'done' %} good{% elif item.status == 'failed' %} bad{% endif %}">{{ item.get_status_display }}</span> {{ item.detail }}<small>{{ item.action }} · {{ item.created_at|date:"j M, H:i" }}</small></li>{% endfor %}</ul>
-      {% else %}
+      {% elif not action_runs %}
       <p class="help">Nothing. Actions are carried out only after the call is analysed, and only those switched on for the employee.</p>
       {% endif %}
+      {% if action_runs %}<p class="label" style="margin:12px 0 6px">Approved actions</p><div id="call-runs">{% include 'integrations/_runs.html' with runs=action_runs %}</div>{% endif %}
+      {% if missed %}<p class="help" id="call-missed">Missed caller: {{ missed.get_reason_display|lower }}. {% if missed.handled_at %}Called back ({{ missed.handled_by.get_username|default:"someone" }}, {{ missed.handled_at|date:"j M, H:i" }}).{% else %}<a href="{% url 'inbound' %}#missed">Waiting for a call back</a>.{% endif %}</p>{% endif %}
     </section>
 
     <section class="panel">

@@ -1,0 +1,37 @@
+# HTTPS for the Django backend. Caddy obtains and renews the certificate for
+# SITE_DOMAIN automatically and redirects plain HTTP to HTTPS.
+{
+	email {$ACME_EMAIL}
+}
+
+{$SITE_DOMAIN} {
+	encode gzip
+
+	# Strict-Transport-Security comes from Django (DJANGO_HSTS_SECONDS), so it
+	# can start short and grow once HTTPS is proven.
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		Permissions-Policy "camera=(), geolocation=(), microphone=(self)"
+		-Server
+	}
+
+	handle_path /static/* {
+		root * /srv/static
+		file_server
+	}
+
+	# The readiness check is for monitors on the server, not the public.
+	handle /api/health/ready/ {
+		respond 404
+	}
+
+	handle {
+		reverse_proxy web:8000
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

@@ -66,7 +66,7 @@ async function deliverLead(url, secret, payload) {
     // The organisation keeps transcripts, so calls can be summarised.
     await page.goto(`${BASE}/settings/`);
     await page.locator('[name=org-transcripts]').selectOption('keep');
-    await page.getByRole('button', { name: 'Save name' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
     await page.getByText('Organisation saved.').waitFor();
 
     // Knowledge for the North campus, previewed as a call would get it.
@@ -152,8 +152,8 @@ async function deliverLead(url, secret, payload) {
     await page.goto(callUrl);
     const transcript = await page.locator('#transcript').textContent();
     assert.ok(transcript.includes('98******01'), 'the number in the transcript is masked');
-    await page.getByRole('button', { name: 'Analyse now' }).click();
-    await page.getByText('The call was analysed.').waitFor();
+    // Storing the transcript queued its analysis; this server runs jobs at once.
+    assert.ok(await page.getByRole('button', { name: 'Analyse again' }).isVisible());
     assert.equal((await page.locator('#outcome').textContent()).trim(), 'Asked for a call back');
     assert.ok((await page.locator('#answers').textContent()).includes('Class 6'));
     assert.ok((await page.locator('#actions').textContent()).includes('Follow-up added: call back Friday evening.'));

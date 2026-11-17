@@ -70,6 +70,45 @@
     });
   }
 
+  // Voice preview: the opening line in the voice and speed chosen on the
+  // form, saved or not. The server returns MP3 audio or a JSON error.
+  const previewButton = document.getElementById('voice-preview-button');
+  const previewAudio = document.getElementById('voice-preview-audio');
+  const previewStatus = document.getElementById('voice-preview-status');
+  if (editor && previewButton && previewAudio && previewStatus) {
+    let previewUrl = '';
+    previewButton.addEventListener('click', async () => {
+      const data = new FormData();
+      data.append('csrfmiddlewaretoken', editor.querySelector('[name=csrfmiddlewaretoken]').value);
+      data.append('text', editor.querySelector('[name=greeting]').value);
+      data.append('speaker', editor.querySelector('[name=voice_speaker]').value);
+      data.append('pace', editor.querySelector('[name=voice_pace]').value);
+      data.append('language', editor.querySelector('[name=language]').value);
+      previewButton.disabled = true;
+      previewStatus.textContent = 'Getting the audio…';
+      try {
+        const response = await fetch(previewButton.dataset.url, { method: 'POST', body: data, credentials: 'same-origin' });
+        if (!response.ok) {
+          const problem = await response.json().catch(() => ({}));
+          previewStatus.textContent = problem.error || 'The preview could not be made.';
+          return;
+        }
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        previewUrl = URL.createObjectURL(await response.blob());
+        previewAudio.src = previewUrl;
+        previewAudio.hidden = false;
+        previewStatus.textContent = 'Playing. No phone call was made.';
+        previewAudio.play().catch(() => {
+          previewStatus.textContent = 'Ready: press play.';
+        });
+      } catch {
+        previewStatus.textContent = 'The preview could not be made. Check your connection.';
+      } finally {
+        previewButton.disabled = false;
+      }
+    });
+  }
+
   for (const form of document.querySelectorAll('form[data-confirm]')) {
     form.addEventListener('submit', (event) => {
       if (!window.confirm(form.dataset.confirm)) event.preventDefault();

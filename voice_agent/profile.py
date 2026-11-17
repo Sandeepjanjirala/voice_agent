@@ -43,6 +43,8 @@ _LIMITS = {
 LANGUAGES = ("te-IN", "en-IN", "hi-IN")
 PACE_RANGE = (0.5, 2.0)
 _CONTEXT_LIMITS = {"name": 60, "about": 160}
+# A short situational note from Django, e.g. that the office is closed now.
+NOTICE_LIMIT = 300
 
 NO_INFO_REPLY = (
     "No business information is available. Say our office team will call back "
@@ -67,8 +69,12 @@ class AgentProfile:
     # Who the call is with and what it is about, when Django knows.
     caller_name: str = ""
     about: str = ""
+    notice: str = ""
     # Whether the transcript may be sent to Django when the call ends.
     keep_transcript: bool = False
+    # Whether LiveKit Cloud may keep this session's audio, transcript, traces
+    # and logs (Agent observability). None follows the project setting.
+    cloud_recording: bool | None = None
 
     @property
     def is_empty(self) -> bool:
@@ -116,9 +122,24 @@ def parse_profile(metadata: str | None) -> AgentProfile | None:
         about=" ".join(str(context.get("about") or "").split())[
             : _CONTEXT_LIMITS["about"]
         ],
+        notice=" ".join(str(raw.get("notice") or "").split())[:NOTICE_LIMIT],
         keep_transcript=raw.get("transcript") is True,
+        cloud_recording=raw["observability"]
+        if isinstance(raw.get("observability"), bool)
+        else None,
     )
     return None if profile.is_empty else profile
+
+
+def recording_options(profile: AgentProfile | None) -> dict[str, Any]:
+    """Keyword arguments for AgentSession.start() that say whether LiveKit
+    Cloud may record the session. Empty follows the project setting.
+
+    An organisation that allows recording still gets LiveKit's PII redaction
+    on transcripts, audio and telemetry, whatever the project setting."""
+    if profile is None or profile.cloud_recording is None:
+        return {}
+    return {"record": {"redaction": True} if profile.cloud_recording else False}
 
 
 def voice_for(settings: VoiceSettings, profile: AgentProfile | None) -> VoiceSettings:
@@ -158,6 +179,8 @@ def profile_instructions(profile: AgentProfile | None) -> str:
         lines.append(f"- You are speaking with {profile.caller_name}.")
     if profile.about:
         lines.append(f"- They enquired about: {profile.about}")
+    if profile.notice:
+        lines.append(f"- Right now: {profile.notice}")
     for label, value in (
         ("Purpose", profile.purpose),
         ("Goals", profile.objectives),

@@ -47,7 +47,10 @@ SECTIONS = (
         (
             ("numbers", "Numbers & channels", "numbers.view"),
             ("knowledge", "Knowledge", "knowledge.view"),
+            ("integrations", "Integrations & actions", "integrations.view"),
             ("settings", "Privacy & settings", MEMBER),
+            ("usage", "Usage & costs", "usage.view"),
+            ("operations", "Operations", "operations.view"),
         ),
     ),
     ("Tools", (("voice", "Voice studio", ANYONE), ("agent", "Agent profile", STAFF))),
@@ -72,6 +75,12 @@ PARENTS = {
     "source-detail": "instant",
     "number-edit": "numbers",
     "knowledge-edit": "knowledge",
+    "integration-new": "integrations",
+    "integration-detail": "integrations",
+    "action-new": "integrations",
+    "action-detail": "integrations",
+    "action-runs": "integrations",
+    "notifications": "home",
 }
 
 MODULES: dict = {}
@@ -113,8 +122,14 @@ def navigation(request) -> dict:
     organisations = ()
     if user.is_superuser and scope is not None:
         organisations = Organisation.objects.all()
+    unread = 0
+    if scope is not None:
+        from apps.operations.views import visible_notifications
+
+        unread = visible_notifications(scope).filter(read_at__isnull=True).count()
     return {
         "nav_sections": sections,
         "scope": scope,
         "switch_organisations": organisations,
+        "unread_notifications": unread,
     }

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from django.db import transaction
 
+from apps.integrations import webhooks
 from apps.telephony.masking import mask_phone
 from apps.tenancy import audit
 
@@ -171,13 +172,14 @@ def run(
                 continue
             created += 1
             if create_leads:
-                Lead.objects.create(
+                lead = Lead.objects.create(
                     organisation=scope.organisation,
                     campus=campus,
                     contact=contact,
                     subject=row.subject or default_subject,
                     created_by=scope.user,
                 )
+                webhooks.lead_created(lead, "import")
         batch.created = created
         batch.save(update_fields=["created", "duplicates"])
     audit.record(

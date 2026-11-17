@@ -1,0 +1,15 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Add an action{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow"><a href="{% url 'integrations' %}">INTEGRATIONS &amp; ACTIONS</a></p>
+    <h1>Add an action</h1>
+    <p class="muted">An action does one fixed thing. Employees use it after a call only when it is switched on for them; staff can run it from a lead.</p>
+  </div>
+</section>
+<form method="post" class="panel" style="max-width:760px" novalidate>{% csrf_token %}
+  {% include 'integrations/_action_fields.html' %}
+  <div class="form-actions"><a href="{% url 'integrations' %}">Cancel</a><button class="primary" type="submit">Add action</button></div>
+</form>
+{% endblock %}

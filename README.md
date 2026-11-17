@@ -12,6 +12,8 @@ secure trunk authentication. Nothing is deployed. See [docs/ROADMAP.md](docs/ROA
 | Document | What it covers |
 | :--- | :--- |
 | [docs/PROGRESS.md](docs/PROGRESS.md) | Dashboard build: what each milestone delivered and how it was checked |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production setup (not deployed): services, HTTPS, secrets, monitoring, what LiveKit Cloud keeps |
+| [docs/DISASTER_RECOVERY.md](docs/DISASTER_RECOVERY.md) | Backups, restore drill and recovery runbooks |
 | [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) | Feature-by-feature comparison with the reference product, and what is still missing |
 | [docs/CONTACT_KEYS.md](docs/CONTACT_KEYS.md) | Backing up, recovering and rotating the keys that protect stored phone numbers |
 | [docs/INBOUND.md](docs/INBOUND.md) | Inbound routing, call lifecycle, and the transfer design |
@@ -209,10 +211,33 @@ contacts until real data is authorised.
   called and when, and dial nobody. Instant leads arrive at
   `POST /api/intake/<source id>/` with the source's `X-Lead-Secret`.
 - **Knowledge**: facts and rules per campus, given to each call.
-- After a call, **Analyse now** (or `manage.py analyse_calls --apply` from a
-  scheduled task) writes the summary and carries out the employee's permitted
-  actions. It needs transcripts, which are off until chosen under Privacy &
-  settings.
+- After a call, the transcript is analysed automatically by a background job.
+  The job writes the summary and carries out the employee's permitted actions.
+  By default the transcript is then deleted. **Analyse again** reruns it by
+  hand.
+
+### Integrations, actions and operations (Milestone E)
+
+- **Integrations & actions** connects the campus calendar, Google Calendar,
+  WhatsApp Business, your own REST API and signed webhooks. Admins approve
+  each action; staff run them from a lead, and employees use the ones ticked
+  for them after calls.
+  - Outside services are only simulated until `INTEGRATIONS_LIVE_ENABLED=true`.
+- **Campuses**: opening hours, holidays, the closed message and who takes
+  escalations. **Incoming calls** lists missed callers.
+- **Operations**, **Usage & costs** and the notification bell show jobs,
+  failures and monthly usage.
+
+Background jobs need Redis and Celery. Start them in two more windows:
+
+```powershell
+# REDIS_URL=redis://127.0.0.1:6379/0 in .env.local, with Redis running
+.\.venv\Scripts\python.exe -m celery -A config worker --loglevel INFO --pool solo
+.\.venv\Scripts\python.exe -m celery -A config beat --loglevel INFO
+```
+
+Without Redis, set `CELERY_TASK_ALWAYS_EAGER=true` on your own machine and jobs
+run inside the request that queues them.
 
 ## Inbound telephony
 
@@ -352,6 +377,7 @@ Remove-Item Env:TEST_DATABASE_URL
 node tests/browser/dashboard.cjs                               # window 2
 node tests/browser/crm.cjs                                     # window 2, same server
 node tests/browser/calling.cjs                                 # after restarting the server
+node tests/browser/platform.cjs                                # Milestone E, after restarting again
 
 # Browser: real Chromium and Django, simulated LiveKit, fake numbers
 .\.venv\Scripts\python.exe -m tests.browser.calls_server   # window 1; Ctrl+C when done
@@ -393,6 +419,9 @@ apps/workforce/       AI employees: hire wizard, LLM drafting, draft editor, das
 apps/tenancy/         organisations, campuses, roles and scope, access log
 apps/crm/             encrypted contacts, leads, follow-ups, import, reports, retention
 apps/calling/         numbers, inbound routing, campaigns, instant leads, call results
+apps/integrations/    integrations, approved actions, runs, appointments, webhooks
+apps/operations/      background jobs, notifications, usage, operations, readiness
+deploy/               production compose, web image, Caddy (HTTPS), backups
 scenarios/            proposed scenarios that are not yet run in CI
 scripts/              latency_report.py, llm_bakeoff.py
 tests/                django/, voice/, test_process_boundary.py

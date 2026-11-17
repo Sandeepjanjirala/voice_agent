@@ -87,6 +87,10 @@ class Contact(models.Model):
     consent_by = models.ForeignKey(
         USER, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
+    # WhatsApp messages need their own permission (Meta's policy and ours).
+    whatsapp_consent = models.BooleanField(default=False)
+    whatsapp_consent_evidence = models.CharField(max_length=300, blank=True)
+    whatsapp_consent_at = models.DateTimeField(null=True, blank=True)
     preferred_language = models.CharField(
         max_length=2, choices=Language.choices, blank=True
     )

@@ -24,7 +24,7 @@ from .call_reporting import CallMetrics, CallReporter
 from .config import VoiceSettings
 from .observability import attach_session_observers
 from .pipeline import build_audio_input, build_session
-from .profile import AgentProfile, voice_for
+from .profile import AgentProfile, recording_options, voice_for
 from .telephony import log_callers, mask_phone
 
 logger = logging.getLogger("voice_agent")
@@ -225,6 +225,7 @@ async def run_outbound_call(
             participant_identity=participant.identity,
             audio_input=build_audio_input(settings),
         ),
+        **recording_options(profile),
     )
     # People say "hello" as they answer. That must not cut the greeting off.
     greet(session, settings, allow_interruptions=False, profile=profile)

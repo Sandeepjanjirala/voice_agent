@@ -53,6 +53,17 @@
       {% endif %}
       {% endif %}
     </section>
+    <section class="panel" id="whatsapp">
+      <div class="panel-head"><h2>WhatsApp messages</h2></div>
+      <p class="help" style="margin-top:0">Separate from permission to call. Only approved templates are sent, and only with this permission.{% if contact.whatsapp_consent_at %} Recorded {{ contact.whatsapp_consent_at|date:"j M Y" }}.{% endif %}</p>
+      {% if can_edit %}
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="whatsapp">
+        <div class="field"><label class="check-label"><input type="checkbox" name="whatsapp_consent"{% if contact.whatsapp_consent %} checked{% endif %}> <span>Agreed to receive WhatsApp messages from us</span></label></div>
+        <div class="field"><label for="wa-evidence">How and when they agreed</label><input type="text" id="wa-evidence" name="whatsapp_evidence" maxlength="300" value="{{ contact.whatsapp_consent_evidence }}"></div>
+        <button class="small" type="submit">Record</button>
+      </form>
+      {% else %}<p>{% if contact.whatsapp_consent %}Agreed{% else %}Not agreed{% endif %}</p>{% endif %}
+    </section>
     {% if can_erase %}
     <section class="panel danger-zone">
       <p>Erase the name, number and notes. Reports keep an empty record; a do-not-call entry is kept.</p>

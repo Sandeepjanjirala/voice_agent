@@ -39,7 +39,14 @@ from .forms import (
     LeadSourceForm,
     PhoneNumberForm,
 )
-from .models import Campaign, IntakeEvent, LeadSource, PhoneNumber, QueuedCall
+from .models import (
+    Campaign,
+    IntakeEvent,
+    LeadSource,
+    MissedCall,
+    PhoneNumber,
+    QueuedCall,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -193,10 +200,26 @@ def incoming(request):
             direction=CallRecord.Direction.INBOUND
         ).select_related("campus", "contact", "employee_version__employee", "result")
     )
+    missed = MissedCall.objects.filter(call__in=calls).select_related(
+        "call__contact", "call__campus", "call__result", "handled_by"
+    )
+    can_handle = scope.can("missed.handle")
+    if request.method == "POST":
+        if not can_handle:
+            raise PermissionDenied
+        item = scope.get(missed, pk=request.POST.get("missed", ""))
+        if item.handled_at is None:
+            item.handled_at = timezone.now()
+            item.handled_by = scope.user
+            item.save(update_fields=["handled_at", "handled_by"])
+            audit.record(scope, "missed.handled", item.call)
+            messages.success(request, "Marked as called back.")
+        return redirect(reverse("inbound") + "#missed")
     rows = [
         {"number": number, "problems": inbound.problems(number)}
         for number in _numbers(scope)
     ]
+    week_ago = timezone.now() - timezone.timedelta(days=7)
     return render(
         request,
         "calling/incoming.html",
@@ -206,6 +229,9 @@ def incoming(request):
             "total": calls.count(),
             "routed": sum(1 for row in rows if not row["problems"]),
             "checks": _diagnostics(),
+            "missed": missed.filter(handled_at__isnull=True)[:50],
+            "handled": missed.filter(handled_at__gte=week_ago)[:10],
+            "can_handle": can_handle,
         },
     )
 

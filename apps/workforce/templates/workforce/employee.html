@@ -55,6 +55,15 @@
         <select id="f-pace" name="voice_pace">{% for value, label in paces %}<option value="{{ value }}"{% if config.voice.pace|stringformat:".1f" == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
       </div>
     </div>
+    <div class="field" id="voice-preview">
+      {% if preview_ready %}
+      <button type="button" class="small" id="voice-preview-button" data-url="{% url 'employee-voice-preview' employee.pk %}">Hear the opening line</button>
+      <audio id="voice-preview-audio" controls hidden></audio>
+      <p class="help" id="voice-preview-status" role="status">Spoken with the voice and speed chosen above. No phone call is made.</p>
+      {% else %}
+      <p class="help" id="voice-preview-status">Voice previews need SARVAM_API_KEY in .env.local.</p>
+      {% endif %}
+    </div>
     {% if campuses %}
     <fieldset class="field">
       <legend>Campuses it works for</legend>
@@ -116,7 +125,12 @@
     <fieldset class="field" id="actions">
       <legend>What the system may do after a call</legend>
       {% for key, info in actions.items %}<label class="check-label"><input type="checkbox" name="action" value="{{ key }}"{% if key in config.actions %} checked{% endif %}> <span>{{ info.0 }}<small class="help" style="display:block;margin:2px 0 0">{{ info.1 }}</small></span></label>{% endfor %}
-      <p class="help">Carried out by the system after the call, from what the call summary says, and logged on the call. A request not to be called again is always honoured.</p>
+      {% if approved_actions %}
+      <p class="label" style="margin:14px 0 6px">Your organisation's approved actions</p>
+      <div id="approved-actions">{% for item in approved_actions %}<label class="check-label"><input type="checkbox" name="action" value="{{ item.employee_key }}"{% if item.employee_key in config.actions %} checked{% endif %}> <span>{{ item.label }}{% if not item.is_enabled %} <span class="tag">Switched off</span>{% endif %}<small class="help" style="display:block;margin:2px 0 0">{{ item.get_kind_display }}{% if item.integration %} · {{ item.integration.name }}{% endif %}</small></span></label>{% endfor %}</div>
+      {% endif %}
+      {% if missing_actions %}<p class="field-error" role="alert">No longer exist: {{ missing_actions|join:", " }}. Save to drop them.</p>{% endif %}
+      <p class="help">Carried out by the system after the call, from what the call summary says, and logged on the call. A request not to be called again is always honoured. Approved actions are set up by an admin under <a href="{% url 'integrations' %}">Integrations &amp; actions</a>; bookings, messages and outside requests are never made from a rehearsal.</p>
     </fieldset>
     <div class="form-actions">
       <p class="fine">Saving changes the draft only. Nothing changes for callers until you publish.</p>
@@ -162,6 +176,23 @@
         {% endif %}
       </div>
       {% endif %}
+    </section>
+    <section class="panel" id="where-it-works">
+      <div class="panel-head"><h2>Where it works</h2></div>
+      <dl class="facts-grid">
+        <dt>Campuses</dt><dd>{% if assigned %}{% for campus in campuses %}{% if campus.pk in assigned %}{{ campus.name }}{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}{% else %}Every campus{% endif %}</dd>
+        <dt>Answers</dt><dd>{% for number in numbers %}<a href="{% url 'number-edit' number.pk %}">{{ number.number }}</a>{% if not number.routing_enabled %} (switched off){% endif %}{% if not forloop.last %}, {% endif %}{% empty %}No number{% endfor %}</dd>
+        <dt>Campaigns</dt><dd>{% for item in employee_campaigns %}<a href="{% url 'campaign-detail' item.pk %}">{{ item.name }}</a> ({{ item.get_status_display|lower }}){% if not forloop.last %}, {% endif %}{% empty %}None{% endfor %}</dd>
+        <dt>Instant leads</dt><dd>{% for item in sources %}<a href="{% url 'source-detail' item.pk %}">{{ item.name }}</a>{% if not forloop.last %}, {% endif %}{% empty %}None{% endfor %}</dd>
+      </dl>
+      <p class="help">Numbers, campaigns and lead sources choose their employee on their own pages.</p>
+    </section>
+    <section class="panel" id="activity">
+      <div class="panel-head"><h2>Recent activity</h2>{% if call_count %}<a href="{% url 'conversations' %}">All calls</a>{% endif %}</div>
+      {% if recent_calls %}
+      <ul class="timeline">{% for call in recent_calls %}<li><a href="{% url 'conversation-detail' call.pk %}">{{ call.created_at|date:"j M, H:i" }}</a> · {{ call.get_direction_display }} · v{{ call.employee_version.number }}<small>{% if call.contact %}{{ call.contact.name }} · {% endif %}{{ call.get_status_display }}{% if call.result.outcome %} · {{ call.result.get_outcome_display }}{% endif %}</small></li>{% endfor %}</ul>
+      {% else %}<p class="help">No calls yet.</p>{% endif %}
+      {% if recent_runs %}<p class="label" style="margin:12px 0 6px">Actions after its calls</p>{% include 'integrations/_runs.html' with runs=recent_runs %}{% endif %}
     </section>
     {% if versions %}
     <section class="panel" id="versions">

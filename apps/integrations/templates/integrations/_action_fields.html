@@ -1,0 +1,40 @@
+{% if form.non_field_errors %}<div class="error" role="alert">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+{% for field in form %}
+  {% if field.name in "label key kind integration is_enabled" %}
+  <div class="field">
+    {% if field.name == 'is_enabled' %}<label class="check-label">{{ field }} <span>{{ field.label }}</span></label>{% else %}<label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% endif %}
+    {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
+    {% if field.errors %}<p class="field-error" role="alert">{{ field.errors|join:" " }}</p>{% endif %}
+  </div>
+  {% endif %}
+{% endfor %}
+<fieldset class="field kind-fields" data-kinds="rest_request">
+  <legend>The request</legend>
+  {% for field in form %}{% if field.name in "method path schema_text body_fields response_fields after_call_outcomes" %}
+  <div class="field">
+    {% if field.name == 'after_call_outcomes' %}<span class="label">{{ field.label }}</span>{% else %}<label for="{{ field.id_for_label }}">{{ field.label }}</label>{% endif %}{{ field }}
+    {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
+    {% if field.errors %}<p class="field-error" role="alert">{{ field.errors|join:" " }}</p>{% endif %}
+  </div>
+  {% endif %}{% endfor %}
+</fieldset>
+<fieldset class="field kind-fields" data-kinds="whatsapp_template">
+  <legend>The template</legend>
+  {% for field in form %}{% if field.name in "template language parameters" %}
+  <div class="field">
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}
+    {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
+    {% if field.errors %}<p class="field-error" role="alert">{{ field.errors|join:" " }}</p>{% endif %}
+  </div>
+  {% endif %}{% endfor %}
+  <p class="help">Sent only to contacts who agreed to WhatsApp messages, and only templates approved by Meta.</p>
+</fieldset>
+<script>
+  (() => {
+    const select = document.getElementById('{{ form.kind.id_for_label }}');
+    const show = () => {
+      for (const group of document.querySelectorAll('.kind-fields')) group.hidden = !group.dataset.kinds.split(' ').includes(select.value);
+    };
+    if (select) { select.addEventListener('change', show); show(); }
+  })();
+</script>

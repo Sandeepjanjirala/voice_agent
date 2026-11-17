@@ -48,6 +48,12 @@
       {% endif %}
     </section>
 
+    {% if action_runs %}
+    <section class="panel" id="lead-runs">
+      <div class="panel-head"><h2>Actions taken</h2></div>
+      {% include 'integrations/_runs.html' with runs=action_runs %}
+    </section>
+    {% endif %}
     <section class="panel">
       <div class="panel-head"><h2>Calls</h2></div>
       {% if calls %}
@@ -73,12 +79,33 @@
       <button class="primary small" type="submit">Save</button>
     </form>
     {% endif %}
+    {% if lead_actions %}
+    <section class="panel" id="lead-actions">
+      <div class="panel-head"><h2>Actions</h2><a href="{% url 'integrations' %}">Manage</a></div>
+      {% for item, form in lead_actions %}
+      <details class="action-run"{% if forloop.first %} open{% endif %}>
+        <summary><b>{{ item.label }}</b> <small class="help">{{ item.get_kind_display }}</small></summary>
+        <form method="post" action="{% url 'lead-action' lead.pk item.pk %}" novalidate{% if item.kind == 'book_appointment' or item.kind == 'whatsapp_template' or item.kind == 'rest_request' %} data-ask="Run “{{ item.label }}” for {{ contact.name }}?"{% endif %}>{% csrf_token %}
+          {% include 'dashboard/_fields.html' with form=form %}
+          <button class="small" type="submit">Run</button>
+        </form>
+      </details>
+      {% endfor %}
+    </section>
+    {% endif %}
+    {% if appointments %}
+    <section class="panel" id="appointments">
+      <div class="panel-head"><h2>Appointments</h2></div>
+      <ul class="timeline">{% for item in appointments %}<li>{{ item.starts_at|date:"D j M, H:i" }} · {{ item.campus.name }} <span class="tag{% if item.status == 'booked' %} good{% endif %}">{{ item.get_status_display }}</span><small>{{ item.title }}{% if item.external_id %} · in the outside calendar{% endif %}</small></li>{% endfor %}</ul>
+    </section>
+    {% endif %}
     <section class="panel">
       <div class="panel-head"><h2>Contact</h2><a href="{% url 'contact-detail' contact.pk %}">Open contact</a></div>
       <dl class="facts-grid">
         <dt>Name</dt><dd>{{ contact.name }}</dd>
         <dt>Number</dt><dd>{{ contact.phone_masked|default:"erased" }}</dd>
         <dt>Permission to call</dt><dd>{{ contact.get_consent_display }}</dd>
+        <dt>WhatsApp</dt><dd>{% if contact.whatsapp_consent %}Agreed{% else %}Not agreed{% endif %}</dd>
         <dt>May be called</dt><dd id="call-block">{% if call_block %}<span class="tag bad">No</span> {{ call_block }}{% else %}<span class="tag good">Yes</span>{% endif %}</dd>
       </dl>
     </section>

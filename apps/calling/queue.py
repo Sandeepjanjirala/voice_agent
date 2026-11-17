@@ -17,6 +17,7 @@ from django.utils import timezone
 from apps.crm import contacts
 from apps.crm.models import Contact
 from apps.telephony.masking import mask_phone
+from apps.tenancy import hours
 
 from .models import Campaign, DryRun, LeadSource, QueuedCall
 
@@ -36,6 +37,8 @@ class Rules:
     retry_after: timedelta
     daily_limit: int
     cooldown: timedelta
+    # Holidays of this campus (and the organisation's) are skipped.
+    campus: object = None
 
     @classmethod
     def for_campaign(cls, campaign: Campaign) -> "Rules":
@@ -47,6 +50,7 @@ class Rules:
             retry_after=timedelta(minutes=campaign.retry_after_minutes),
             daily_limit=max(campaign.daily_limit, 1),
             cooldown=timedelta(days=campaign.cooldown_days),
+            campus=campaign.campus,
         )
 
     @classmethod
@@ -59,6 +63,7 @@ class Rules:
             retry_after=timedelta(minutes=30),
             daily_limit=1000,
             cooldown=timedelta(0),
+            campus=source.campus,
         )
 
 
@@ -74,6 +79,8 @@ def next_slot(rules: Rules, at: datetime) -> datetime:
     for day in range(8):
         date = (local + timedelta(days=day)).date()
         if date.weekday() not in rules.days:
+            continue
+        if rules.campus is not None and hours.holiday_on(rules.campus, date):
             continue
         start = timezone.make_aware(datetime.combine(date, rules.window_start))
         end = timezone.make_aware(datetime.combine(date, rules.window_end))

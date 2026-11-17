@@ -33,6 +33,7 @@
     <header class="pagebar">
       <button class="menu-button" id="menu-button" type="button" aria-controls="sidebar" aria-expanded="false">Menu</button>
       <span class="pagebar-title">{% block bar_title %}{% endblock %}</span>
+      {% if scope %}<a class="bell" href="{% url 'notifications' %}" id="bell" aria-label="Notifications{% if unread_notifications %}, {{ unread_notifications }} unread{% endif %}">Notifications{% if unread_notifications %} <span class="badge">{{ unread_notifications }}</span>{% endif %}</a>{% endif %}
       {% if scope and scope.role != 'campus_staff' %}<a class="button primary small" href="{% url 'employee-hire' %}">Hire an employee</a>{% endif %}
     </header>
     {% if messages %}<div class="flashes" role="status">{% for message in messages %}<p class="flash {{ message.tags }}">{{ message }}</p>{% endfor %}</div>{% endif %}

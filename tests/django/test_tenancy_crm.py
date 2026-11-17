@@ -1464,10 +1464,19 @@ def test_only_admins_set_and_apply_retention(world):
 
     admin.post(
         reverse("settings"),
-        {"action": "organisation", "org-name": "Org A2", "org-transcripts": "keep"},
+        {
+            "action": "organisation",
+            "org-name": "Org A2",
+            "org-transcripts": "keep",
+            "org-cost_per_minute": "1.50",
+            "org-cost_per_message": "0.80",
+            "org-cost_per_analysis": "0.10",
+        },
     )
     world.org_a.refresh_from_db()
     assert world.org_a.name == "Org A2" and world.org_a.transcripts == "keep"
+    assert str(world.org_a.cost_per_minute) == "1.50"
+    assert world.org_a.cloud_observability is False
 
 
 # --- phone test with a published employee version ---------------------------------------

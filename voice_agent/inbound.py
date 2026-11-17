@@ -33,7 +33,13 @@ from .call_reporting import (
 from .config import VoiceSettings
 from .observability import attach_session_observers
 from .pipeline import build_audio_input, build_session
-from .profile import PROFILE_KEY, AgentProfile, parse_profile, voice_for
+from .profile import (
+    PROFILE_KEY,
+    AgentProfile,
+    parse_profile,
+    recording_options,
+    voice_for,
+)
 from .telephony import describe_caller, is_phone_caller, log_callers
 
 logger = logging.getLogger("voice_agent")
@@ -156,5 +162,6 @@ async def run_inbound_call(
             participant_identity=participant.identity,
             audio_input=build_audio_input(settings),
         ),
+        **recording_options(profile),
     )
     greet(session, settings, profile=profile)

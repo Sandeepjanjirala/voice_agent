@@ -18,6 +18,7 @@ from django.utils import timezone
 from apps.crm import contacts, crypto
 from apps.crm.models import Contact, Lead
 from apps.crm.phones import InvalidPhoneError, normalize
+from apps.integrations import webhooks
 from apps.telephony.masking import mask_phone
 
 from .models import IntakeEvent, LeadSource, QueuedCall
@@ -158,6 +159,7 @@ def receive(source: LeadSource, data: dict) -> tuple[IntakeEvent, Lead | None]:
             details=details,
             employee=source.employee,
         )
+        webhooks.lead_created(lead, "instant")
         QueuedCall.objects.create(
             organisation=source.organisation,
             campus=contact.campus,

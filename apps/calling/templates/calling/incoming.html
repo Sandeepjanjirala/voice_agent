@@ -10,6 +10,23 @@
 </section>
 {% include 'calling/_tabs.html' with tab='inbound' %}
 <p class="notice" role="note">Inbound calling is switched off until the SIP trunk can be authenticated securely. {{ routed }} of {{ rows|length }} number{{ rows|length|pluralize }} ready to be answered when it is.</p>
+<section class="panel" id="missed" style="margin-bottom:20px">
+  <div class="panel-head"><h2>Missed callers to call back{% if missed %} <span class="badge">{{ missed|length }}</span>{% endif %}</h2></div>
+  <p class="help" style="margin-top:0">Callers who rang when no AI employee was ready, or after hours (a message was taken). Calling stored contacts from here stays off until it is authorised; call them from your phone, then mark them done.</p>
+  {% if missed %}
+  <div class="table-scroll"><table class="data" id="missed-table">
+    <thead><tr><th>When</th><th>Caller</th><th>Why</th><th>What they said</th><th></th></tr></thead>
+    <tbody>{% for item in missed %}<tr>
+      <td><a href="{% url 'conversation-detail' item.call.pk %}">{{ item.created_at|date:"D j M, H:i" }}</a>{% if item.call.campus %}<small>{{ item.call.campus.name }}</small>{% endif %}</td>
+      <td>{% if item.call.contact %}<a href="{% url 'contact-detail' item.call.contact.pk %}">{{ item.call.contact.name }}</a>{% else %}Unknown caller{% endif %}<small>{{ item.call.masked_number }}</small></td>
+      <td>{{ item.get_reason_display }}</td>
+      <td class="wrap">{% if item.call.result.summary %}{{ item.call.result.summary|truncatechars:160 }}{% else %}{{ item.detail|default:"–" }}{% endif %}</td>
+      <td>{% if can_handle %}<form method="post">{% csrf_token %}<input type="hidden" name="missed" value="{{ item.pk }}"><button class="small" type="submit">Called back</button></form>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="help" id="missed-none">Nobody is waiting for a call back.</p>{% endif %}
+  {% if handled %}<p class="help">Called back this week: {% for item in handled %}{% if item.call.contact %}{{ item.call.contact.name }}{% else %}{{ item.call.masked_number }}{% endif %} ({{ item.handled_by.get_username|default:"someone" }}, {{ item.handled_at|date:"D H:i" }}){% if not forloop.last %}, {% endif %}{% endfor %}.</p>{% endif %}
+</section>
 <div class="grid-2">
   <section class="panel">
     <div class="panel-head"><h2>Recent incoming calls</h2><a href="{% url 'conversations' %}?direction=inbound">All</a></div>
@@ -36,7 +53,7 @@
     <section class="panel">
       <div class="panel-head"><h2>Readiness</h2></div>
       {% include 'calling/_checks.html' %}
-      <p class="help">Transfer to a person is designed but not built; see docs/INBOUND.md.</p>
+      <p class="help">A live transfer to a person needs the phone line. Until then, a caller who asks for a person becomes a call-back task for the campus's escalation contact (set on the campus page).</p>
     </section>
   </div>
 </div>

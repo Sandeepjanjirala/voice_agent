@@ -199,7 +199,7 @@ async function noSidewaysScroll(page, label) {
     await login(staff, 'north-review', 'local-disposable-north-check');
     const links = await staff.locator('.side-nav a').allTextContents();
     for (const hidden of ['Hire an employee', 'Phone calls', 'Agent profile']) assert.ok(!links.includes(hidden), hidden);
-    assert.equal(await staff.locator('.pagebar a').count(), 0);
+    assert.equal(await staff.locator('.pagebar a:not(#bell)').count(), 0);
     await staff.goto(`${BASE}/leads/`);
     assert.equal(await staff.locator('#lead-table tbody tr').count(), 1);
     assert.ok((await staff.locator('#lead-table').textContent()).includes('Wants a call back'));

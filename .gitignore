@@ -68,3 +68,7 @@ transcripts/
 *.sqlite3-journal
 *.bundle
 *.dump
+
+# Database backups and the production settings file stay off Git.
+backups/
+deploy/.env.production

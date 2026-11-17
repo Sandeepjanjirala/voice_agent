@@ -1,0 +1,15 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Add an integration{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow"><a href="{% url 'integrations' %}">INTEGRATIONS &amp; ACTIONS</a></p>
+    <h1>Add an integration</h1>
+    <p class="muted">Secrets are encrypted before they are stored and are never shown again. Use the provider's official console to create them.</p>
+  </div>
+</section>
+<form method="post" class="panel" style="max-width:720px" novalidate>{% csrf_token %}
+  {% include 'integrations/_integration_fields.html' %}
+  <div class="form-actions"><a href="{% url 'integrations' %}">Cancel</a><button class="primary" type="submit">Add integration</button></div>
+</form>
+{% endblock %}

@@ -31,10 +31,19 @@ it is answered.**
 
 ## Steps
 
-### 1. You: ask LiveKit (free)
+### 1. You: ask LiveKit (free): answered 16 November 2026
 
-Post in the LiveKit community (<https://community.livekit.io>) or the dashboard support
-form:
+Asked in [community topic 2530](https://community.livekit.io/t/2530). LiveKit's answers:
+
+- The regional endpoint works on Build, with no approval needed.
+- They recommend deploying the agent to `ap-south`.
+- Allow-list enforcement can be enabled on request.
+
+Next, reply in that thread asking them to switch enforcement on for
+`p_44waokrv9lv`, and wait until they say it is on. Details are in
+[INBOUND.md](INBOUND.md#what-livekit-confirmed-16-november-2026).
+
+The original question, for reference:
 
 > Project on the Build plan, region India. I am connecting an Indian SIP provider
 > (Vobiz) for inbound calls. Two questions:

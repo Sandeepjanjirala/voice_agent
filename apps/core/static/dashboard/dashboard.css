@@ -172,6 +172,15 @@ details.panel > summary { cursor: pointer; font-size: 14px; }
 .transcript li { font-size: 13.5px; line-height: 1.6; padding: 8px 12px; border-radius: 10px; background: #f1f5ed; max-width: 92%; overflow-wrap: anywhere; }
 .transcript li.user { background: #edf5f5; margin-left: auto; }
 .transcript b { display: block; font-size: 10.5px; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); }
+.bell { font-size: 13px; color: var(--ink); text-decoration: none; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: #fff; white-space: nowrap; }
+.bell:hover { border-color: #b9cfc4; }
+.badge { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: #b8483b; color: #fff; font-size: 11px; font-weight: 700; text-align: center; line-height: 18px; }
+.hours-grid { display: grid; grid-template-columns: minmax(110px, auto) 1fr 1fr; margin-bottom: 14px; gap: 8px 10px; align-items: center; font-size: 13.5px; }
+.hours-grid input[type="time"] { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; font: inherit; }
+.hours-grid .hours-error { grid-column: 1 / -1; margin: -4px 0 0; }
+#campus-holidays .timeline li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#campus-holidays .inline-form { margin-left: auto; }
+audio { width: 100%; margin-top: 8px; }
 /* --- organisation, CRM and reports ------------------------------------------ */
 .side-org { margin: 0 8px 14px; padding: 10px 12px; border: 1px solid #244a41; border-radius: 10px; display: grid; gap: 2px; }
 .side-org-name { color: #fff; font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; }

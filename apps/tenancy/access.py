@@ -41,6 +41,9 @@ CAMPUS_STAFF_PERMISSIONS = frozenset(
         "numbers.view",
         "knowledge.view",
         "calls.analyse",
+        "integrations.view",
+        "actions.run",
+        "missed.handle",
     }
 )
 ORG_ADMIN_PERMISSIONS = CAMPUS_STAFF_PERMISSIONS | frozenset(
@@ -57,6 +60,9 @@ ORG_ADMIN_PERMISSIONS = CAMPUS_STAFF_PERMISSIONS | frozenset(
         "sources.manage",
         "numbers.manage",
         "knowledge.manage",
+        "integrations.manage",
+        "operations.view",
+        "usage.view",
     }
 )
 PERMISSIONS = {

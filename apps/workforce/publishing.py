@@ -138,6 +138,11 @@ def publish(employee: Employee, user=None) -> EmployeeVersion:
     """Save the draft as a new version and make it the one calls use."""
     config = normalize(employee.draft)
     reasons = problems(config)
+    unknown = unknown_actions(employee, config["actions"])
+    if unknown:
+        reasons.append(
+            "These actions no longer exist: " + ", ".join(unknown) + ". Untick them."
+        )
     if reasons:
         raise PublishError(reasons)
     with transaction.atomic():
@@ -189,6 +194,8 @@ def _with_knowledge(payload: dict, employee: Employee, campus) -> dict:
     payload = dict(payload)
     payload["business_name"] = _business_name(employee, campus)
     if employee.organisation is not None:
+        payload["observability"] = employee.organisation.cloud_observability
+    if employee.organisation is not None:
         facts = knowledge.compile_for(employee.organisation, campus)
         payload["business_info"] = facts or _business()[1]
     return payload
@@ -238,6 +245,8 @@ def plan_call(
     organisation = employee.organisation
     if organisation is not None and organisation.transcripts != "off":
         payload["transcript"] = True
+    if organisation is not None:
+        payload["observability"] = organisation.cloud_observability
     snapshot = {
         "built_at": timezone.now().isoformat(),
         "employee": {
@@ -251,9 +260,46 @@ def plan_call(
         "rehearsal": rehearsal,
         "questions": config["questions"],
         "actions": config["actions"],
+        "action_details": _action_details(employee, config["actions"]),
         "profile": payload,
     }
     return CallPlan(version, {PROFILE_KEY: payload}, snapshot)
+
+
+def _action_details(employee: Employee, keys: list[str]) -> list[dict]:
+    """The organisation's approved actions this call may use, as they are now."""
+    custom = [key.split(":", 1)[1] for key in keys if key.startswith("custom:")]
+    if not custom or employee.organisation is None:
+        return []
+    from apps.integrations.models import ApprovedAction
+
+    return [
+        {
+            "key": action.employee_key,
+            "label": action.label,
+            "kind": action.kind,
+            "integration": action.integration.name if action.integration else "",
+            "enabled": action.is_enabled,
+        }
+        for action in ApprovedAction.objects.filter(
+            organisation=employee.organisation, key__in=custom
+        ).select_related("integration")
+    ]
+
+
+def unknown_actions(employee: Employee, keys: list[str]) -> list[str]:
+    """Approved-action keys that this employee's organisation does not have."""
+    custom = {key.split(":", 1)[1] for key in keys if key.startswith("custom:")}
+    if not custom:
+        return []
+    from apps.integrations.models import ApprovedAction
+
+    known = set(
+        ApprovedAction.objects.filter(
+            organisation=employee.organisation, key__in=custom
+        ).values_list("key", flat=True)
+    )
+    return sorted(custom - known)
 
 
 def call_profile(employee: Employee) -> tuple[EmployeeVersion, dict[str, Any]]:

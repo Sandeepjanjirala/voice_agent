@@ -184,6 +184,8 @@ def erase(contact: Contact) -> None:
         contact.phone_lookup = f"erased:{uuid.uuid4().hex}"
         contact.origin_detail = ""
         contact.consent_evidence = ""
+        contact.whatsapp_consent = False
+        contact.whatsapp_consent_evidence = ""
         contact.best_time = ""
         contact.erased_at = timezone.now()
         contact.save()

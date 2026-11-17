@@ -1,0 +1,121 @@
+# Production stack for the Django backend on one server. NOT deployed: this is
+# the reviewed configuration for when the owner approves going live.
+#
+#   cp deploy/production.env.example deploy/.env.production   # fill it in
+#   docker compose -f deploy/compose.yaml --env-file deploy/.env.production up -d --build
+#
+# Only Caddy is reachable from outside (ports 80 and 443). PostgreSQL and Redis
+# have no published ports. The voice worker is not here: it runs on LiveKit Cloud
+# (ap-south). See docs/DEPLOYMENT.md and docs/DISASTER_RECOVERY.md.
+
+x-app: &app
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile.web
+  image: telugu-agent-web
+  restart: unless-stopped
+  env_file: .env.production
+  environment:
+    DJANGO_DEBUG: "false"
+    DJANGO_BEHIND_PROXY: "true"
+    DATABASE_URL: postgres://telugu_agent:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/telugu_agent
+    REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD}@redis:6379/0
+    CELERY_TASK_ALWAYS_EAGER: "false"
+    INTEGRATIONS_ALLOW_LOCAL: "false"
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: telugu_agent
+      POSTGRES_USER: telugu_agent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U telugu_agent -d telugu_agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Jobs are idempotent and rebuilt from the database, so Redis keeps no
+    # durable data: no persistence, and a password even on the private network.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD}", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" --no-auth-warning ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    healthcheck:
+      disable: true
+
+  web:
+    <<: *app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - static:/app/staticfiles-public:rw
+    # Copy the collected static files where Caddy can read them, then serve.
+    command: ["sh", "-c", "cp -r /app/staticfiles/. /app/staticfiles-public/ && exec gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 60 --access-logfile - --forwarded-allow-ips '*'"]
+
+  worker:
+    <<: *app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["celery", "-A", "config", "worker", "--loglevel", "INFO", "--concurrency", "2"]
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping --timeout 5 | grep -q pong"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+
+  # Exactly one Beat: it is the only scheduler. Never scale this service.
+  beat:
+    <<: *app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["celery", "-A", "config", "beat", "--loglevel", "INFO", "--schedule", "/tmp/celerybeat-schedule"]
+    healthcheck:
+      disable: true
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?Set SITE_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - static:/srv/static:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
+  static:
+  caddy_data:
+  caddy_config:

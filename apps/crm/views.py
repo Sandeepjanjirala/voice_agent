@@ -19,6 +19,7 @@ from django.views.decorators.http import require_POST
 
 from apps.calling import analysis
 from apps.calling.models import CallResult, CallTranscript
+from apps.integrations import webhooks
 from apps.telephony import calls as telephony_calls
 from apps.telephony.masking import mask_phone
 from apps.telephony.models import CallRecord
@@ -207,6 +208,7 @@ def lead_new(request):
                 created_by=scope.user,
             )
             audit.record(scope, "lead.created", lead)
+            webhooks.lead_created(lead, "staff")
             messages.success(request, "Lead added.")
             return redirect("lead-detail", pk=lead.pk)
     return render(request, "crm/lead_new.html", {"form": form, "problem": problem})
@@ -241,6 +243,7 @@ def lead_detail(request, pk):
                     )
                 if before[0] != lead.stage:
                     audit.record(scope, "lead.stage", lead, stage=lead.stage)
+                    webhooks.lead_stage_changed(lead, before[0])
                 messages.success(request, "Lead updated.")
                 return redirect("lead-detail", pk=lead.pk)
         elif action == "note":
@@ -293,8 +296,28 @@ def lead_detail(request, pk):
             "can_edit": scope.can("leads.edit"),
             "rehearsal_employees": rehearsal_employees,
             "test_number": _test_number(),
+            "lead_actions": _lead_actions(scope, lead),
+            "action_runs": lead.action_runs.select_related("actor", "call")[:20],
+            "appointments": lead.appointments.select_related("campus").order_by(
+                "starts_at"
+            ),
         },
     )
+
+
+def _lead_actions(scope, lead):
+    """The approved actions a person may run for this lead, with their forms."""
+    if not scope.can("actions.run") or lead.contact.is_erased:
+        return []
+    from apps.integrations.forms import run_form
+    from apps.integrations.models import ApprovedAction
+
+    return [
+        (action, run_form(action))
+        for action in ApprovedAction.objects.filter(
+            organisation=scope.organisation, is_enabled=True
+        ).select_related("integration")
+    ]
 
 
 def _open_tasks(scope):
@@ -452,6 +475,28 @@ def contact_detail(request, pk):
         elif action == "opt_out":
             contacts.opt_out(scope, contact, request.POST.get("reason", "")[:200])
             messages.success(request, "Added to the do-not-call list.")
+            return redirect("contact-detail", pk=contact.pk)
+        elif action == "whatsapp":
+            agreed = request.POST.get("whatsapp_consent") == "on"
+            evidence = " ".join(request.POST.get("whatsapp_evidence", "").split())[:300]
+            if agreed and not evidence:
+                messages.error(
+                    request, "Say how and when they agreed to WhatsApp messages."
+                )
+                return redirect("contact-detail", pk=contact.pk)
+            contact.whatsapp_consent = agreed
+            contact.whatsapp_consent_evidence = evidence if agreed else ""
+            contact.whatsapp_consent_at = timezone.now()
+            contact.save(
+                update_fields=[
+                    "whatsapp_consent",
+                    "whatsapp_consent_evidence",
+                    "whatsapp_consent_at",
+                    "updated_at",
+                ]
+            )
+            audit.record(scope, "contact.whatsapp_consent", contact, agreed=agreed)
+            messages.success(request, "WhatsApp permission recorded.")
             return redirect("contact-detail", pk=contact.pk)
     else:
         audit.record(scope, "contact.viewed", contact)
@@ -699,6 +744,8 @@ def conversation_detail(request, pk):
             "answers": answers,
             "transcript": transcript,
             "actions": call.actions.all(),
+            "action_runs": call.action_runs.select_related("actor"),
+            "missed": getattr(call, "missed", None),
             "snapshot": call.context_snapshot,
             "voice": profile.get("voice") or {},
             "can_analyse": scope.can("calls.analyse") and not call.is_active,
@@ -753,6 +800,7 @@ def _lead_from_caller(request, scope, call):
     )
     CallRecord.objects.filter(pk=call.pk).update(contact=contact, lead=lead)
     audit.record(scope, "lead.created", lead, from_call=str(call.pk))
+    webhooks.lead_created(lead, "call")
     messages.success(
         request,
         "Lead added. Permission to call them back is not recorded yet: "

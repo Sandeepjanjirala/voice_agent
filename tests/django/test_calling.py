@@ -224,7 +224,9 @@ def test_a_call_uses_the_published_version_campus_knowledge_and_lead(world):
     for absent in ("Elsewhere", "Other organisation", "Retired"):
         assert absent not in info
     assert profile["context"] == {"name": "Asha Rao", "about": "Brochure request"}
-    assert "transcript" not in profile, "the organisation keeps no transcripts"
+    # New organisations use transcripts for the summary, then delete them, and
+    # ask LiveKit Cloud to keep nothing.
+    assert profile["transcript"] is True and profile["observability"] is False
 
     snapshot = plan.snapshot
     assert snapshot["employee"]["version"] == 1 and snapshot["campus"] == "North"
@@ -614,7 +616,16 @@ def test_inbound_calls_are_routed_only_to_ready_employees(world, env, problem):
         PhoneNumber.objects.update(routing_enabled=False)
     response = inbound_post({"room": "in-2", "called": BUSINESS_LINE, "caller": RAVI})
     assert response.status_code == 404
-    assert not CallRecord.objects.exists()
+    if problem == "unrouted":
+        # Not one of our numbers: nothing to record.
+        assert not CallRecord.objects.exists()
+        return
+    # One of our numbers that no ready employee could take: someone calls back.
+    record = CallRecord.objects.get()
+    assert record.status == "failed" and record.employee_version is None
+    assert record.organisation == world.org_a and record.failure_reason
+    assert record.missed.reason == "not_routed"
+    assert crypto.decrypt(record.remote_encrypted) == RAVI
 
 
 def test_the_inbound_endpoint_needs_a_valid_signature(world, env):
@@ -1180,3 +1191,15 @@ def test_key_fingerprints_identify_keys_without_revealing_them(settings):
     again = io.StringIO()
     call_command("contactkeys", "fingerprint", stdout=again)
     assert again.getvalue() == text
+
+
+def test_new_organisations_analyse_then_delete_and_opt_out_of_cloud_recording(world):
+    from apps.tenancy.models import Organisation
+
+    fresh = Organisation.objects.create(name="Fresh")
+    assert fresh.transcripts == "analyse" and fresh.cloud_observability is False
+    world.org_a.cloud_observability = True
+    world.org_a.save()
+    plan = publishing.plan_call(employee_for(world))
+    worker = parse_profile(json.dumps(plan.metadata))
+    assert worker.cloud_recording is True

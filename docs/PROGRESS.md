@@ -9,7 +9,7 @@ See [FEATURE_MATRIX.md](FEATURE_MATRIX.md) for the comparison that drives it.
 | B | Employee configuration, publishing, voice testing, versions | Done, 16 Nov 2026 (two items moved to D, see below) |
 | C | Campuses, leads, conversations, analytics | Done, 16 Nov 2026 |
 | D | Employees on outbound calls, inbound routing, authorised campaigns | Done, 17 Nov 2026 (dry-run and switched-off parts listed below) |
-| E | Knowledge, API actions, integrations, production readiness | Next; knowledge entries were brought forward into D |
+| E | Integrations and actions, calendar and WhatsApp, hours and missed callers, jobs, production readiness | Approved for a separate commit, 17 Nov 2026; acceptance and pilot gates in PILOT_READINESS.md |
 
 ## Milestone A
 
@@ -300,6 +300,195 @@ before, and the existing worker tests are unchanged)
    scheduler. A Windows Task Scheduler entry works for one server; Celery and
    Redis are proposed for Milestone E, with a real call queue.
 
+## Milestone E
+
+**What you can do now**
+
+- **Integrations & actions** (admins). Connect:
+  - the built-in campus calendar
+  - Google Calendar
+  - WhatsApp Business (Cloud API)
+  - your own REST API
+  - signed webhooks
+
+  Then approve actions: check availability, book an appointment, send an
+  approved WhatsApp template, make a fixed REST request, update a lead, add a
+  follow-up, or hand over to a person. Each action has:
+  - its own input schema and validation
+  - credentials stored encrypted and never shown again
+  - a 10-second timeout and a size cap
+  - a logged run with a clear "Done", "Simulated", "Refused" or "Failed"
+
+  An action can only reach its integration's own address. Private addresses
+  are refused. The LLM never writes code or chooses a URL.
+- **On a lead**, staff run the enabled actions, see what was done and see
+  appointments. **On a contact**, record WhatsApp permission, with how and
+  when they agreed. It is separate from permission to call.
+- **On an employee**:
+  - Hear the opening line in the chosen voice and speed, without a phone call.
+  - Tick which approved actions it may use after calls.
+  - See where it works (campuses, numbers, campaigns, lead sources) and its
+    recent calls and actions.
+- **On a campus**:
+  - Weekly opening hours, and holidays (one campus, or all).
+  - Visit length and the closed message.
+  - Who is told when a caller asks for a person.
+- **Incoming calls** lists missed callers by campus: after hours (a message
+  was taken) and lines with nobody ready. Staff mark them "Called back".
+- **Notifications** (the bell) cover due follow-ups, missed callers,
+  escalations, and failed actions and webhooks, for the right campus or
+  person.
+- **Operations** (admins) shows:
+  - each scheduled job's last run
+  - analyses waiting, retrying or given up
+  - webhook deliveries
+  - failed actions
+  - the call queue
+  - whether Redis is reachable
+- **Usage & costs** (admins) shows calls, talk minutes, summaries, WhatsApp
+  messages and voice previews per month, by employee and campus. It estimates
+  cost from the rates you set under Privacy & settings.
+
+**Your decisions, as built**
+
+1. **Transcripts: analyse, then delete.** New organisations default to it.
+   The transcript is used for the summary and outcome, then deleted.
+   - On failure, analysis retries after 2, 4, 8 and 16 minutes, then gives
+     up. It deletes the transcript either way.
+   - Each call asks LiveKit Cloud to keep nothing (`record=False`), unless
+     the organisation turns on "Let LiveKit Cloud keep call recordings…".
+   - If turned on, LiveKit is also asked to redact personal details.
+   - What LiveKit keeps, where and for how long:
+     [DEPLOYMENT.md](DEPLOYMENT.md#privacy-what-livekit-cloud-keeps).
+2. **LiveKit dependency.** `livekit-protocol` moved from 1.1.31 (withdrawn) to
+   1.1.32. That is the only change in the lock. `livekit-agents` stays
+   1.8.10. The worker tests pass, including a real `AgentSession` started
+   with each recording choice.
+3. **Redis + Celery + Beat.** One app (`config/celery.py`) and one Beat
+   schedule run six idempotent jobs:
+
+   | Job | Every |
+   | :--- | :--- |
+   | Analyse calls | 2 min |
+   | Deliver webhooks | 1 min |
+   | Follow-up reminders | 15 min |
+   | Campaign eligibility (dry run) | 1 h |
+   | Usage report | 1 h |
+   | Retention | daily |
+
+   A cache lock keeps each job to one run at a time. Automatic dialling of
+   real customers stays off.
+
+**Inbound.** LiveKit's reply of 16 November (community topic 2530) is recorded
+in [INBOUND.md](INBOUND.md):
+
+- The India regional endpoint works on Build, with no approval needed.
+- They recommend deploying the worker to `ap-south`.
+- Allow-list enforcement is available on request.
+
+The trunk stays unprovisioned until LiveKit confirms enforcement is on and a
+call from an unlisted address is rejected. After-hours handling, missed
+callers and escalation are built. Live transfer still waits for the trunk.
+
+**Production readiness** (not deployed):
+
+- `deploy/` holds:
+  - a web image (gunicorn)
+  - Celery worker and Beat
+  - PostgreSQL 17 and Redis 7, with no public ports
+  - Caddy for automatic HTTPS
+  - a nightly backup script
+- With DEBUG off, the settings give HTTPS only, secure cookies, HSTS,
+  `X-Frame-Options: DENY`, 12-hour sessions, and a readiness check hidden
+  from the public.
+- See [DEPLOYMENT.md](DEPLOYMENT.md) and
+  [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md).
+
+**What runs where**
+
+| Piece | Code |
+| :--- | :--- |
+| Integrations, actions, runs, appointments, webhooks | `apps/integrations` (new) |
+| Jobs, notifications, usage, operations, readiness | `apps/operations` (new), `config/celery.py` |
+| Opening hours and holidays | `apps/tenancy/hours.py`, `OpeningHours`, `Holiday` |
+| Missed callers, after-hours notice | `apps/calling/inbound.py`, `MissedCall` |
+| Voice preview | `apps/workforce/preview.py`, `POST /employees/<id>/voice-preview/` |
+| Recording choice per call | `voice_agent/profile.py` (`recording_options`) |
+| Deployment | `deploy/` |
+
+**Checks**
+
+| Check | Result |
+| :--- | :--- |
+| `pytest` on SQLite | 721 passed (660 at the end of D) |
+| `pytest` on PostgreSQL 17.11 | 721 passed, in a disposable container; every migration applies on a clean database |
+| `ruff check`, `ruff format` | Clean on every changed file, ruff 0.17.5 |
+| `manage.py check`, `makemigrations --check` | Clean |
+| `manage.py check --deploy` | Clean with production settings (run inside the test suite) |
+| Celery, Redis and Beat | Real worker and Beat against Redis: Beat sent `deliver-webhooks` and the worker ran it, recorded as a job run |
+| Production stack | Built and started locally on loopback only, then removed. All services healthy, HTTP redirects to HTTPS, secure headers and cookies, static files served, backup and restore drill passed (see [DEPLOYMENT.md](DEPLOYMENT.md)) |
+| Chromium | `platform.cjs` (new) covers everything above at desktop and 390 px. It includes a booking, a double-booking refusal, signed webhooks checked at a loopback receiver, a missed caller, a voice preview, staff limits and phone widths. `dashboard.cjs`, `crm.cjs`, `calling.cjs` and `calls.cjs` still pass. No server errors |
+| `uv.lock` | Three isolated changes, additions only otherwise: `livekit-protocol` 1.1.31 → 1.1.32; `celery[redis]` (celery 5.7.0, redis 8.1.0 and their dependencies); `gunicorn` 23.0.0. `uv lock --check` passes |
+
+**Bugs found and fixed while checking**
+
+- Approved actions could not be created from the page. The form treated a new
+  action as an existing one because its UUID is set before saving.
+- Running an action from a lead returned a server error (an audit field-name
+  clash).
+- "Send a test event" crashed when integrations are live.
+- An empty `NAME=` line in `.env.local` turned a switch off instead of keeping
+  its default. This would have silently disabled the HTTPS redirect and secure
+  cookies.
+- `.dockerignore` let `db.sqlite3`, logs and test output into Docker images.
+
+**Changed behaviour to know about**
+
+- A call is analysed automatically once its transcript arrives (a background
+  job); "Analyse now" becomes "Analyse again".
+- New organisations default to "analyse, then delete" for transcripts, and to
+  LiveKit Cloud keeping nothing.
+- The organisation settings form also takes the three cost rates; its button
+  is now "Save".
+- New settings, all in `.env.example`: `REDIS_URL`, `CELERY_TASK_ALWAYS_EAGER`,
+  `INTEGRATIONS_LIVE_ENABLED`, `INTEGRATIONS_ALLOW_LOCAL`, and the
+  `DJANGO_*` HTTPS and cookie settings.
+
+**Switched off, on purpose**
+
+- `INTEGRATIONS_LIVE_ENABLED=false`: calendar bookings outside the built-in
+  calendar, WhatsApp messages, REST requests and webhooks are checked and
+  logged as "Simulated", with the exact request; nothing is sent. The built-in
+  campus calendar works, because it is this system's own data. Rehearsal calls
+  never book, message or call out.
+- Calling stored contacts, campaigns and instant leads: still dry runs.
+- Inbound trunk: not created (see above). Live transfer: not built.
+- Nothing is deployed.
+
+**Not checked, or not possible here**
+
+- No real Google Calendar, WhatsApp, REST or webhook endpoint was used. The
+  requests were checked against the providers' documented formats, with fake
+  answers.
+- No real Sarvam voice preview: the request matches the installed plugin's own
+  REST call, and was answered by a fake.
+- No real phone call, and no real domain or certificate.
+
+**Decisions for you**
+
+1. **Commit.** Owner approved two separate commits on 17 November 2026.
+   D was committed as `881ff2a`, exactly the original 82-file staged tree.
+   E includes the consolidated synthetic acceptance gate and readiness review.
+2. **Allow-list.** Reply in community topic 2530 asking LiveKit to switch
+   enforcement on for `p_44waokrv9lv`. Add `livekit_regional_sip_endpoint` to
+   `TELEPHONY_CONFIRMED` in `.env.local` now; add the allow-list item only
+   after the rejection test.
+3. **Cost rates.** Set them under Privacy & settings for the Usage page's
+   estimate.
+4. **Before live integrations:** a Google Cloud OAuth client, a Meta WhatsApp
+   Business account with approved templates, and an explicit decision to set
+   `INTEGRATIONS_LIVE_ENABLED=true`.
+
 ## Run the browser check
 
 ```powershell
@@ -309,6 +498,8 @@ node tests/browser/crm.cjs                                     # window 2, same 
 ```
 
 For Milestone D, restart the server and run `node tests/browser/calling.cjs`.
+For Milestone E, restart it again and run `node tests/browser/platform.cjs`. It
+starts a webhook receiver on 127.0.0.1:8768 and refuses any other address.
 
 The server uses a disposable database, a canned LLM answer, a simulated phone
 line and made-up people. Restart it before running the pair again.
