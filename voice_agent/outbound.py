@@ -19,7 +19,7 @@ from google.protobuf.duration_pb2 import Duration
 from livekit import api, rtc
 from livekit.agents import JobContext, room_io
 
-from dialing import DialingPolicyError
+from dialing import E164, DialingPolicyError
 
 from .assistant import TeluguAssistant, greet
 from .call_reporting import CallMetrics, CallReporter
@@ -27,6 +27,7 @@ from .config import VoiceSettings
 from .observability import attach_session_observers
 from .pipeline import build_audio_input, build_session
 from .profile import AgentProfile, recording_options, voice_for
+from .recording import recorder_for
 from .telephony import log_callers, mask_phone
 
 logger = logging.getLogger("voice_agent")
@@ -53,6 +54,8 @@ class DialRequest:
     ringing_timeout: int
     max_call_duration: int
     requested_at: float | None = None
+    # A verified caller ID other than the trunk's own (E.164), or "".
+    caller_number: str = ""
 
 
 @dataclass(frozen=True)
@@ -83,6 +86,7 @@ def parse_dial_request(metadata: str | None) -> DialRequest | None:
             requested_at=float(request["requested_at"])
             if request.get("requested_at") is not None
             else None,
+            caller_number=str(request.get("sip_number") or ""),
         )
     except (KeyError, TypeError, ValueError):
         return DialRequest(to="", trunk_id="", ringing_timeout=30, max_call_duration=30)
@@ -106,6 +110,8 @@ async def place_call(
         settings.outbound_policy.validate(dial.to)
         if not dial.trunk_id:
             raise DialingPolicyError("Missing outbound trunk.")
+        if dial.caller_number and not E164.fullmatch(dial.caller_number):
+            raise DialingPolicyError("The caller ID is not a phone number.")
     except DialingPolicyError:
         logger.error(
             "outbound call refused by dialing policy",
@@ -128,6 +134,8 @@ async def place_call(
                 sip_trunk_id=dial.trunk_id,
                 sip_call_to=dial.to,
                 participant_identity=CALLEE_IDENTITY,
+                # Empty keeps the trunk's own number as the caller ID.
+                sip_number=dial.caller_number,
                 # Keep the callee's number out of participant attributes and logs.
                 hide_phone_number=True,
                 ringing_timeout=Duration(seconds=dial.ringing_timeout),
@@ -161,20 +169,26 @@ async def run_outbound_call(
     settings: VoiceSettings,
     dial: DialRequest,
     profile: AgentProfile | None = None,
+    *,
+    profile_missing: bool = False,
 ) -> str:
-    """Whole life of one outbound call. Returns the dial outcome."""
+    """Whole life of one outbound call. Returns the dial outcome.
+    `profile_missing`: the call's employee profile could not be fetched, so
+    nobody is dialled."""
     await ctx.connect()
     log_callers(ctx.room)
     reporter = CallReporter.from_settings(settings, room=ctx.room.name)
     metrics = CallMetrics(keep_transcript=bool(profile and profile.keep_transcript))
-    call: dict = {"answered_at": None, "tasks": set()}
+    call: dict = {"answered_at": None, "tasks": set(), "recorder": None}
 
     async def hang_up(reason: str = "") -> None:
         if call["answered_at"] is not None and not reporter.ended:
+            talk = round(time.monotonic() - call["answered_at"], 1)
+            metrics.finish(talk_seconds=talk, limit=dial.max_call_duration)
             await reporter.send(
                 "ended",
                 outcome="completed",
-                talk_seconds=round(time.monotonic() - call["answered_at"], 1),
+                talk_seconds=talk,
                 **metrics.ended_fields(),
             )
         # Deleting the room disconnects the phone leg whatever state it is in.
@@ -184,10 +198,20 @@ async def run_outbound_call(
             logger.warning(
                 "could not delete call room", extra={"error_type": type(error).__name__}
             )
+        # The person is off the line; now the recording, if they agreed to one.
+        if call["recorder"] is not None:
+            await call["recorder"].finish()
 
     ctx.add_shutdown_callback(hang_up)
 
-    result = await place_call(ctx, dial, settings)
+    if profile_missing:
+        logger.error(
+            "outbound call refused: the employee profile could not be fetched",
+            extra={"callee": mask_phone(dial.to)},
+        )
+        result = DialResult(REFUSED)
+    else:
+        result = await place_call(ctx, dial, settings)
     if result.outcome != ANSWERED:
         # Reported before shutdown, while the room still exists.
         await reporter.send(
@@ -200,6 +224,8 @@ async def run_outbound_call(
         return result.outcome
 
     call["answered_at"] = time.monotonic()
+    # Transcript times count from the moment the callee answered.
+    metrics.started_at = time.time()
     # Not awaited: the callee must not wait in silence for Django.
     task = asyncio.create_task(reporter.send("answered"))
     call["tasks"].add(task)
@@ -213,18 +239,29 @@ async def run_outbound_call(
     session = build_session(settings)
     attach_session_observers(session, settings, session_id=ctx.room.name)
     session.on("conversation_item_added", lambda ev: metrics.observe(ev.item))
+    session.on("function_tools_executed", metrics.observe_tools)
 
     @session.on("close")
-    def _on_close(_event) -> None:
+    def _on_close(event) -> None:
+        metrics.on_close(event)
         ctx.shutdown(reason="outbound call ended")
 
     @ctx.room.on("participant_disconnected")
     def _on_left(left: rtc.RemoteParticipant) -> None:
         if left.identity == CALLEE_IDENTITY:
+            metrics.note_end("caller_hung_up")
             ctx.shutdown(reason="callee hung up")
 
+    # Only for a call Django allows to be recorded, and only after a yes.
+    call["recorder"] = recorder_for(
+        ctx, settings, profile, session, reporter, started_at=metrics.started_at
+    )
     await session.start(
-        agent=TeluguAssistant(settings, profile),
+        agent=TeluguAssistant(
+            settings,
+            profile,
+            extra_tools=call["recorder"].tools() if call["recorder"] else None,
+        ),
         room=ctx.room,
         room_options=room_io.RoomOptions(
             participant_identity=participant.identity,

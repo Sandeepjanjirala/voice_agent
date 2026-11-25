@@ -12,8 +12,7 @@ from django.urls import reverse
 from apps.calling import analysis
 from apps.calling.models import CallTranscript
 from apps.crm.models import FollowUp
-from apps.integrations import actions, transport, webhooks
-from apps.integrations.models import Appointment, Integration
+from apps.integrations import transport
 from apps.operations import tasks
 from apps.operations.models import JobRun, UsageDay
 from apps.telephony.models import CallRecord
@@ -24,22 +23,11 @@ from voice_agent.profile import parse_profile
 
 from .test_calling import BUSINESS_LINE, SCRIPT, TRANSCRIPT, canned, inbound_post, route
 from .test_calls import env, gateway  # noqa: F401
-from .test_integrations import (
-    Kind,
-    action,
-    ctx,
-    integration,
-    open_weekdays,
-    tomorrow_at,
-    webhook,
-)
 from .test_tenancy_crm import ASHA, World
 
 
 @pytest.mark.django_db
-def test_education_acceptance_journey(gateway, monkeypatch, settings):  # noqa: F811
-    settings.INTEGRATIONS_LIVE_ENABLED = False
-
+def test_education_acceptance_journey(gateway, monkeypatch):  # noqa: F811
     def refuse(*args, **kwargs):
         raise AssertionError("Acceptance must not contact a provider")
 
@@ -113,27 +101,6 @@ def test_education_acceptance_journey(gateway, monkeypatch, settings):  # noqa: 
     assert FollowUp.objects.filter(lead=lead).count() == 1
     assert not CallTranscript.objects.filter(call=record).exists()
 
-    open_weekdays(world.north)
-    calendar = integration(world, Integration.Kind.CAMPUS_CALENDAR)
-    book = action(world, Kind.BOOK_APPOINTMENT, integration=calendar)
-    inputs = {"start": tomorrow_at(10).isoformat()}
-    assert actions.run(book, inputs, ctx(world, lead)).status == "succeeded"
-    assert actions.run(book, inputs, ctx(world, lead)).status == "failed"
-    assert Appointment.objects.filter(lead=lead).count() == 1
-    google = integration(
-        world,
-        Integration.Kind.GOOGLE_CALENDAR,
-        config={"calendar_id": "synthetic@example.com"},
-    )
-    external = action(
-        world, Kind.BOOK_APPOINTMENT, key="google-book", integration=google
-    )
-    assert actions.run(external, inputs, ctx(world, lead)).status == "simulated"
-    webhook(world)
-    (delivery,) = webhooks.emit(world.org_a, "call.analysed", {"call": str(record.pk)})
-    tasks.deliver_webhook.apply(args=[delivery.pk]).get(propagate=True)
-    delivery.refresh_from_db()
-    assert delivery.status == "simulated"
     tasks.usage_report.apply().get(propagate=True)
     assert JobRun.objects.filter(status="ok").exists()
     assert UsageDay.objects.filter(organisation=world.org_a).exists()

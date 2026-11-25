@@ -4,6 +4,8 @@
   const lists = [
     { list: 'steps', add: 'add-step', template: 'step-template' },
     { list: 'questions', add: 'add-question', template: 'question-template' },
+    { list: 'situations', add: 'add-situation', template: 'situation-template' },
+    { list: 'outcomes', add: 'add-outcome', template: 'outcome-template' },
   ];
 
   const refresh = (list, addButton) => {

@@ -1,20 +1,21 @@
 {% extends 'dashboard/base.html' %}
-{% block title %}Conversations{% endblock %}
+{% block title %}Call results{% endblock %}
 {% block content %}
+{% include 'dashboard/_steps.html' with step=4 %}
 <section class="page-head">
   <div>
-    <p class="eyebrow">OUTCOMES</p>
-    <h1>Conversations</h1>
-    <p class="muted">Every call of {{ scope.organisation.name }}{% if not scope.all_campuses %} in your campuses{% endif %}, with its AI employee and outcome. Numbers are masked.</p>
+    <h1>Call results</h1>
+    <p class="muted">Every call{% if not scope.all_campuses %} of your campuses{% endif %}: what happened, what was said and what to do next. Open a call to listen and read. Numbers are masked.</p>
   </div>
   {% if can_export %}<a class="button small" href="{% url 'conversations-export' %}{% if querystring %}?{{ querystring }}{% endif %}">Export CSV</a>{% endif %}
 </section>
 
-<div class="tiles">
+<div class="tiles five">
   <div class="tile"><p class="tile-label">Calls</p><p class="tile-value" id="call-total">{{ summary.total }}</p><p class="tile-note">Matching the filters</p></div>
   <div class="tile"><p class="tile-label">Answered</p><p class="tile-value">{% if summary.answer_rate is None %}–{% else %}{{ summary.answer_rate }}%{% endif %}</p><p class="tile-note">{{ summary.answered }} answered</p></div>
   <div class="tile"><p class="tile-label">Talk time</p><p class="tile-value">{{ summary.talk_minutes }} min</p><p class="tile-note">{% if summary.average_talk is None %}No talk time yet{% else %}{{ summary.average_talk }} s on average{% endif %}</p></div>
   <div class="tile"><p class="tile-label">Response time</p><p class="tile-value">{% if summary.response is None %}–{% else %}{{ summary.response }} s{% endif %}</p><p class="tile-note">Median</p></div>
+  <a class="tile tile-link" href="?attention=follow_up" id="tile-follow-up"><p class="tile-label">Need follow-up</p><p class="tile-value">{{ summary.follow_up }}</p><p class="tile-note">{{ summary.with_issues }} with issues to review</p></a>
 </div>
 
 <section class="panel">
@@ -25,11 +26,13 @@
     <select name="campus" aria-label="Campus"><option value="">Every campus</option>{% for item in campuses %}<option value="{{ item.pk }}"{% if filters.campus and item.pk == filters.campus.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
     <select name="employee" aria-label="AI employee"><option value="">Any employee</option>{% for item in employees %}<option value="{{ item.pk }}"{% if filters.employee and item.pk == filters.employee.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
     <select name="outcome" aria-label="Outcome"><option value="">Any outcome</option>{% for value, label in outcomes %}<option value="{{ value }}"{% if value == filters.outcome %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    {% if filters.labels %}<select name="result" aria-label="Employee's result"><option value="">Any employee result</option>{% for label in filters.labels %}<option value="{{ label }}"{% if label == filters.result %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>{% endif %}
+    <select name="attention" aria-label="Needs attention"><option value="">All calls</option><option value="follow_up"{% if filters.attention == 'follow_up' %} selected{% endif %}>Needs follow-up</option><option value="issues"{% if filters.attention == 'issues' %} selected{% endif %}>Has issues</option></select>
     <button class="small" type="submit">Filter</button>
   </form>
   {% if page.object_list %}
   <div class="table-scroll"><table class="data" id="call-table">
-    <thead><tr><th>Started</th><th>Number</th><th>Result</th><th>Talk time</th><th>Campus</th><th>AI employee</th><th>Outcome</th></tr></thead>
+    <thead><tr><th>Started</th><th>Number</th><th>Result</th><th>Talk time</th><th>Campus</th><th>AI employee</th><th>What happened</th></tr></thead>
     <tbody>
       {% for call in page %}
       <tr>
@@ -39,7 +42,10 @@
         <td>{% if call.duration_seconds is None %}–{% else %}{{ call.duration_seconds|floatformat:0 }} s{% endif %}</td>
         <td>{{ call.campus.name|default:"–" }}</td>
         <td>{% if call.employee_version %}{{ call.employee_version.employee.name }} v{{ call.employee_version.number }}{% else %}–{% endif %}</td>
-        <td class="wrap">{% if call.result.outcome %}{{ call.result.get_outcome_display }}{% else %}–{% endif %}</td>
+        <td class="wrap what">{% with result=call.result %}{% if result and result.status == 'done' %}
+          <span class="tag">{{ result.result_label|default:result.get_outcome_display }}</span>{% if result.resolution and result.resolution != 'na' %} <span class="tag{% if result.resolution == 'resolved' %} good{% elif result.resolution == 'unresolved' %} bad{% endif %}">{{ result.get_resolution_display }}</span>{% endif %}{% if result.follow_up_needed %} <span class="tag draft">Follow up</span>{% endif %}{% if result.has_issues %} <span class="tag bad">Issues</span>{% endif %}
+          {% if result.reason %}<small>{{ result.reason|truncatechars:110 }}</small>{% endif %}
+        {% else %}–{% endif %}{% endwith %}</td>
       </tr>
       {% endfor %}
     </tbody>

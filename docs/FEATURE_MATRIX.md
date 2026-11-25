@@ -64,18 +64,18 @@ observed on the live screen. `Assumed` = our inference; treat as a guess.
 
 | Feature | Reference behaviour | Evidence | Our status | Missing work |
 | :--- | :--- | :--- | :--- | :--- |
-| Tabs | Overview, Instant, Call script, Training, Actions, Outcomes, Voice, Settings | Seen | Partial (A): one editor page | Split into sections as they are built (B–E) |
+| Tabs | Overview, Instant, Call script, Training, Actions, Outcomes, Voice, Settings | Seen | Partial (A): one editor page, now with success, situations, hand-over, possible results (the reference's Outcomes) and information it may give | Split into sections |
 | Opening line | Spoken word for word on connect | Docs, Seen | Done (A) | – |
-| Call steps | Named steps; add, delete, reorder; up to 40,000 characters | Docs, Seen | Done (A), deliberately smaller: up to 6 one-sentence steps, because they travel in the voice agent's per-call prompt | Longer flows need staged prompts in the voice worker (E) |
+| Call steps | Named steps; add, delete, reorder; up to 40,000 characters | Docs, Seen | Done (A, platform improvements), deliberately smaller: up to 12 steps; all instructions together up to `EMPLOYEE_INSTRUCTION_BYTES` (6144 bytes by default, about 2,000 Telugu letters), shown live as you type; the call fetches them by signed reference | Longer flows need staged prompts in the voice worker |
 | Always-on FAQs step | Cannot be removed | Docs, Seen | None | Covered by the knowledge lookup tool (E) |
 | Call end rules | Built-in rule plus one extra rule per line | Docs, Seen | Done (A): one ending field | – |
 | Strictness dial | 1 (flexible) to 5 (strict) | Docs, Seen | Done (B): sent to the voice agent as an instruction | – |
 | Pre-call variables | `{{placeholders}}` filled from the lead | Docs, Seen | Partial (D): the contact's name and the lead's subject reach the call | Custom variables from campaign columns (E) |
-| Captured variables | Details extracted from the call | Docs | Partial (A): "details to collect" list | Extraction after the call (C) |
+| Captured variables | Details extracted from the call | Docs | Done (A, 24 Nov): "details to collect", read after each call, plus other important details the person gave | – |
 | Change the script by instruction | "Tap and say your change" | Seen | Partial (A): "Draft again" from the original brief | Instruction-based edits (B) |
 | Voice | Tiers, preview, ambient background sound | Docs | Done (D, E): per-employee Sarvam voice, speed and language, applied per call; a preview speaks the opening line with the chosen voice, no call placed | Background sound |
-| Rehearse in text chat | Chat with the employee, no phone | Docs, Seen | Partial (B): voice rehearsal in the browser | Text rehearsal (E) |
-| Test call | One-off call to a typed number | Docs, Seen | Done (D): "Call the test number" on a published employee uses that version and records it; the approved number only | Typed numbers stay unavailable until wider dialling is authorised |
+| Rehearse in text chat | Chat with the employee, no phone | Docs, Seen | None: the browser voice rehearsal (Voice studio) was removed on 25 Nov 2026 at the owner's request | Hear an employee by calling your own number from Make calls |
+| Test call | One-off call to a typed number | Docs, Seen | Done (25 Nov): Make calls with a typed number, or **Make calls** on the employee's page with it already chosen | – |
 | Publish | Script, actions and webhooks need "Apply to live calls"; voice and training apply at once | Docs | Done (B): Publish and Discard changes; publishing is blocked with reasons if the script cannot be used | – |
 | Versions | Last 3 published versions, restorable | Docs | Done (B): every version kept, last 5 shown, any can be copied into the draft | – |
 | Start from scratch / switch channel | Destructive resets in Settings | Docs | Partial (A): Draft again, Delete | Channel switch rules (B) |
@@ -97,7 +97,7 @@ observed on the live screen. `Assumed` = our inference; treat as a guess.
 | :--- | :--- | :--- | :--- | :--- |
 | Call log | Contact, employee, channel, outcome, talk time, cost, summary | Docs, Seen | Done (C, D): masked number, result, talk time, campus, employee version, who placed it | AI summary and outcome (E) |
 | Filters | Date, direction, recording, how it ended, talk time, channel, outcome, employee, source; remembered | Docs, Seen | Done (C, D): period, result, direction, campus, AI employee, outcome | Remembered filters |
-| Call detail | Recording, summary, sentiment, transcript, extracted details, notes, share | Docs | Done (D): AI summary, outcome, answers, masked transcript (if kept), actions taken, the snapshot the employee was given, notes | Recording; sentiment |
+| Call detail | Recording, summary, sentiment, transcript, extracted details, notes, share | Docs | Done (D, 24 Nov): reason, summary, the employee's own result, resolution, collected details, what the AI said, open items, next step, follow-up, instruction-following, measured and quoted issues, the conversation as a timed chat (if kept), how it ended, actions, notes | Sentiment. Recording: done (24 Nov), after consent, encrypted, with a player; awaiting the first real recorded call |
 | Export CSV | From the filtered view | Docs, Seen | Done (C): masked numbers, admins only, logged | – |
 
 ## 7. Performance
@@ -112,27 +112,22 @@ observed on the live screen. `Assumed` = our inference; treat as a guess.
 
 ## 8. Campaigns
 
+Campaigns (dry runs only) were removed on 25 Nov 2026 at the owner's request. **Make calls** does list
+calling for real:
+
 | Feature | Reference behaviour | Evidence | Our status | Missing work |
 | :--- | :--- | :--- | :--- | :--- |
-| Create | Name, employee, contacts (manual, paste, CSV), column mapping, reusable lists | Docs | Done (D): name, campus, published employee, purpose; contacts from the campus or one import | Column-to-variable mapping (E) |
-| Rules | Window, days, holidays, concurrency 1–20, retries 1–9, schedule or repeat | Docs | Done (D): window (within 09:00–21:00), days, attempts 1–5, retry delay, daily limit, cooldown between campaigns | Holidays, schedule and repeat |
-| Run | Pause, resume, retry, cancel, export; live panel | Docs | Partial (D): dry run with a report, retry plan per person, archive | Real runs need dialling to be authorised, then a queue (Celery) |
-| Limits | 10 live campaigns; one per number, the next queues | Docs | Partial: one outbound call at a time, enforced by the database | With real runs |
-| Do-not-call | Account list plus per-campaign suppression, checked before each call | Docs | Done (C, D): organisation-wide list, checked at every dry run and in imports and intake | Per-campaign suppression list |
-| Consent confirmation | Recorded when a campaign is launched | Docs | Done (C, D): per contact with evidence; per import; per campaign before any run | – |
-
-Real dialling stays limited to the one approved test number until wider calling is
-authorised, so campaigns will run in dry-run mode first.
+| Create | Name, employee, contacts (manual, paste, CSV), column mapping, reusable lists | Docs | Done (25 Nov): typed numbers or an Excel/CSV upload, a published employee, what the calls are about, an optional campus | Column-to-variable mapping; reusable lists |
+| Rules | Window, days, holidays, concurrency 1–20, retries 1–9, schedule or repeat | Docs | Partial: 09:00–21:00, the campus's opening hours and holidays, one call at a time | Retries, schedule and repeat |
+| Run | Pause, resume, retry, cancel, export; live panel | Docs | Done (25 Nov): live list page, pause, resume, cancel | Retry and export |
+| Limits | 10 live campaigns; one per number, the next queues | Docs | Partial: one outbound call at a time across the installation, enforced by the database; the monthly minutes budget | Simultaneous calls |
+| Do-not-call | Account list plus per-campaign suppression, checked before each call | Docs | Done: checked when the list is made and again before each call | Per-list suppression |
+| Consent confirmation | Recorded when a campaign is launched | Docs | Done (25 Nov): a tick before calling starts, its wording stored with the list | – |
 
 ## 9. Instant leads
 
-| Feature | Reference behaviour | Evidence | Our status | Missing work |
-| :--- | :--- | :--- | :--- | :--- |
-| Intake address | Private URL per employee with a secret header; only `phone` is required | Docs | Done (D): a source per form, secret shown once and stored hashed, `phone` required, rate limited | – |
-| Sources | Webhook, Google Sheets, Meta lead ads through Zapier, Zapier/Make | Docs | Done (D): generic JSON webhook, which Zapier and Make can call | Google Sheets sync |
-| Calling policy | Call delay, window, out-of-window handling, retry ladder up to 10 attempts | Docs | Done (D), as dry run: delay, window, next-window handling, three attempts | Configurable retry ladder |
-| Test and activity | Test lead without a call; activity log of accepted, duplicate, rejected | Docs, Seen | Done (D): test delivery and `dry_run`, delivery log | – |
-| Sections | Activity, Analytics, Queue, Sources; hot-lead list | Seen | Done (D): sources, queue and deliveries | Hot-lead list |
+Removed on 25 Nov 2026 at the owner's request: the intake address only ran dry runs. Leads can still be added by hand
+or imported under Leads & contacts.
 
 ## 10. Incoming calls
 
@@ -151,10 +146,10 @@ Inbound SIP routing stays off until it can be authenticated securely.
 | Feature | Reference behaviour | Evidence | Our status | Missing work |
 | :--- | :--- | :--- | :--- | :--- |
 | Buy a number | Search, pay, KYC, auto-activate | Docs, Seen | Not planned: numbers are bought from the provider (Vobiz) by the owner | – |
-| Assign a number | One number per employee | Docs | Done (D): a number has a campus and an employee; an employee may answer several | – |
-| Concurrent calls | "Channels" per number | Docs, Seen | Partial: one call at a time | With real runs (E) |
-| Calling rules shown | Consent, hours, do-not-call, responsibility | Docs, Seen | Done (D): on campaigns, numbers and dry-run reports | – |
-| Line status | – | – | Done (D): outbound test line and inbound readiness on Numbers & channels | – |
+| Assign a number | One number per employee | Docs | Done (D, platform improvements): a number has a campus and an employee; an employee may answer several; every routed number joins the one secure inbound trunk; a verified number can be a campus's caller ID on business calls | – |
+| Concurrent calls | "Channels" per number | Docs, Seen | Partial: one outbound call at a time across the installation (a database rule). Each organisation can already store a calls-at-once limit (1 to 20, under Privacy & settings) for when more are authorised | Lifting the one-call rule, with real runs |
+| Calling rules shown | Consent, hours, do-not-call, responsibility | Docs, Seen | Done: on Make calls, Numbers & channels and each call list | – |
+| Line status | – | – | Done (D): outbound readiness and inbound readiness on Numbers & channels | – |
 
 ## 12. Knowledge and integrations
 
@@ -163,8 +158,8 @@ Inbound SIP routing stays off until it can be authenticated securely.
 | Facts and rules | Typed, spoken or photographed; sorted into facts and rules; reviewed before saving | Docs | Done (D): typed facts and rules, per campus or organisation-wide, used from the next call | Spoken or photographed input (E) |
 | Documents | Uploaded and consulted only when needed | Docs | None | (E) |
 | Suggestions from real calls | Moments where the employee struggled | Docs | None | Needs transcripts (after E) |
-| Actions | Calendar, Sheets, custom API, WhatsApp; each opt-in per employee | Docs | Done (E): campus calendar, Google Calendar, WhatsApp templates, fixed REST requests, lead updates, follow-ups and escalation; approved by an admin, opt-in per employee, schema-checked, logged; outside services simulated until switched on | Google Sheets; turning live integrations on |
-| Result webhooks | Every call, completed only, voicemail only; test send | Docs | Done (E): signed webhooks for call analysed, lead created, stage changed and appointment booked; test send; retries | Filters by outcome |
+| Actions | Calendar, Sheets, custom API, WhatsApp; each opt-in per employee | Docs | Partial: built-in follow-up task and lead stage only. Calendar, WhatsApp and REST actions were removed on 25 Nov 2026 at the owner's request (they were simulated) | Real integrations, when authorised |
+| Result webhooks | Every call, completed only, voicemail only; test send | Docs | Removed on 25 Nov 2026 at the owner's request | – |
 | Public API | `/v1` calls, campaigns, leads, do-not-call, employees; dry run | Docs | None | (E) |
 
 ## 13. Usage, credits and settings

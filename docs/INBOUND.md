@@ -51,9 +51,36 @@ documented), and SRTP on inbound calls (`provider_inbound_srtp`).
 | The worker's question | `POST /api/telephony/inbound-context/`, signed with `CALL_EVENTS_SECRET` |
 | The worker's side | `voice_agent/inbound.py`, used when `INBOUND_CONTEXT_URL` is set |
 
-A number that is not routed answers 404, and the worker then answers with its
-own default profile, as it did before. A draft or paused employee is never
-put on a call.
+A number that is not routed answers 404. **The worker then fails closed**
+(18 November 2026): the caller hears one neutral line
+(`INBOUND_UNROUTED_MESSAGE`, which names no organisation and promises
+nothing), LiveKit Cloud is asked to keep nothing, and the room is deleted.
+The same happens if Django cannot be reached. A draft or paused employee is
+never put on a call, and no business conversation starts without an assigned
+employee. Django records one of our numbers that rang with nobody ready as a
+missed caller, so someone calls back.
+
+### Several business lines, one secure trunk
+
+Every business line can have its own campus and employee. One LiveKit
+inbound trunk accepts all of them:
+
+- the numbers in `TELEPHONY_INBOUND_NUMBER` (comma-separated), and
+- every number routed to an employee on the Numbers & channels page.
+
+`manage.py telephony plan` lists them, masked. A number that is not routed
+is left off the trunk, so LiveKit rejects calls to it before they reach the
+worker. The dispatch rule is bound to that trunk (never a wildcard), gives
+each caller a new room (callee rule with a random suffix), and dispatches
+the agent explicitly. Each call's room is unique, so callers never share one.
+
+The plan stays blocked, and `telephony apply` refuses, until all of these
+are confirmed in `TELEPHONY_CONFIRMED`: the account, the regional endpoint,
+SRTP, and `livekit_allowed_addresses_enforced`. Add the last one only after
+LiveKit says enforcement is on and a call from an unlisted address is
+rejected. Simulated end to end in
+`tests/django/test_inbound_simulation.py` and
+`tests/voice/test_inbound_fallback.py`.
 
 ## Lifecycle of one call
 

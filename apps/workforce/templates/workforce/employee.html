@@ -26,7 +26,7 @@
     <div class="two-up">
       <div class="field">
         <label for="f-name">Name it introduces itself with</label>
-        <input type="text" id="f-name" name="name" maxlength="{{ limits.agent_name }}" value="{{ form.name.value|default:'' }}" required>
+        <input type="text" id="f-name" name="name" data-budget maxlength="{{ limits.agent_name }}" value="{{ form.name.value|default:'' }}" required>
         {% if form.name.errors %}<p class="field-error" role="alert">{{ form.name.errors|join:" " }}</p>{% endif %}
       </div>
       <div class="field">
@@ -78,7 +78,12 @@
     </div>
     <div class="field">
       <label for="f-purpose">Why it is talking to the person</label>
-      <textarea id="f-purpose" name="purpose" rows="2" maxlength="{{ limits.purpose }}">{{ config.purpose }}</textarea>
+      <textarea id="f-purpose" name="purpose" rows="3" data-budget maxlength="{{ limits.purpose }}">{{ config.purpose }}</textarea>
+    </div>
+    <div class="field">
+      <label for="f-success">What a successful call achieves <span class="optional">optional</span></label>
+      <textarea id="f-success" name="success" rows="2" data-budget maxlength="{{ limits.success }}" placeholder="e.g. The parent rated the event and said one thing to improve.">{{ config.success }}</textarea>
+      <p class="help">The employee works towards it, and the call report says whether it was reached.</p>
     </div>
 
     <fieldset class="field">
@@ -89,7 +94,7 @@
           <span class="num"></span>
           <div class="row-fields">
             <input type="text" name="step_name" maxlength="{{ limits.step_name }}" value="{{ step.name }}" aria-label="Step name" placeholder="Step name">
-            <textarea name="step_guidance" rows="2" maxlength="{{ limits.step_guidance }}" aria-label="What to do in this step" placeholder="What to do in this step">{{ step.guidance }}</textarea>
+            <textarea name="step_guidance" rows="2" data-budget maxlength="{{ limits.step_guidance }}" aria-label="What to do in this step" placeholder="What to do in this step">{{ step.guidance }}</textarea>
           </div>
           <div class="row-tools"><button type="button" data-move="-1" aria-label="Move step up">↑</button><button type="button" data-move="1" aria-label="Move step down">↓</button><button type="button" data-remove aria-label="Remove step">Remove</button></div>
         </li>
@@ -103,19 +108,57 @@
       <legend>Details to collect</legend>
       <ul class="row-list" id="questions" data-max="{{ max_questions }}">
         {% for question in config.questions %}
-        <li class="row-item simple"><input type="text" name="question" maxlength="{{ limits.question }}" value="{{ question.label }}" aria-label="Detail to collect"><div class="row-tools"><button type="button" data-remove aria-label="Remove detail">Remove</button></div></li>
+        <li class="row-item simple"><input type="text" name="question" data-budget maxlength="{{ limits.question }}" value="{{ question.label }}" aria-label="Detail to collect"><div class="row-tools"><button type="button" data-remove aria-label="Remove detail">Remove</button></div></li>
         {% endfor %}
       </ul>
       <button type="button" class="add-row" id="add-question">Add a detail</button>
+      <p class="help">Asked during the call, and filled in on the call report afterwards.</p>
+    </fieldset>
+
+    <fieldset class="field">
+      <legend>Situations and what to do <span class="optional">optional</span></legend>
+      <ul class="row-list" id="situations" data-max="{{ max_situations }}">
+        {% for item in config.situations %}
+        <li class="row-item">
+          <div class="row-fields">
+            <input type="text" name="situation_when" data-budget maxlength="{{ limits.situation_when }}" value="{{ item.when }}" aria-label="When this happens" placeholder="When this happens, e.g. they ask about fees">
+            <textarea name="situation_then" rows="2" data-budget maxlength="{{ limits.situation_then }}" aria-label="What to do" placeholder="What to do, e.g. give the fee from the information below; for discounts, say the accounts team will call">{{ item.then }}</textarea>
+          </div>
+          <div class="row-tools"><button type="button" data-remove aria-label="Remove situation">Remove</button></div>
+        </li>
+        {% endfor %}
+      </ul>
+      <button type="button" class="add-row" id="add-situation">Add a situation</button>
+      <p class="help">Up to {{ max_situations }}. For questions or turns the steps do not cover.</p>
     </fieldset>
 
     <div class="field">
       <label for="f-limits">What it must not do or claim</label>
-      <textarea id="f-limits" name="limits" rows="2" maxlength="{{ limits.limits }}">{{ config.limits }}</textarea>
+      <textarea id="f-limits" name="limits" rows="3" data-budget maxlength="{{ limits.limits }}">{{ config.limits }}</textarea>
+    </div>
+    <div class="field">
+      <label for="f-escalation">When to hand over to a person <span class="optional">optional</span></label>
+      <textarea id="f-escalation" name="escalation" rows="2" data-budget maxlength="{{ limits.escalation }}" placeholder="e.g. They report a safety concern, or ask twice for a staff member.">{{ config.escalation }}</textarea>
+      <p class="help">The employee tells the person a team member will call back (calls cannot be transferred yet), and the call report marks the call for follow-up.</p>
     </div>
     <div class="field">
       <label for="f-ending">When and how to end the call</label>
-      <textarea id="f-ending" name="ending" rows="2" maxlength="{{ limits.ending }}">{{ config.ending }}</textarea>
+      <textarea id="f-ending" name="ending" rows="2" data-budget maxlength="{{ limits.ending }}">{{ config.ending }}</textarea>
+    </div>
+    <fieldset class="field">
+      <legend>Possible results of a call <span class="optional">optional</span></legend>
+      <ul class="row-list" id="outcomes" data-max="{{ max_outcomes }}">
+        {% for label in config.outcomes %}
+        <li class="row-item simple"><input type="text" name="outcome" maxlength="{{ limits.outcome }}" value="{{ label }}" aria-label="Possible result"><div class="row-tools"><button type="button" data-remove aria-label="Remove result">Remove</button></div></li>
+        {% endfor %}
+      </ul>
+      <button type="button" class="add-row" id="add-outcome">Add a result</button>
+      <p class="help">Your own labels, such as "Feedback given" or "Wants a fee call back". After each call, one is chosen from what was said, and Conversations can be filtered by it. Not sent to the call.</p>
+    </fieldset>
+    <div class="field">
+      <label for="f-information">Information it may give <span class="optional">optional</span></label>
+      <textarea id="f-information" name="information" rows="4" maxlength="{{ limits.information }}" placeholder="One fact per line, e.g. Term 2 fee: due 15 January.">{{ config.information }}</textarea>
+      <p class="help">Looked up by the employee when a caller asks, together with the campus's Knowledge; not sent on every turn. It may state only what is here or in Knowledge.</p>
     </div>
     <fieldset class="field">
       <legend>How closely it follows the script</legend>
@@ -125,13 +168,15 @@
     <fieldset class="field" id="actions">
       <legend>What the system may do after a call</legend>
       {% for key, info in actions.items %}<label class="check-label"><input type="checkbox" name="action" value="{{ key }}"{% if key in config.actions %} checked{% endif %}> <span>{{ info.0 }}<small class="help" style="display:block;margin:2px 0 0">{{ info.1 }}</small></span></label>{% endfor %}
-      {% if approved_actions %}
-      <p class="label" style="margin:14px 0 6px">Your organisation's approved actions</p>
-      <div id="approved-actions">{% for item in approved_actions %}<label class="check-label"><input type="checkbox" name="action" value="{{ item.employee_key }}"{% if item.employee_key in config.actions %} checked{% endif %}> <span>{{ item.label }}{% if not item.is_enabled %} <span class="tag">Switched off</span>{% endif %}<small class="help" style="display:block;margin:2px 0 0">{{ item.get_kind_display }}{% if item.integration %} · {{ item.integration.name }}{% endif %}</small></span></label>{% endfor %}</div>
-      {% endif %}
-      {% if missing_actions %}<p class="field-error" role="alert">No longer exist: {{ missing_actions|join:", " }}. Save to drop them.</p>{% endif %}
-      <p class="help">Carried out by the system after the call, from what the call summary says, and logged on the call. A request not to be called again is always honoured. Approved actions are set up by an admin under <a href="{% url 'integrations' %}">Integrations &amp; actions</a>; bookings, messages and outside requests are never made from a rehearsal.</p>
+      <p class="help">Carried out by the system after the call, from what the call summary says, and logged on the call. A request not to be called again is always honoured.</p>
     </fieldset>
+    {{ strictness_sentences|json_script:"strictness-sentences" }}
+    <div class="meter budget" id="instruction-budget" data-budget-total="{{ prompt_budget }}" data-budget-mode="employee">
+      <span>Instructions: <b data-budget-value>0</b> of {{ prompt_budget }} bytes · <span data-budget-chars>0</span> characters</span>
+      <progress max="{{ prompt_budget }}" value="0"></progress>
+      <p class="field-error" data-budget-note hidden role="status"></p>
+      <p class="help">Name, purpose, what success means, steps, details to collect, situations, limits, when to hand over and ending travel with every turn of the call. A Telugu letter takes three bytes, an English letter one. Facts belong in Knowledge, which the employee looks up only when asked.</p>
+    </div>
     <div class="form-actions">
       <p class="fine">Saving changes the draft only. Nothing changes for callers until you publish.</p>
       <button class="primary" type="submit">Save draft</button>
@@ -144,16 +189,14 @@
       {% if employee.live_version %}
         <p class="help" style="margin-top:0">Version {{ employee.live_version.number }} is published ({{ employee.live_version.published_at|date:"j M, H:i" }}). {% if has_changes %}<strong>The draft has changes that are not published.</strong>{% else %}The draft matches it.{% endif %}</p>
       {% else %}
-        <p class="help" style="margin-top:0">Not published yet. Try the draft in your browser, then publish it.</p>
+        <p class="help" style="margin-top:0">Not published yet. Publish it, then call your own number from Make calls to hear it.</p>
       {% endif %}
       {% if problems %}
         <ul class="problems" id="problems">{% for problem in problems %}<li>{{ problem }}</li>{% endfor %}</ul>
       {% endif %}
-      <p class="meter"><span>Script size: <b id="prompt-size">{{ prompt_size }}</b> of {{ prompt_budget }} bytes</span><progress max="{{ prompt_budget }}" value="{{ prompt_size }}"{% if prompt_size > prompt_budget %} class="over"{% endif %}></progress></p>
-      <p class="notice" id="unsaved-note" hidden>You have unsaved edits. Save the draft before trying or publishing it.</p>
+      <p class="meter"><span>Saved draft: <b id="prompt-size">{{ prompt_size }}</b> of {{ prompt_budget }} bytes</span><progress max="{{ prompt_budget }}" value="{{ prompt_size }}"{% if prompt_size > prompt_budget %} class="over"{% endif %}></progress></p>
+      <p class="notice" id="unsaved-note" hidden>You have unsaved edits. Save the draft before publishing it.</p>
       <div class="button-row" id="publish-actions">
-        {% if problems %}<span class="button small disabled" aria-disabled="true">Try the draft</span>{% else %}<a class="button small" href="{% url 'voice' %}?employee={{ employee.pk }}&amp;source=draft">Try the draft</a>{% endif %}
-        {% if employee.live_version %}<a class="button small" href="{% url 'voice' %}?employee={{ employee.pk }}&amp;source=published">Try version {{ employee.live_version.number }}</a>{% endif %}
         <form method="post" action="{% url 'employee-publish' employee.pk %}">{% csrf_token %}<button class="primary small" type="submit" id="publish-button"{% if problems or not has_changes %} disabled{% endif %}>Publish</button></form>
         {% if employee.live_version and has_changes %}<form method="post" action="{% url 'employee-discard' employee.pk %}" data-confirm="Discard the draft's changes and go back to version {{ employee.live_version.number }}?">{% csrf_token %}<button class="small" type="submit">Discard changes</button></form>{% endif %}
       </div>
@@ -163,18 +206,8 @@
         {% if employee.taking_calls %}<button class="small" type="submit" name="taking_calls" value="off">Pause</button>{% else %}<button class="small" type="submit" name="taking_calls" value="on">Switch on</button>{% endif %}
       </form>
       {% endif %}
-      <p class="help">Trying happens in the Voice studio: no phone call is placed.</p>
-      {% if employee.live_version %}
-      <div class="switch-row" id="test-call">
-        {% if test_line.ready and employee.taking_calls %}
-          <span>Phone test: calls the approved test number {{ test_line.number }} with version {{ employee.live_version.number }}.</span>
-          <form method="post" action="{% url 'employee-test-call' employee.pk %}" data-confirm="Place a real phone call to {{ test_line.number }} now? It uses your phone line and is charged by the provider.">{% csrf_token %}<button class="small" type="submit">Call the test number</button></form>
-        {% elif not employee.taking_calls %}
-          <span>Phone test: switch the employee on to call the test number.</span>
-        {% else %}
-          <span>Phone test is not available: {{ test_line.reason|default:"the outbound test line is not set up." }}</span>
-        {% endif %}
-      </div>
+      {% if employee.live_version and employee.taking_calls and can_call %}
+      <p class="switch-row" id="test-call"><span>To hear it, call your own number with it.</span><a class="button small" href="{% url 'make-calls' %}?speaker={{ employee.pk }}">Make calls</a></p>
       {% endif %}
     </section>
     <section class="panel" id="where-it-works">
@@ -182,17 +215,14 @@
       <dl class="facts-grid">
         <dt>Campuses</dt><dd>{% if assigned %}{% for campus in campuses %}{% if campus.pk in assigned %}{{ campus.name }}{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}{% else %}Every campus{% endif %}</dd>
         <dt>Answers</dt><dd>{% for number in numbers %}<a href="{% url 'number-edit' number.pk %}">{{ number.number }}</a>{% if not number.routing_enabled %} (switched off){% endif %}{% if not forloop.last %}, {% endif %}{% empty %}No number{% endfor %}</dd>
-        <dt>Campaigns</dt><dd>{% for item in employee_campaigns %}<a href="{% url 'campaign-detail' item.pk %}">{{ item.name }}</a> ({{ item.get_status_display|lower }}){% if not forloop.last %}, {% endif %}{% empty %}None{% endfor %}</dd>
-        <dt>Instant leads</dt><dd>{% for item in sources %}<a href="{% url 'source-detail' item.pk %}">{{ item.name }}</a>{% if not forloop.last %}, {% endif %}{% empty %}None{% endfor %}</dd>
       </dl>
-      <p class="help">Numbers, campaigns and lead sources choose their employee on their own pages.</p>
+      <p class="help">Numbers choose their employee on their own page; Make calls asks who speaks.</p>
     </section>
     <section class="panel" id="activity">
       <div class="panel-head"><h2>Recent activity</h2>{% if call_count %}<a href="{% url 'conversations' %}">All calls</a>{% endif %}</div>
       {% if recent_calls %}
       <ul class="timeline">{% for call in recent_calls %}<li><a href="{% url 'conversation-detail' call.pk %}">{{ call.created_at|date:"j M, H:i" }}</a> · {{ call.get_direction_display }} · v{{ call.employee_version.number }}<small>{% if call.contact %}{{ call.contact.name }} · {% endif %}{{ call.get_status_display }}{% if call.result.outcome %} · {{ call.result.get_outcome_display }}{% endif %}</small></li>{% endfor %}</ul>
       {% else %}<p class="help">No calls yet.</p>{% endif %}
-      {% if recent_runs %}<p class="label" style="margin:12px 0 6px">Actions after its calls</p>{% include 'integrations/_runs.html' with runs=recent_runs %}{% endif %}
     </section>
     {% if versions %}
     <section class="panel" id="versions">
@@ -236,13 +266,25 @@
     <span class="num"></span>
     <div class="row-fields">
       <input type="text" name="step_name" maxlength="{{ limits.step_name }}" aria-label="Step name" placeholder="Step name">
-      <textarea name="step_guidance" rows="2" maxlength="{{ limits.step_guidance }}" aria-label="What to do in this step" placeholder="What to do in this step"></textarea>
+      <textarea name="step_guidance" rows="2" data-budget maxlength="{{ limits.step_guidance }}" aria-label="What to do in this step" placeholder="What to do in this step"></textarea>
     </div>
     <div class="row-tools"><button type="button" data-move="-1" aria-label="Move step up">↑</button><button type="button" data-move="1" aria-label="Move step down">↓</button><button type="button" data-remove aria-label="Remove step">Remove</button></div>
   </li>
 </template>
 <template id="question-template">
-  <li class="row-item simple"><input type="text" name="question" maxlength="{{ limits.question }}" aria-label="Detail to collect"><div class="row-tools"><button type="button" data-remove aria-label="Remove detail">Remove</button></div></li>
+  <li class="row-item simple"><input type="text" name="question" data-budget maxlength="{{ limits.question }}" aria-label="Detail to collect"><div class="row-tools"><button type="button" data-remove aria-label="Remove detail">Remove</button></div></li>
+</template>
+<template id="situation-template">
+  <li class="row-item">
+    <div class="row-fields">
+      <input type="text" name="situation_when" data-budget maxlength="{{ limits.situation_when }}" aria-label="When this happens" placeholder="When this happens, e.g. they ask about fees">
+      <textarea name="situation_then" rows="2" data-budget maxlength="{{ limits.situation_then }}" aria-label="What to do" placeholder="What to do"></textarea>
+    </div>
+    <div class="row-tools"><button type="button" data-remove aria-label="Remove situation">Remove</button></div>
+  </li>
+</template>
+<template id="outcome-template">
+  <li class="row-item simple"><input type="text" name="outcome" maxlength="{{ limits.outcome }}" aria-label="Possible result"><div class="row-tools"><button type="button" data-remove aria-label="Remove result">Remove</button></div></li>
 </template>
 {% endblock %}
-{% block scripts %}<script src="{% static 'workforce/editor.js' %}" defer></script>{% endblock %}
+{% block scripts %}<script src="{% static 'workforce/editor.js' %}" defer></script><script src="{% static 'dashboard/budget.js' %}" defer></script>{% endblock %}

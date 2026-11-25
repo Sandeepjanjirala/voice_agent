@@ -13,51 +13,39 @@ from apps.tenancy.models import Organisation
 # (section title, ((url name, label, who sees it), ...)). The last value is a
 # permission from apps/tenancy/access.py, or ANYONE (signed in), MEMBER (works
 # in an organisation) or STAFF (Django staff: the platform's own tools).
-# "Phone calls" keeps its label: the browser tests look for it.
 ANYONE, MEMBER, STAFF = "anyone", "member", "staff"
 SECTIONS = (
-    ("", (("home", "Home", MEMBER),)),
+    # The everyday steps, in order: who speaks, who to call, what happened.
     (
-        "Team",
+        "",
         (
+            ("home", "Home", MEMBER),
             ("employees", "AI employees", "employees.view"),
-            ("employee-hire", "Hire an employee", "employees.manage"),
-            ("campuses", "Campuses & staff", "campuses.view"),
+            ("make-calls", "Make calls", "calls.place"),
+            ("conversations", "Call results", "calls.view"),
+            ("settings", "Settings", MEMBER),
         ),
     ),
+    # Everything else, folded away until it is needed.
     (
-        "Outcomes",
+        "More",
         (
             ("leads", "Leads & contacts", "leads.view"),
-            ("conversations", "Conversations", "calls.view"),
+            ("campuses", "Campuses & staff", "campuses.view"),
             ("performance", "Performance", "reports.view"),
-        ),
-    ),
-    (
-        "Calling",
-        (
-            ("campaigns", "Campaigns", "campaigns.view"),
-            ("instant", "Instant leads", "sources.view"),
             ("inbound", "Incoming calls", "calls.view"),
-            ("calls", "Phone calls", STAFF),
-        ),
-    ),
-    (
-        "Setup",
-        (
             ("numbers", "Numbers & channels", "numbers.view"),
             ("knowledge", "Knowledge", "knowledge.view"),
-            ("integrations", "Integrations & actions", "integrations.view"),
-            ("settings", "Privacy & settings", MEMBER),
             ("usage", "Usage & costs", "usage.view"),
             ("operations", "Operations", "operations.view"),
         ),
     ),
-    ("Tools", (("voice", "Voice studio", ANYONE), ("agent", "Agent profile", STAFF))),
 )
 # Pages that belong to a sidebar entry without being one.
 PARENTS = {
     "employee-detail": "employees",
+    "employee-hire": "employees",
+    "call-list": "make-calls",
     "lead-new": "leads",
     "lead-detail": "leads",
     "contacts": "leads",
@@ -69,17 +57,8 @@ PARENTS = {
     "member-add": "campuses",
     "member-edit": "campuses",
     "audit-log": "settings",
-    "campaign-new": "campaigns",
-    "campaign-detail": "campaigns",
-    "source-new": "instant",
-    "source-detail": "instant",
     "number-edit": "numbers",
     "knowledge-edit": "knowledge",
-    "integration-new": "integrations",
-    "integration-detail": "integrations",
-    "action-new": "integrations",
-    "action-detail": "integrations",
-    "action-runs": "integrations",
     "notifications": "home",
 }
 
@@ -119,6 +98,12 @@ def navigation(request) -> dict:
         ]
         if items:
             sections.append({"title": title, "items": items})
+    # "More" stays folded unless one of its pages is open, or it is all there is.
+    for section in sections:
+        section["folded"] = section["title"] == "More"
+        section["open"] = len(sections) == 1 or any(
+            item["current"] for item in section["items"]
+        )
     organisations = ()
     if user.is_superuser and scope is not None:
         organisations = Organisation.objects.all()
@@ -127,8 +112,18 @@ def navigation(request) -> dict:
         from apps.operations.views import visible_notifications
 
         unread = visible_notifications(scope).filter(read_at__isnull=True).count()
+    current_label = next(
+        (
+            item["label"]
+            for section in sections
+            for item in section["items"]
+            if item["current"]
+        ),
+        "",
+    )
     return {
         "nav_sections": sections,
+        "nav_current_label": current_label,
         "scope": scope,
         "switch_organisations": organisations,
         "unread_notifications": unread,

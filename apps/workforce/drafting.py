@@ -99,6 +99,17 @@ characters telling the assistant what to do in that step.
 - "questions": up to 4 details it should collect, each a label of 1 to 3 words.
 - "limits": what it must not do or claim, in English, at most 180 characters.
 - "ending": when and how to end the call, in English, at most 120 characters.
+- "success": one English sentence, at most 150 characters, saying what a \
+successful call achieves for this job.
+- "situations": up to 4 objects {"when", "then"} for turns the steps do not \
+cover that are likely in this job (for example a question it cannot answer, an \
+upset person, a request for a person). "when" is at most 8 words, "then" one \
+short instruction of at most 100 characters.
+- "escalation": when the assistant should hand over to a person, in English, \
+at most 120 characters, or "" if the description gives no reason to.
+- "outcomes": 3 to 5 short labels (2 to 5 words) for how a call of this job \
+can end, chosen to suit this job, for example for feedback: "Feedback given", \
+"Complaint to follow up", "Did not want to answer".
 - "strictness": 1 (free conversation) to 5 (word-for-word); use 4 or 5 for \
 payment or compliance calls, otherwise 2 or 3.
 - "open_questions": up to 6 facts the owner must supply before it can answer \
@@ -107,6 +118,9 @@ callers properly (for example fees, timings, addresses).
 Be brief: the whole script is read to the assistant on every call.
 
 Rules:
+- Write for this job only. Do not add steps, questions or outcomes about \
+other kinds of calls (such as appointments or admissions) unless the \
+description asks for them.
 - Never invent facts about the business: no fees, dates, timings, addresses, \
 phone numbers, names of people or promises. Anything like that goes in \
 "open_questions".
@@ -194,6 +208,13 @@ def template_draft(brief: str, channel: str, language: str) -> dict:
             "strictness": 3,
             "open_questions": [
                 "Add the facts callers will ask about: timings, address, fees.",
+            ],
+            "success": "The person's need is understood and the next step is agreed.",
+            "escalation": "They ask for a person, or the request needs a staff decision.",
+            "outcomes": [
+                "Handled on the call",
+                "Team to follow up",
+                "Wrong person or number",
             ],
         }
     )

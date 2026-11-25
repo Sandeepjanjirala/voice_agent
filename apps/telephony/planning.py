@@ -40,13 +40,18 @@ class Blocker:
 @dataclass(frozen=True)
 class TrunkSpec:
     name: str
-    number: str
+    number: str  # the first of `numbers`, kept for existing callers
     auth_mode: str
     auth_username: str
     allowed_addresses: tuple[str, ...]
     media_encryption: str
     ringing_timeout_seconds: int
     max_call_duration_seconds: int
+    numbers: tuple[str, ...] = ()
+
+    @property
+    def all_numbers(self) -> tuple[str, ...]:
+        return self.numbers or ((self.number,) if self.number else ())
 
 
 @dataclass(frozen=True)
@@ -76,6 +81,7 @@ class TelephonyPlan:
         """Safe to print or log: the number is masked and there is no password."""
         data = asdict(self)
         data["trunk"]["number"] = mask_phone(self.trunk.number)
+        data["trunk"]["numbers"] = [mask_phone(n) for n in self.trunk.all_numbers]
         data["ready"] = self.ready
         return data
 
@@ -88,7 +94,16 @@ def sip_endpoint(subdomain: str, region: str) -> str:
     return f"{subdomain}.{region}.sip.livekit.cloud"
 
 
-def build_plan(settings: TelephonySettings, *, agent_name: str) -> TelephonyPlan:
+def build_plan(
+    settings: TelephonySettings, *, agent_name: str, extra_numbers=()
+) -> TelephonyPlan:
+    """`extra_numbers`: business lines routed on the dashboard, accepted by the
+    same trunk (apps/calling/inbound.trunk_numbers)."""
+    numbers = tuple(dict.fromkeys((*settings.inbound_numbers, *extra_numbers)))
+    if numbers and not settings.inbound_numbers:
+        from dataclasses import replace
+
+        settings = replace(settings, inbound_number=numbers[0])
     blockers: list[Blocker] = []
     warnings: list[str] = []
     provider = PROVIDERS.get(settings.provider)
@@ -118,8 +133,8 @@ def build_plan(settings: TelephonySettings, *, agent_name: str) -> TelephonyPlan
             CONFIG,
             "Set TELEPHONY_INBOUND_NUMBER once a number exists. None has been bought.",
         )
-    elif not settings.inbound_number.startswith("+91"):
-        warnings.append("The inbound number is not an Indian (+91) number.")
+    elif any(not n.startswith("+91") for n in numbers):
+        warnings.append("An inbound number is not an Indian (+91) number.")
     if not settings.sip_subdomain:
         block(
             "sip_subdomain_missing",
@@ -215,6 +230,7 @@ def build_plan(settings: TelephonySettings, *, agent_name: str) -> TelephonyPlan
         trunk=TrunkSpec(
             name=f"telugu-inbound-{suffix}",
             number=settings.inbound_number,
+            numbers=numbers,
             auth_mode=settings.auth_mode,
             auth_username=(
                 settings.auth_username if settings.auth_mode == "digest" else ""
@@ -253,7 +269,7 @@ def inbound_trunk_request(
     spec = plan.trunk
     trunk = api.SIPInboundTrunkInfo(
         name=spec.name,
-        numbers=[spec.number],
+        numbers=list(spec.all_numbers),
         media_encryption=_MEDIA_ENCRYPTION[spec.media_encryption],
         ringing_timeout=Duration(seconds=spec.ringing_timeout_seconds),
         max_call_duration=Duration(seconds=spec.max_call_duration_seconds),

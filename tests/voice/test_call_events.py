@@ -93,7 +93,7 @@ def test_prompt_asks_for_spoken_tenglish_and_bans_the_stock_line() -> None:
 
     assert "Andhra Pradesh" in prompt
     assert "Never introduce yourself again" in prompt
-    assert "why something went wrong" in prompt
+    assert "Never invent facts, prices, availability or causes of problems" in prompt
     assert "not your greeting" in prompt
     # The style sheet names the stock question only to forbid it.
     assert 'Never say "ఏ విధంగా సహాయం చేయగలను"' in prompt

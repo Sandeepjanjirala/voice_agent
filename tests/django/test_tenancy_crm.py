@@ -516,7 +516,9 @@ def test_pages_need_a_place_in_an_organisation(world, name, client):
     assert anonymous["Location"].startswith(reverse("login"))
     outsider = world.client(world.outsider).get(url)
     if name == "home":
-        assert outsider["Location"] == reverse("voice")
+        # Not in an organisation: a page that says how to get in, nothing else.
+        assert outsider.status_code == 200
+        assert 'id="no-organisation"' in body(outsider)
     else:
         assert outsider.status_code == 403
     assert world.client(world.admin_a).get(url).status_code == 200
@@ -531,11 +533,11 @@ def test_the_sidebar_shows_what_the_role_allows(world):
     staff = body(world.client(world.staff_north).get(reverse("home")))
     assert "Org A" in admin and "Organisation admin" in admin
     assert "Campus staff" in staff
-    assert ">Hire an employee</a>" in admin
-    assert ">Hire an employee</a>" not in staff
+    # Both may place calls, so both get the Make calls button.
+    assert 'id="make-calls-button"' in admin and 'id="make-calls-button"' in staff
     # Platform tools are for Django staff, which neither of them is.
     for html in (admin, staff):
-        assert ">Phone calls</a>" not in html and ">Agent profile</a>" not in html
+        assert ">Test line</a>" not in html and ">Agent profile</a>" not in html
         assert ">Leads &amp; contacts</a>" in html
 
 
@@ -790,9 +792,9 @@ def test_employees_are_scoped_to_organisation_and_campus(world):
         },
     )
     assert list(everywhere.campuses.all()) == [world.north]
-    # An employee cannot be tried in the voice studio from another organisation.
-    token = reverse("voice-token")
-    assert admin.post(f"{token}?employee={theirs.pk}").status_code == 404
+    # Another organisation's employee is never offered on Make calls.
+    page = body(admin.get(reverse("make-calls"), {"speaker": str(theirs.pk)}))
+    assert "Theirs" not in page
 
 
 # --- leads -----------------------------------------------------------------------------
@@ -1232,6 +1234,8 @@ def test_conversations_list_filters_details_and_notes(world):
         "talk_minutes": 1.5,
         "average_talk": 90,
         "response": 1.4,
+        "follow_up": 0,
+        "with_issues": 0,
     }
 
     def total(**params):
@@ -1379,6 +1383,7 @@ def test_retention_erases_only_what_the_policy_covers(world):
         "contacts": 0,
         "calls": 0,
         "transcripts": 0,
+        "recordings": 0,
         "audit": 0,
     }
 
@@ -1402,6 +1407,7 @@ def test_retention_erases_only_what_the_policy_covers(world):
         "contacts": 0,
         "calls": 0,
         "transcripts": 0,
+        "recordings": 0,
         "audit": 0,
     }
     policy.contact_days, policy.call_days, policy.audit_days = 365, 365, 365
@@ -1410,6 +1416,7 @@ def test_retention_erases_only_what_the_policy_covers(world):
         "contacts": 1,
         "calls": 1,
         "transcripts": 0,
+        "recordings": 0,
         "audit": old_events,
     }
     out = io.StringIO()
@@ -1446,6 +1453,7 @@ def test_only_admins_set_and_apply_retention(world):
             "keep-contact_days": "30",
             "keep-call_days": "0",
             "keep-transcript_days": "30",
+            "keep-recording_days": "30",
             "keep-audit_days": "0",
         },
         follow=True,
@@ -1468,15 +1476,21 @@ def test_only_admins_set_and_apply_retention(world):
             "action": "organisation",
             "org-name": "Org A2",
             "org-transcripts": "keep",
+            "org-recording": "test",
+            "org-recording_notice": "This call may be recorded. Is that okay?",
             "org-cost_per_minute": "1.50",
             "org-cost_per_message": "0.80",
             "org-cost_per_analysis": "0.10",
+            "org-monthly_call_minutes": "600",
+            "org-max_concurrent_calls": "1",
         },
     )
     world.org_a.refresh_from_db()
     assert world.org_a.name == "Org A2" and world.org_a.transcripts == "keep"
     assert str(world.org_a.cost_per_minute) == "1.50"
     assert world.org_a.cloud_observability is False
+    # Our own recordings are a separate switch from LiveKit Cloud's copy.
+    assert world.org_a.recording == "test"
 
 
 # --- phone test with a published employee version ---------------------------------------
@@ -1505,7 +1519,13 @@ def _employee(world, organisation=None, **overrides) -> Employee:
     return Employee.objects.create(**fields)
 
 
-def test_a_phone_test_uses_the_published_version_and_records_it(world, gateway):
+def _place(employee, user, campus=None):
+    """A call with the employee's published version, as Make calls places it."""
+    plan = publishing.plan_call(employee, campus=campus)
+    return calls.start_call(user=user, call_plan=plan, campus=campus)
+
+
+def test_a_call_uses_the_published_version_and_records_it(world, gateway):
     employee = _employee(world)
     employee.campuses.set([world.north])
     first = publishing.publish(employee, world.admin_a)
@@ -1517,12 +1537,10 @@ def test_a_phone_test_uses_the_published_version_and_records_it(world, gateway):
     admin = world.client(world.admin_a)
 
     page = body(admin.get(reverse("employee-detail", args=[employee.pk])))
-    assert "Call the test number" in page and "+91********10" in page
+    assert f"{reverse('make-calls')}?speaker={employee.pk}" in page
     assert "+919876543210" not in page
 
-    response = admin.post(reverse("employee-test-call", args=[employee.pk]))
-    record = CallRecord.objects.get()
-    assert response["Location"] == reverse("conversation-detail", args=[record.pk])
+    record = _place(employee, world.admin_a, world.north)
     assert record.employee_version == first and record.organisation == world.org_a
     assert record.campus == world.north and record.placed_by == world.admin_a
     assert record.masked_number == "+91********10"
@@ -1542,11 +1560,8 @@ def test_a_phone_test_uses_the_published_version_and_records_it(world, gateway):
     assert rows[0]["name"] == "Meera" and rows[0]["total"] == 1
 
     # Only one call at a time, as before.
-    from django.core.cache import cache
-
-    cache.clear()
-    again = admin.post(reverse("employee-test-call", args=[employee.pk]), follow=True)
-    assert "No call was placed." in body(again)
+    with pytest.raises(calls.CallError):
+        _place(employee, world.admin_a, world.north)
     assert CallRecord.objects.count() == 1
 
     ended = admin.post(
@@ -1564,53 +1579,25 @@ def test_a_phone_test_uses_the_published_version_and_records_it(world, gateway):
 def test_a_draft_or_paused_employee_cannot_be_put_on_a_call(world, gateway):
     employee = _employee(world)
     admin = world.client(world.admin_a)
-    url = reverse("employee-test-call", args=[employee.pk])
-    response = admin.post(url, follow=True)
-    assert "has not been published yet" in body(response)
+    with pytest.raises(publishing.PublishError, match="has not been published yet"):
+        _place(employee, world.admin_a)
 
     publishing.publish(employee, world.admin_a)
     employee.taking_calls = False
     employee.save()
-    response = admin.post(url, follow=True)
-    assert "is paused" in body(response)
-    assert "switch the employee on" in body(
-        admin.get(reverse("employee-detail", args=[employee.pk]))
-    )
-    assert not CallRecord.objects.exists() and gateway.dispatches == []
-
-
-def test_phone_tests_are_for_this_organisations_admins_only(world, gateway):
-    employee = _employee(world)
-    publishing.publish(employee, world.admin_a)
-    url = reverse("employee-test-call", args=[employee.pk])
-    assert world.client(world.staff_north).post(url).status_code == 403
-    assert world.client(world.admin_b).post(url).status_code == 404
-    assert world.client(world.outsider).post(url).status_code == 403
-    assert world.client(world.admin_a).get(url).status_code == 405
-    assert not CallRecord.objects.exists() and gateway.dispatches == []
-
-
-def test_a_phone_test_reports_why_it_cannot_start(world, env):
-    employee = _employee(world)
-    publishing.publish(employee, world.admin_a)
-    env.delenv("OUTBOUND_TEST_ALLOWED_NUMBER")
-    admin = world.client(world.admin_a)
+    with pytest.raises(publishing.PublishError, match="is paused"):
+        _place(employee, world.admin_a)
     page = body(admin.get(reverse("employee-detail", args=[employee.pk])))
-    assert "Phone test is not available" in page
-    assert "Call the test number" not in page
-    response = admin.post(
-        reverse("employee-test-call", args=[employee.pk]), follow=True
-    )
-    assert "No call was placed." in body(response)
-    assert not CallRecord.objects.exists()
+    assert 'id="test-call"' not in page
+    assert "Meera" not in body(admin.get(reverse("make-calls"))).split("<main>")[1]
+    assert not CallRecord.objects.exists() and gateway.dispatches == []
 
 
 def test_only_whoever_may_end_a_call_can_end_it(world, gateway):
     employee = _employee(world)
     employee.campuses.set([world.north])
     publishing.publish(employee, world.admin_a)
-    world.client(world.admin_a).post(reverse("employee-test-call", args=[employee.pk]))
-    record = CallRecord.objects.get()
+    record = _place(employee, world.admin_a, world.north)
     staff = world.client(world.staff_north)
     url = reverse("conversation-detail", args=[record.pk])
     assert "End call" not in body(staff.get(url))

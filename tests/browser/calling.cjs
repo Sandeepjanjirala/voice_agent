@@ -1,8 +1,7 @@
 /* Run against tests/browser/dashboard_server.py: real Chromium + real Django,
    a simulated phone line, a canned LLM and made-up people. Covers Milestone D:
    knowledge, employee voice and actions, numbers and inbound routing, a
-   rehearsal call with its transcript, analysis and follow-up, a campaign dry
-   run, and an instant-lead source fed through its API. */
+   rehearsal call with its transcript, analysis and follow-up. */
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -12,6 +11,14 @@ const BASE = 'http://127.0.0.1:8767';
 const EVENTS_SECRET = 'qa-call-events-secret-not-for-production-0123';
 // Made-up numbers. None may ever appear in a page in full.
 const NUMBERS = ['9876500001', '9876500002', '9000000001'];
+
+// Sidebar links: the everyday ones are always shown; the rest are folded
+// under "More", which is opened first when needed.
+async function sideLink(page, name) {
+  const link = page.locator('.side-nav').getByRole('link', { name, exact: true });
+  if (!(await link.isVisible())) await page.locator('.side-more summary').click();
+  await link.click();
+}
 
 async function login(page, username, password) {
   await page.goto(`${BASE}/accounts/login/`);
@@ -43,14 +50,23 @@ async function workerEvent(payload) {
   return response.status;
 }
 
-async function deliverLead(url, secret, payload) {
-  const response = await fetch(url, {
+// The voice worker's signed upload of a recorded call (voice_agent/recording.py).
+async function uploadRecording(room, data, duration, offset) {
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = crypto.createHmac('sha256', EVENTS_SECRET)
+    .update(Buffer.concat([Buffer.from(`${timestamp}.${room}.${duration}.${offset}.`), data]))
+    .digest('hex');
+  const response = await fetch(`${BASE}/api/telephony/call-recording/`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Lead-Secret': secret },
-    body: JSON.stringify(payload),
+    headers: {
+      'Content-Type': 'audio/ogg', 'X-Call-Timestamp': timestamp, 'X-Call-Signature': signature,
+      'X-Call-Room': room, 'X-Recording-Duration': duration, 'X-Recording-Offset': offset,
+    },
+    body: data,
   });
-  return { status: response.status, body: await response.json() };
+  return response.status;
 }
+
 
 (async () => {
   fs.mkdirSync('browser-artifacts', { recursive: true });
@@ -66,11 +82,14 @@ async function deliverLead(url, secret, payload) {
     // The organisation keeps transcripts, so calls can be summarised.
     await page.goto(`${BASE}/settings/`);
     await page.locator('[name=org-transcripts]').selectOption('keep');
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await page.getByText('Organisation saved.').waitFor();
+    // Our own recordings: approved test calls only, after the person agrees.
+    await page.locator('[name=org-recording]').selectOption('test');
+    await page.locator('[name=org-recording_notice]').fill('May I record this call so the team can review it?');
+    await page.getByRole('button', { name: 'Save settings' }).click();
+    await page.getByText('Settings saved.').waitFor();
 
     // Knowledge for the North campus, previewed as a call would get it.
-    await page.locator('.side-nav').getByRole('link', { name: 'Knowledge' }).click();
+    await sideLink(page, 'Knowledge');
     await page.locator('#id_kind').selectOption('fact');
     await page.locator('#id_campus').selectOption({ label: 'North Campus' });
     await page.locator('#id_title').fill('Visit hours');
@@ -101,7 +120,7 @@ async function deliverLead(url, secret, payload) {
     await page.screenshot({ path: 'browser-artifacts/calling-employee.png', fullPage: true });
 
     // A business line routed to the employee; the inbound page shows it.
-    await page.locator('.side-nav').getByRole('link', { name: 'Numbers & channels' }).click();
+    await sideLink(page, 'Numbers & channels');
     await page.locator('[name=number]').fill('+91 40 1234 5678');
     await page.locator('[name=label]').fill('North front desk');
     await page.locator('[name=campus]').selectOption({ label: 'North Campus' });
@@ -138,25 +157,86 @@ async function deliverLead(url, secret, payload) {
 
     // The voice worker reports the end of the call with its transcript.
     const call = await page.evaluate(async () => (await (await fetch('/api/telephony/calls/')).json()).calls[0]);
+    // The person said yes to the recording question; the worker uploads the audio.
+    assert.equal(await workerEvent({ room: call.room, event: 'recording', state: 'started', offset: 0.3 }), 204);
+    assert.equal(await uploadRecording(call.room, fs.readFileSync('.test-tmp/qa-call.ogg'), '6.00', '0.30'), 201);
     const status = await workerEvent({
       room: call.room,
       event: 'ended',
       outcome: 'completed',
       talk_seconds: 42,
+      end_reason: 'caller_hung_up',
       transcript: [
-        { role: 'assistant', text: 'Hello, I am Meera. Is this a good time to talk about your visit?' },
-        { role: 'user', text: 'Yes. My son joins Class 6. Call me back Friday evening on 98765 00001.' },
+        { role: 'assistant', text: 'Hello, I am Meera. Is this a good time to talk about your visit?', t: 0.4 },
+        { role: 'user', text: 'Yes. My son joins Class 6. Call me back Friday evening on 98765 00001.', t: 6.2, confidence: 0.42 },
+        { role: 'assistant', text: 'Thank you, a team member will call', t: 7.1, interrupted: true },
+        { role: 'tool', name: 'end_call', ok: true, t: 9.0 },
       ],
     });
     assert.equal(status, 204);
     await page.goto(callUrl);
-    const transcript = await page.locator('#transcript').textContent();
+    const transcript = await page.locator('#conversation').textContent();
     assert.ok(transcript.includes('98******01'), 'the number in the transcript is masked');
+    // The conversation as a chat: who said what, when, cut-offs and tools.
+    assert.equal(await page.locator('#conversation .chat-turn.from-ai').count(), 2);
+    assert.equal(await page.locator('#conversation .chat-turn.from-person').count(), 1);
+    // The panel shows all of it, at desktop and phone width: nothing is cut off.
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      const clipped = await page.locator('#conversation').evaluate(panel => panel.scrollHeight - panel.clientHeight);
+      assert.ok(clipped <= 1, `the conversation panel is cut off at ${width}px`);
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    assert.ok(transcript.includes('What speech recognition heard, not a recording'));
+    for (const text of ['0:06', 'cut off', 'heard unclearly', 'end_call']) {
+      assert.ok(transcript.includes(text), `the conversation shows ${text}`);
+    }
     // Storing the transcript queued its analysis; this server runs jobs at once.
     assert.ok(await page.getByRole('button', { name: 'Analyse again' }).isVisible());
-    assert.equal((await page.locator('#outcome').textContent()).trim(), 'Asked for a call back');
+    assert.equal((await page.locator('#outcome').textContent()).trim(), 'Call back later');
+    assert.equal((await page.locator('#resolution').textContent()).trim(), 'Partly resolved');
+    assert.ok((await page.locator('#reason').textContent()).includes('campus visit for their son'));
+    assert.ok((await page.locator('#next-step').textContent()).includes('Friday evening'));
+    assert.ok((await page.locator('#pending').textContent()).includes('A day and time for the visit'));
+    const quality = await page.locator('#quality').textContent();
+    assert.ok(quality.includes('The visit day was not agreed on the call.'));
+    assert.ok(quality.includes('spoke over the AI employee'), 'measured from the call');
+    assert.ok(!quality.includes('Invented by the model'), 'a quote not in the conversation is dropped');
+    assert.equal((await page.locator('#end-reason').textContent()).trim(), 'The person hung up');
     assert.ok((await page.locator('#answers').textContent()).includes('Class 6'));
     assert.ok((await page.locator('#actions').textContent()).includes('Follow-up added: call back Friday evening.'));
+    // The recording: its own section, real controls, linked to the conversation.
+    assert.equal((await page.locator('#recording-status').textContent()).trim(), 'Available');
+    assert.equal(await page.locator('#recording [data-controls]').isVisible(), true);
+    assert.ok((await page.locator('#recording').textContent()).includes('Left ear: the person on the call'));
+    const audio = page.locator('#recording audio');
+    await page.waitForFunction(() => document.querySelector('#recording audio').readyState >= 1);
+    await page.locator('#recording [data-play]').click();
+    await page.waitForFunction(() => document.querySelector('#recording audio').currentTime > 1.2);
+    assert.equal((await page.locator('#recording [data-play]').textContent()).trim(), 'Pause');
+    await page.locator('#recording [data-play]').click();
+    assert.equal(await audio.evaluate(el => el.paused), true);
+    assert.notEqual((await page.locator('#recording [data-current]').textContent()).trim(), '0:00');
+    // Dragging the seek bar moves the audio.
+    await page.locator('#recording [data-seek]').evaluate(el => { el.value = '750'; el.dispatchEvent(new Event('input')); });
+    assert.ok((await audio.evaluate(el => el.currentTime)) > 3.5, 'the seek bar moved the audio');
+    // A line of the conversation plays from where it was said (0:06 minus the 0.3 s offset).
+    await page.locator('#conversation .chat-turn.from-person').first().click();
+    const at = await audio.evaluate(el => el.currentTime);
+    assert.ok(at > 5.6 && at < 6.4, `the line played from ${at}`);
+    await audio.evaluate(el => el.pause());
+    const download = await page.locator('#recording-download').getAttribute('href');
+    const saved = await page.evaluate(async (href) => {
+      const response = await fetch(href);
+      return { status: response.status, disposition: response.headers.get('content-disposition'), size: (await response.arrayBuffer()).byteLength };
+    }, download);
+    assert.equal(saved.status, 200);
+    assert.ok(saved.disposition.startsWith('attachment') && !saved.disposition.includes('+91'));
+    assert.equal(saved.size, fs.statSync('.test-tmp/qa-call.ogg').size);
+    await page.setViewportSize({ width: 390, height: 900 });
+    await noSidewaysScroll(page, 'the call page with its recording');
+    await page.screenshot({ path: 'browser-artifacts/calling-recording-mobile.png', fullPage: true });
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await page.locator('#snapshot summary').click();
     assert.ok((await page.locator('#snapshot').textContent()).includes('kavya, speed 0.9'));
     await noFullNumbers(page, 'the call page');
@@ -164,70 +244,20 @@ async function deliverLead(url, secret, payload) {
     await page.goto(leadUrl);
     assert.ok((await page.locator('#tasks').textContent()).includes('Call back Friday evening'));
 
-    // A campaign: people with permission, agreement recorded, a dry run.
-    await page.locator('.side-nav').getByRole('link', { name: 'Campaigns' }).click();
-    await page.getByRole('link', { name: 'New campaign' }).first().click();
-    await page.locator('[name=name]').fill('Visit reminder');
-    await page.locator('[name=campus]').selectOption({ label: 'North Campus' });
-    await page.locator('[name=purpose]').fill('Remind parents about booking a campus visit');
-    await page.getByRole('button', { name: 'Create campaign' }).click();
-    await page.getByText('Campaign created. Add contacts next.').waitFor();
-    const campaignUrl = page.url();
-    await page.locator('[name=add-source]').selectOption('consented');
-    await page.getByRole('button', { name: 'Add', exact: true }).click();
-    await page.getByText('1 contacts added; 0 were already in the campaign.').waitFor();
-    await page.locator('[name=consent-attested]').check();
-    await page.locator('[name=consent-note]').fill('Enquiry forms collected in November');
-    await page.getByRole('button', { name: 'Record agreement' }).click();
-    await page.getByText('Recorded. The campaign is ready for a dry run.').waitFor();
-    await page.getByRole('button', { name: 'Run a dry run' }).click();
-    await page.getByText('Dry run done: 1 would be called, 0 skipped. Nobody was called.').waitFor();
-    assert.ok((await page.locator('#dry-run-report').textContent()).includes('Asha Rao'));
-    assert.ok((await page.locator('main').textContent()).includes('Real calling is switched off'));
-    await noFullNumbers(page, 'the campaign page');
-    await page.screenshot({ path: 'browser-artifacts/calling-campaign.png', fullPage: true });
-
-    // An instant-lead source: the secret is shown once, then leads arrive by API.
-    await page.locator('.side-nav').getByRole('link', { name: 'Instant leads' }).click();
-    await page.getByRole('link', { name: 'New lead source' }).first().click();
-    await page.locator('[name=name]').fill('Website enquiry form');
-    await page.locator('[name=campus]').selectOption({ label: 'North Campus' });
-    await page.locator('[name=employee]').selectOption({ index: 1 });
-    await page.locator('[name=consent_statement]').fill('By submitting this form you agree that we may call you about your enquiry.');
-    await page.getByRole('button', { name: 'Create lead source' }).click();
-    await page.locator('#new-secret').waitFor();
-    const secret = (await page.locator('#new-secret code').textContent()).trim();
-    const sourceUrl = page.url();
-    const endpoint = (await page.locator('#endpoint').textContent()).split('\n')[0].replace('POST ', '').trim();
-    assert.ok(secret.startsWith('ls_'));
-    const wrong = await deliverLead(endpoint, 'ls_wrong', { phone: '98765 00002' });
-    assert.equal(wrong.status, 401);
-    const accepted = await deliverLead(endpoint, secret, { phone: '98765 00002', name: 'Ravi Kumar', subject: 'Transport' });
-    assert.equal(accepted.status, 201);
-    assert.equal(accepted.body.result, 'accepted');
-    const duplicate = await deliverLead(endpoint, secret, { phone: '+91 98765 00002' });
-    assert.equal(duplicate.body.result, 'duplicate');
-    await page.reload();
-    assert.equal(await page.locator('#new-secret').count(), 0, 'the secret is shown only once');
-    assert.ok((await page.locator('#events').textContent()).includes('Accepted'));
-    await page.getByRole('button', { name: 'Send a test lead' }).click();
-    await page.getByText('Test delivery: Test (nothing stored).').waitFor();
-    await page.getByRole('button', { name: 'Run a dry run' }).click();
-    await page.getByText(/Dry run done: 1 would be called/).waitFor();
-    await noFullNumbers(page, 'the lead source page');
-    await page.screenshot({ path: 'browser-artifacts/calling-source.png', fullPage: true });
     await page.goto(`${BASE}/conversations/?outcome=callback`);
     assert.equal(await page.locator('#call-table tbody tr').count(), 1);
+    // What needs attention: the tile and the filter agree.
+    await page.goto(`${BASE}/conversations/`);
+    assert.equal((await page.locator('#tile-follow-up .tile-value').textContent()).trim(), '1');
+    await page.locator('#tile-follow-up').click();
+    await page.waitForURL(/attention=follow_up/);
+    assert.equal(await page.locator('#call-table tbody tr').count(), 1);
+    assert.ok((await page.locator('#call-table').textContent()).includes('Call back later'));
 
     // Campus staff of the North campus may look but not manage.
     const staff = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     staff.on('pageerror', error => errors.push(error.message));
     await login(staff, 'north-review', 'local-disposable-north-check');
-    await staff.goto(campaignUrl);
-    assert.equal(await staff.getByRole('button', { name: 'Run a dry run' }).count(), 0);
-    await staff.goto(sourceUrl);
-    assert.equal(await staff.getByRole('button', { name: 'Send a test lead' }).count(), 0);
-    assert.ok(!(await staff.content()).includes(secret));
     await staff.goto(`${BASE}/numbers/`);
     assert.equal(await staff.getByRole('button', { name: 'Add number' }).count(), 0);
     assert.equal((await staff.goto(employeeUrl)).status(), 403);
@@ -237,8 +267,7 @@ async function deliverLead(url, secret, payload) {
     const phone = await browser.newPage({ viewport: { width: 390, height: 800 } });
     phone.on('pageerror', error => errors.push(error.message));
     await login(phone, 'dashboard-review', 'local-disposable-dashboard-check');
-    for (const url of [`${BASE}/numbers/`, `${BASE}/inbound/`, `${BASE}/knowledge/`, `${BASE}/campaigns/`, campaignUrl,
-      `${BASE}/instant/`, sourceUrl, callUrl, employeeUrl]) {
+    for (const url of [`${BASE}/numbers/`, `${BASE}/inbound/`, `${BASE}/knowledge/`, callUrl, employeeUrl]) {
       const response = await phone.goto(url);
       assert.equal(response.status(), 200, url);
       await noSidewaysScroll(phone, `${url} on a phone`);

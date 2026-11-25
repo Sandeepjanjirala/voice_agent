@@ -11,6 +11,9 @@ from .models import KnowledgeItem
 
 # The worker accepts this much business information per call.
 LIMIT = 4000
+# Rules are also put in the call's prompt, so the employee follows them without
+# having to look anything up; this many bytes of them, whole rules only.
+RULE_BYTES = 1024
 
 
 def items_for(organisation, campus=None):
@@ -20,6 +23,19 @@ def items_for(organisation, campus=None):
     if campus is None:
         return found.filter(campus__isnull=True)
     return found.filter(Q(campus=campus) | Q(campus__isnull=True))
+
+
+def rules_for(organisation, campus=None) -> str:
+    """The rules for the prompt, as one line: "Title: text; Title: text".
+    A rule that does not fit is left to the lookup, which has them all."""
+    text = ""
+    for item in items_for(organisation, campus).filter(kind=KnowledgeItem.Kind.RULE):
+        rule = " ".join(f"{item.title}: {item.text}".split())
+        candidate = f"{text}; {rule}" if text else rule
+        if len(candidate.encode("utf-8")) > RULE_BYTES:
+            break
+        text = candidate
+    return text
 
 
 def compile_for(organisation, campus=None) -> str:

@@ -1,9 +1,7 @@
 /* Milestone E in real Chromium against tests/browser/dashboard_server.py
    (start it fresh for this run). Campus hours, holidays and call handling;
-   integrations and approved actions; a lead's booking and escalation; signed
-   webhooks reaching the server's loopback receiver; WhatsApp permission;
-   missed callers; the employee's voice preview and approved actions;
-   operations, usage and notifications; staff limits; phone widths.
+   a lead and its WhatsApp permission; missed callers; the employee's voice
+   preview; operations, usage and notifications; staff limits; phone widths.
    Every person and number is made up, and the server cannot leave the machine. */
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
@@ -11,7 +9,6 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 
 const BASE = 'http://127.0.0.1:8767';
-const RECEIVER = 'http://127.0.0.1:8768';
 const EVENTS_SECRET = 'qa-call-events-secret-not-for-production-0123';
 const BRIEF = 'Call every parent who sends an admission enquiry, ask which class the child is joining and offer a campus visit.';
 // Made-up numbers. None may ever appear in a page in full.
@@ -22,6 +19,14 @@ const day = (offset) => {
   d.setDate(d.getDate() + offset);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
+
+// Sidebar links: the everyday ones are always shown; the rest are folded
+// under "More", which is opened first when needed.
+async function sideLink(page, name) {
+  const link = page.locator('.side-nav').getByRole('link', { name, exact: true });
+  if (!(await link.isVisible())) await page.locator('.side-more summary').click();
+  await link.click();
+}
 
 async function login(page, username, password) {
   await page.goto(`${BASE}/accounts/login/`);
@@ -39,12 +44,6 @@ async function noFullNumbers(page, label) {
 async function noSidewaysScroll(page, label) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert.ok(overflow <= 1, `${label} scrolls sideways by ${overflow}px`);
-}
-
-async function openAction(page, label) {
-  const panel = page.locator('#lead-actions details', { hasText: label });
-  if (!(await panel.evaluate(element => element.open))) await panel.locator('summary').click();
-  return panel;
 }
 
 async function inboundCall(called, caller, room) {
@@ -73,7 +72,10 @@ async function inboundCall(called, caller, room) {
     watch(page);
     await login(page, 'dashboard-review', 'local-disposable-dashboard-check');
     const nav = await page.locator('.side-nav a').allTextContents();
-    for (const label of ['Integrations & actions', 'Usage & costs', 'Operations']) assert.ok(nav.includes(label), label);
+    for (const label of ['Usage & costs', 'Operations']) assert.ok(nav.includes(label), label);
+    for (const label of ['Integrations & actions', 'Campaigns', 'Instant leads', 'Voice studio', 'Test line', 'Agent profile']) {
+      assert.ok(!nav.includes(label), `${label} was deleted`);
+    }
 
     // --- Campus: opening hours, a holiday, and who takes escalations. ---------------
     await page.goto(`${BASE}/campuses/`);
@@ -105,47 +107,7 @@ async function inboundCall(called, caller, room) {
     await page.getByText('Call handling saved.').waitFor();
     await page.screenshot({ path: 'browser-artifacts/platform-campus.png', fullPage: true });
 
-    // --- Integrations: the campus calendar and a webhook receiver. ------------------
-    await page.goto(`${BASE}/integrations/new/?kind=campus_calendar`);
-    await page.locator('[name=name]').fill('Visit calendar');
-    await page.getByRole('button', { name: 'Add integration' }).click();
-    await page.getByText('Visit calendar is added.').waitFor();
-
-    // This server allows http:// for its loopback receiver only; real
-    // installations accept https:// alone (tests/django/test_platform_pages.py).
-    await page.goto(`${BASE}/integrations/new/?kind=webhook`);
-    await page.locator('[name=name]').fill('QA receiver');
-    await page.locator('[name=config_url]').fill(`${RECEIVER}/hook`);
-    for (const event of ['lead.created', 'lead.stage_changed', 'appointment.booked']) {
-      await page.locator(`[name=events][value="${event}"]`).check();
-    }
-    await page.getByRole('button', { name: 'Add integration' }).click();
-    await page.getByText('QA receiver is added.').waitFor();
-    const signingSecret = (await page.locator('#new-secret code').first().textContent()).trim();
-    assert.ok(signingSecret.startsWith('whsec_'));
-    await page.reload();
-    assert.equal(await page.locator('#new-secret').count(), 0, 'the signing secret is shown once');
-    await page.getByRole('button', { name: 'Send a test event' }).click();
-    await page.getByText('Test event: Delivered').waitFor();
-
-    // --- Approved actions. ----------------------------------------------------------
-    const addAction = async (label, key, kind, integration) => {
-      await page.goto(`${BASE}/integrations/actions/new/`);
-      await page.locator('[name=label]').fill(label);
-      await page.locator('[name=key]').fill(key);
-      await page.locator('[name=kind]').selectOption(kind);
-      if (integration) await page.locator('[name=integration]').selectOption({ label: integration });
-      await page.locator('[name=is_enabled]').check();
-      await page.getByRole('button', { name: 'Add action' }).click();
-      await page.getByText(`“${label}” is added.`).waitFor();
-    };
-    await addAction('Book a campus visit', 'book-visit', 'book_appointment', 'Visit calendar');
-    await addAction('Ask for a person', 'ask-person', 'escalate');
-    await page.goto(`${BASE}/integrations/`);
-    assert.equal(await page.locator('#action-table tbody tr').count(), 2);
-    await page.screenshot({ path: 'browser-artifacts/platform-integrations.png', fullPage: true });
-
-    // --- A lead: WhatsApp permission, a booking and an escalation. ------------------
+    // --- A lead and its WhatsApp permission. ----------------------------------------
     await page.goto(`${BASE}/leads/new/`);
     await page.locator('[name=campus]').selectOption({ label: 'North Campus' });
     await page.locator('[name=name]').fill('Asha Rao');
@@ -166,43 +128,14 @@ async function inboundCall(called, caller, room) {
     await page.locator('#whatsapp').getByRole('button', { name: 'Record' }).click();
     await page.getByText('WhatsApp permission recorded.').waitFor();
     await noFullNumbers(page, 'contact');
-
     await page.goto(leadUrl);
-    const booking = await openAction(page, 'Book a campus visit');
-    await booking.locator('[name="run-book-visit-start"]').fill(`${day(1)}T10:00`);
-    page.once('dialog', dialog => dialog.accept());
-    await booking.getByRole('button', { name: 'Run' }).click();
-    await page.getByText('Book a campus visit: Done.').waitFor();
-    assert.ok((await page.locator('#appointments').textContent()).includes('10:00'));
-    // The same slot cannot be booked twice.
-    const again = await openAction(page, 'Book a campus visit');
-    await again.locator('[name="run-book-visit-start"]').fill(`${day(1)}T10:00`);
-    page.once('dialog', dialog => dialog.accept());
-    await again.getByRole('button', { name: 'Run' }).click();
-    await page.locator('.flash', { hasText: 'is not a free slot' }).waitFor();
-
-    const escalate = await openAction(page, 'Ask for a person');
-    await escalate.locator('[name="run-ask-person-reason"]').fill('Wants to talk about transport');
-    await escalate.getByRole('button', { name: 'Run' }).click();
-    await page.getByText('Ask for a person: Done.').waitFor();
-    assert.ok((await page.locator('#lead-runs').textContent()).includes('live transfer is not available'));
+    assert.equal(await page.locator('#lead-actions').count(), 0, 'approved actions were deleted');
     await noFullNumbers(page, 'lead');
     await page.screenshot({ path: 'browser-artifacts/platform-lead.png', fullPage: true });
 
-    // --- The receiver got signed events, without names or full numbers. -------------
-    const received = await (await fetch(`${RECEIVER}/received`)).json();
-    const events = received.map(item => item.headers['x-webhook-event']);
-    for (const event of ['test', 'lead.created', 'appointment.booked']) assert.ok(events.includes(event), `no ${event} webhook`);
-    for (const item of received) {
-      const expected = crypto.createHmac('sha256', signingSecret)
-        .update(`${item.headers['x-webhook-timestamp']}.${item.body}`).digest('hex');
-      assert.equal(item.headers['x-webhook-signature'], expected, `bad signature on ${item.headers['x-webhook-event']}`);
-      for (const number of NUMBERS) assert.ok(!item.body.includes(number), 'a webhook carried a full number');
-      assert.ok(!item.body.includes('Asha'), 'a webhook carried a name');
-    }
 
     // --- Missed caller: a call to a line with nobody ready to answer. ---------------
-    await page.locator('.side-nav').getByRole('link', { name: 'Numbers & channels' }).click();
+    await sideLink(page, 'Numbers & channels');
     await page.locator('[name=number]').fill('+91 40 1234 5679');
     await page.locator('[name=label]').fill('North evening line');
     await page.locator('[name=campus]').selectOption({ label: 'North Campus' });
@@ -214,7 +147,7 @@ async function inboundCall(called, caller, room) {
     assert.ok((await missedRow.textContent()).includes('No employee was ready to answer'));
     await noFullNumbers(page, 'incoming calls');
 
-    // --- The employee: voice preview, approved actions, where it works. -------------
+    // --- The employee: voice preview, where it works. -------------------------------
     await page.goto(`${BASE}/employees/hire/`);
     await page.locator('[name=brief]').fill(BRIEF);
     await page.locator('[name=channel][value=instant]').check({ force: true });
@@ -225,40 +158,35 @@ async function inboundCall(called, caller, room) {
     await page.locator('#voice-preview-button').click();
     await page.locator('#voice-preview-status', { hasText: /Playing|Ready/ }).waitFor();
     assert.ok(await page.locator('#voice-preview-audio').isVisible());
-    await page.locator('#approved-actions [value="custom:book-visit"]').check();
+    assert.equal(await page.locator('#approved-actions').count(), 0);
     await page.getByRole('button', { name: 'Save draft' }).click();
     await page.getByText('Draft saved.').waitFor();
-    assert.ok(await page.locator('#approved-actions [value="custom:book-visit"]').isChecked());
     await page.getByRole('button', { name: 'Publish' }).click();
     await page.getByText('Version 1 of Meera is published.').waitFor();
     assert.ok((await page.locator('#where-it-works').textContent()).includes('Every campus'));
     await page.screenshot({ path: 'browser-artifacts/platform-employee.png', fullPage: true });
 
-    // --- Operations, usage, action history. -----------------------------------------
+    // --- Operations and usage. ------------------------------------------------------
     await page.goto(`${BASE}/operations/`);
     assert.ok((await page.locator('#broker').textContent()).includes('REDIS_URL'));
     assert.ok((await page.locator('#job-table').textContent()).includes('operations.analyse_calls'));
     await page.goto(`${BASE}/usage/`);
     assert.ok((await page.locator('main').textContent()).includes('Voice previews'));
-    await page.goto(`${BASE}/integrations/runs/`);
-    for (const label of ['Book a campus visit', 'Ask for a person']) {
-      assert.ok((await page.locator('main').textContent()).includes(label), label);
-    }
+    assert.ok(!(await page.locator('main').textContent()).includes('WhatsApp'));
     await page.screenshot({ path: 'browser-artifacts/platform-operations.png', fullPage: true });
 
-    // --- Campus staff: the escalation reaches them; admin pages do not. -------------
+    // --- Campus staff: the missed caller reaches them; admin pages do not. ---------
     const staff = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     watch(staff);
     await login(staff, 'north-review', 'local-disposable-north-check');
     assert.ok(await staff.locator('#bell .badge').isVisible());
     await staff.locator('#bell').click();
-    assert.ok((await staff.locator('#notification-list').textContent()).includes('wants to speak to a person'));
+    assert.ok((await staff.locator('#notification-list').textContent()).includes('Call back'));
     await staff.goto(`${BASE}/inbound/`);
     await staff.locator('#missed-table').getByRole('button', { name: 'Called back' }).first().click();
     await staff.getByText('Marked as called back.').waitFor();
     assert.equal(await staff.locator('#missed-none').count(), 1);
-    assert.equal((await staff.goto(`${BASE}/integrations/`)).status(), 200);
-    for (const path of ['/integrations/new/', '/integrations/actions/new/', '/operations/', '/usage/', campusUrl.replace(BASE, ''), editorUrl.replace(BASE, '')]) {
+    for (const path of ['/operations/', '/usage/', campusUrl.replace(BASE, ''), editorUrl.replace(BASE, '')]) {
       assert.equal((await staff.goto(BASE + path)).status(), 403, path);
     }
     await staff.close();
@@ -267,7 +195,7 @@ async function inboundCall(called, caller, room) {
     const phone = await browser.newPage({ viewport: { width: 390, height: 800 } });
     watch(phone);
     await login(phone, 'dashboard-review', 'local-disposable-dashboard-check');
-    for (const path of ['/integrations/', '/integrations/runs/', '/operations/', '/usage/', '/notifications/', '/inbound/',
+    for (const path of ['/operations/', '/usage/', '/notifications/', '/inbound/',
       campusUrl.replace(BASE, ''), leadUrl.replace(BASE, ''), editorUrl.replace(BASE, '')]) {
       await phone.goto(BASE + path);
       await noSidewaysScroll(phone, `${path} on a phone`);

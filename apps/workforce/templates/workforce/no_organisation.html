@@ -1,0 +1,10 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Not set up yet{% endblock %}
+{% block bar_title %}Not set up yet{% endblock %}
+{% block content %}
+<section class="login card" id="no-organisation">
+  <h1>You are not in an organisation yet</h1>
+  <p class="muted">Ask an administrator to add you under Campuses &amp; staff. Then sign in again.</p>
+  <form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="primary">Sign out</button></form>
+</section>
+{% endblock %}

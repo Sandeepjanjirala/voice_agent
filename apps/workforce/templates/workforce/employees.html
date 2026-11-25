@@ -1,12 +1,13 @@
 {% extends 'dashboard/base.html' %}
 {% block title %}AI employees{% endblock %}
 {% block content %}
+{% include 'dashboard/_steps.html' with step=1 %}
 <section class="page-head">
   <div>
-    <p class="eyebrow">TEAM</p>
     <h1>AI employees</h1>
-    <p class="muted">One employee per job. Only a published version is ever used on a call.</p>
+    <p class="muted">Who speaks on your calls: what it says, asks and collects. One employee per job; only a published version is used on a call.</p>
   </div>
+  {% if scope.role != 'campus_staff' %}<a class="button primary" href="{% url 'employee-hire' %}" id="hire-button">Hire an employee</a>{% endif %}
 </section>
 
 <section class="panel">

@@ -84,16 +84,6 @@ def analyse_calls(limit: int = 50) -> dict:
         return summary
 
 
-def deliver_webhooks() -> dict:
-    from apps.integrations import webhooks
-
-    with tracked("deliver_webhooks") as summary:
-        if summary is None:
-            return {}
-        summary.update(webhooks.deliver_due())
-        return summary
-
-
 def follow_up_reminders(now=None) -> dict:
     """A notification for each follow-up that has come due, once."""
     from apps.crm.models import FollowUp
@@ -121,38 +111,9 @@ def follow_up_reminders(now=None) -> dict:
         return summary
 
 
-def campaign_eligibility() -> dict:
-    """Re-check people waiting in campaigns and instant queues against the
-    do-not-call list, permission to call and erasure. Dials nobody."""
-    from apps.calling.models import QueuedCall
-    from apps.crm import contacts
-
-    with tracked("campaign_eligibility") as summary:
-        if summary is None:
-            return {}
-        changed = 0
-        waiting = QueuedCall.objects.filter(
-            status__in=(QueuedCall.Status.QUEUED, QueuedCall.Status.WOULD_CALL)
-        ).select_related("contact")
-        for entry in waiting:
-            reason = contacts.call_block(entry.contact)
-            if reason:
-                entry.status, entry.reason, entry.due_at = (
-                    QueuedCall.Status.SKIPPED,
-                    reason,
-                    None,
-                )
-                entry.checked_at = timezone.now()
-                entry.save(update_fields=["status", "reason", "due_at", "checked_at"])
-                changed += 1
-        summary["skipped_now"] = changed
-        return summary
-
-
 def usage_report(days: int = 2) -> dict:
     """Write today's and yesterday's usage, by campus and employee."""
     from apps.calling.models import CallAction, CallResult
-    from apps.integrations.models import ActionRun
     from apps.telephony.models import CallRecord
 
     with tracked("usage_report") as summary:
@@ -193,11 +154,7 @@ def usage_report(days: int = 2) -> dict:
                         "analyses": CallResult.objects.filter(
                             same, status=CallResult.Status.DONE
                         ).count(),
-                        "actions": CallAction.objects.filter(same).count()
-                        + ActionRun.objects.filter(same).count(),
-                        "messages": ActionRun.objects.filter(
-                            same, action__kind="whatsapp_template"
-                        ).count(),
+                        "actions": CallAction.objects.filter(same).count(),
                     },
                 )
                 rows += 1

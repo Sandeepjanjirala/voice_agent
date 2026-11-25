@@ -28,6 +28,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 f"{organisation.name}: {verb} {counts['contacts']} contacts, "
                 f"{counts['calls']} call records, {counts['transcripts']} transcripts, "
+                f"{counts['recordings']} recordings, "
                 f"{counts['audit']} access-log entries"
             )
         if not apply:

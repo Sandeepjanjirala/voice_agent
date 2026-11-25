@@ -1,12 +1,12 @@
-{% extends 'dashboard/base.html' %}
+{% extends 'dashboard/base.html' %}{% load static %}
 {% block title %}Call {{ call.masked_number }}{% endblock %}
 {% block head %}{% if call.is_active %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
 {% block content %}
 <section class="page-head">
   <div>
-    <p class="eyebrow"><a href="{% url 'conversations' %}">CONVERSATIONS</a></p>
+    <p class="eyebrow"><a href="{% url 'conversations' %}">CALL RESULTS</a></p>
     <h1>{{ call.get_direction_display }} call · {{ call.masked_number }}</h1>
-    <p class="muted">Started <time datetime="{{ call.created_at|date:'c' }}" data-local-time>{{ call.created_at|date:"j M Y, H:i" }}</time>{% if call.placed_by %} by {{ call.placed_by.get_username }}{% endif %}.{% if call.is_rehearsal %} Rehearsal: the approved test number stood in for the contact.{% endif %}</p>
+    <p class="muted">Started <time datetime="{{ call.created_at|date:'c' }}" data-local-time>{{ call.created_at|date:"j M Y, H:i" }}</time>{% if call.placed_by %} by {{ call.placed_by.get_username }}{% endif %}{% if call.employee_version %} · {{ call.employee_version.employee.name }}, version {{ call.employee_version.number }}{% endif %}{% if call.duration_seconds is not None %} · {{ call.duration_seconds|floatformat:0 }} s talk time{% endif %}.{% if call.is_rehearsal %} Rehearsal: the approved test number stood in for the contact.{% endif %}</p>
   </div>
   <span class="tag{% if call.status == 'completed' or call.status == 'answered' %} good{% elif call.is_active %}{% else %} bad{% endif %}" id="call-status">{{ call.get_status_display }}</span>
 </section>
@@ -17,33 +17,119 @@
 </div>
 {% endif %}
 
-<div class="grid-2">
+<div class="grid-2 call-layout">
   <div class="stack">
     <section class="panel" id="result">
-      <div class="panel-head"><h2>Result</h2>{% if can_analyse %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="analyse"><button class="small" type="submit">{% if result and result.status == 'done' %}Analyse again{% else %}Analyse now{% endif %}</button></form>{% endif %}</div>
+      <div class="panel-head"><h2>Call summary</h2>{% if can_analyse %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="analyse"><button class="small" type="submit">{% if result and result.status == 'done' %}Analyse again{% else %}Analyse now{% endif %}</button></form>{% endif %}</div>
       {% if result and result.status == 'done' %}
-        <p class="status-line"><span class="tag good" id="outcome">{{ result.get_outcome_display }}</span>{% if result.callback_requested %}<span class="tag draft">Call back {{ result.callback_when|default:"requested" }}</span>{% endif %}{% if result.opt_out_requested %}<span class="tag bad">Asked not to be called</span>{% endif %}</p>
-        <p id="summary" style="line-height:1.7;margin:0 0 12px">{{ result.summary }}</p>
-        {% if answers %}<dl class="facts-grid" id="answers">{% for label, value in answers %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% endif %}
-        <p class="help">Written by AI from the transcript on {{ result.analysed_at|date:"j M, H:i" }}. Check important details against the transcript.</p>
+        <p class="status-line result-tags">
+          <span class="tag good" id="outcome">{{ result.result_label|default:result.get_outcome_display }}</span>
+          {% if result.resolution %}<span class="tag{% if result.resolution == 'resolved' %} good{% elif result.resolution == 'unresolved' %} bad{% endif %}" id="resolution">{{ result.get_resolution_display }}</span>{% endif %}
+          {% if result.follow_up_needed %}<span class="tag draft" id="follow-up-tag">Needs follow-up</span>{% endif %}
+          {% if result.callback_requested %}<span class="tag draft">Call back {{ result.callback_when|default:"requested" }}</span>{% endif %}
+          {% if result.opt_out_requested %}<span class="tag bad">Asked not to be called</span>{% endif %}
+        </p>
+        {% if result.reason %}<p class="lead-line" id="reason"><b>Why:</b> {{ result.reason }}</p>{% endif %}
+        <p id="summary" class="summary-text">{{ result.summary }}</p>
+        {% if result.next_step or result.follow_up_reason %}
+        <div class="next-step" id="next-step">
+          {% if result.next_step %}<p><b>Next step:</b> {{ result.next_step }}</p>{% endif %}
+          {% if result.follow_up_reason %}<p><b>Follow-up:</b> {{ result.follow_up_reason }}</p>{% endif %}
+        </div>
+        {% endif %}
+        <p class="help">Written by AI from the conversation on {{ result.analysed_at|date:"j M, H:i" }}, against what the employee was set up to do. Check important details against the conversation.</p>
       {% elif result and result.error %}
         <p class="help" id="result-unavailable">{{ result.error }}</p>
       {% elif call.is_active %}
         <p class="help">The summary is made when the call ends.</p>
       {% else %}
-        <p class="help" id="result-unavailable">Not analysed. A summary needs the transcript, which is kept only when the organisation chooses so in Privacy &amp; settings.</p>
+        <p class="help" id="result-unavailable">Not analysed. {{ transcript_note }}</p>
       {% endif %}
     </section>
+
+    <section class="panel" id="recording">
+      <div class="panel-head"><h2>Recording</h2>
+        {% if rec.recording %}<span class="tag{% if rec.recording.status == 'available' %} good{% elif rec.recording.status == 'failed' %} bad{% elif rec.recording.status == 'recording' or rec.recording.status == 'processing' %} draft{% endif %}" id="recording-status">{{ rec.recording.get_status_display }}</span>{% else %}<span class="tag" id="recording-status">Not recorded</span>{% endif %}
+      </div>
+      {% if rec.audio_url %}
+      <div class="player" data-player data-offset="{{ rec.recording.offset_seconds|default:0|stringformat:'s' }}" data-duration="{{ rec.recording.duration_seconds|default:0|stringformat:'s' }}">
+        <audio preload="metadata" src="{{ rec.audio_url }}" controls data-audio></audio>
+        <div class="player-controls" data-controls hidden>
+          <button type="button" class="player-play" data-play aria-label="Play">Play</button>
+          <input type="range" min="0" max="1000" value="0" step="1" data-seek aria-label="Position in the recording">
+          <span class="player-time"><span data-current>0:00</span> / <span data-total>{% if rec.recording.duration_seconds %}{{ rec.recording.duration_seconds|floatformat:0 }}s{% else %}–{% endif %}</span></span>
+        </div>
+        <p class="player-legend"><span class="ear left">Left ear: the person on the call</span><span class="ear right">Right ear: {% if call.employee_version %}{{ call.employee_version.employee.name }}, the AI employee{% else %}the AI assistant{% endif %}</span></p>
+        <p class="help">The actual call audio, recorded after the person agreed{% if rec.recording.consented_at %} ({{ rec.recording.consented_at|date:"H:i:s" }}){% endif %}. Click a line in the conversation below to jump there.{% if rec.download_url %} <a href="{{ rec.download_url }}" id="recording-download">Download</a>.{% endif %} Opening and downloading recordings are logged.</p>
+      </div>
+      {% else %}
+      <p class="help" id="recording-note">{{ rec.note }}</p>
+      {% endif %}
+    </section>
+
+    {% if result and result.status == 'done' %}
+    <div class="two-up">
+      <section class="panel" id="collected">
+        <div class="panel-head"><h2>What was collected</h2></div>
+        {% if answers or result.details %}
+        <dl class="facts-grid" id="answers">{% for label, value in answers %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}{% for item in result.details %}<dt>{{ item.label }}</dt><dd>{{ item.value }}</dd>{% endfor %}</dl>
+        {% else %}<p class="help">Nothing the employee was asked to collect was said.</p>{% endif %}
+      </section>
+      <section class="panel" id="told">
+        <div class="panel-head"><h2>What the AI told them</h2></div>
+        {% if result.info_given %}<ul class="plain-list">{% for item in result.info_given %}<li>{{ item }}</li>{% endfor %}</ul>{% else %}<p class="help">No facts or answers were given.</p>{% endif %}
+        {% if result.topics %}<p class="topic-tags">{% for topic in result.topics %}<span class="tag">{{ topic }}</span>{% endfor %}</p>{% endif %}
+      </section>
+    </div>
+
+    {% if result.pending %}
+    <section class="panel" id="pending">
+      <div class="panel-head"><h2>Still open</h2><span class="help">Asked for, not answered or done on the call</span></div>
+      <ul class="plain-list">{% for item in result.pending %}<li>{{ item }}</li>{% endfor %}</ul>
+    </section>
+    {% endif %}
+
+    <section class="panel" id="quality">
+      <div class="panel-head"><h2>Needs attention</h2>{% if result.adherence %}<span class="tag{% if result.adherence == 'followed' %} good{% elif result.adherence == 'not_followed' %} bad{% elif result.adherence == 'partly' %} draft{% endif %}" id="adherence">{{ result.get_adherence_display }}</span>{% endif %}</div>
+      {% if measured_issues or ai_issues or result.adherence_notes %}
+      <ul class="issue-list">
+        {% for issue in measured_issues %}<li><span class="tag">Measured</span> {{ issue.detail }}{% if issue.at %} <small>at {{ issue.at }}</small>{% endif %}{% if issue.quote %}<q>{{ issue.quote }}</q>{% endif %}</li>{% endfor %}
+        {% for issue in ai_issues %}<li><span class="tag bad">From the conversation</span> {{ issue.detail }}<q>{{ issue.quote }}</q></li>{% endfor %}
+        {% for note in result.adherence_notes %}<li><span class="tag draft">Instructions</span> {{ note.note }}<q>{{ note.quote }}</q></li>{% endfor %}
+      </ul>
+      <p class="help">"Measured" comes from the call's own timings and records. The others were read from the conversation by AI and are shown only when the words they quote are in it.</p>
+      {% else %}<p class="help" id="no-issues">No problems were found in the call's records or the conversation.</p>{% endif %}
+    </section>
+    {% endif %}
 
     <section class="panel" id="actions">
       <div class="panel-head"><h2>What the system did</h2></div>
       {% if actions %}
       <ul class="timeline">{% for item in actions %}<li><span class="tag{% if item.status == 'done' %} good{% elif item.status == 'failed' %} bad{% endif %}">{{ item.get_status_display }}</span> {{ item.detail }}<small>{{ item.action }} · {{ item.created_at|date:"j M, H:i" }}</small></li>{% endfor %}</ul>
-      {% elif not action_runs %}
+      {% else %}
       <p class="help">Nothing. Actions are carried out only after the call is analysed, and only those switched on for the employee.</p>
       {% endif %}
-      {% if action_runs %}<p class="label" style="margin:12px 0 6px">Approved actions</p><div id="call-runs">{% include 'integrations/_runs.html' with runs=action_runs %}</div>{% endif %}
       {% if missed %}<p class="help" id="call-missed">Missed caller: {{ missed.get_reason_display|lower }}. {% if missed.handled_at %}Called back ({{ missed.handled_by.get_username|default:"someone" }}, {{ missed.handled_at|date:"j M, H:i" }}).{% else %}<a href="{% url 'inbound' %}#missed">Waiting for a call back</a>.{% endif %}</p>{% endif %}
+    </section>
+
+    <section class="panel" id="conversation">
+      <div class="panel-head"><h2>Conversation</h2>{% if turns %}<span class="help">Numbers masked</span>{% endif %}</div>
+      {% if turns %}
+      <p class="notice small-note" role="note">What speech recognition heard, not a recording: the person's words may contain mistakes. The AI employee's lines are what it said.</p>
+      <ol class="chat" aria-label="The conversation, in order">
+        {% for turn in turns %}
+        {% if turn.role == 'tool' %}
+        <li class="chat-event"><span>{{ turn.at }}</span> The AI employee used <b>{{ turn.name }}</b>{% if not turn.ok %}: it failed{% endif %}</li>
+        {% else %}
+        <li class="chat-turn {% if turn.role == 'assistant' %}from-ai{% else %}from-person{% endif %}"{% if turn.t is not None %} data-t="{{ turn.t|stringformat:'s' }}"{% endif %}>
+          <p class="chat-meta"><b>{% if turn.role == 'assistant' %}AI employee{% else %}Person{% endif %}</b>{% if turn.at %} · {{ turn.at }}{% endif %}{% if turn.interrupted %} · <span class="flag">cut off</span>{% endif %}{% if turn.confidence is not None and turn.confidence < 0.5 %} · <span class="flag">heard unclearly</span>{% endif %}</p>
+          <p class="chat-text">{{ turn.text }}</p>
+        </li>
+        {% endif %}
+        {% endfor %}
+      </ol>
+      {% endif %}
+      <p class="help" id="transcript-note">{{ transcript_note }}</p>
     </section>
 
     <section class="panel">
@@ -53,20 +139,14 @@
         <dt>Ringing</dt><dd>{{ call.ringing_at|date:"H:i:s"|default:"–" }}</dd>
         <dt>Answered</dt><dd>{{ call.answered_at|date:"H:i:s"|default:"–" }}</dd>
         <dt>Ended</dt><dd>{{ call.ended_at|date:"H:i:s"|default:"–" }}</dd>
+        <dt>How it ended</dt><dd id="end-reason">{{ call.get_end_reason_display|default:"–" }}</dd>
         <dt>Talk time</dt><dd>{% if call.duration_seconds is None %}–{% else %}{{ call.duration_seconds|floatformat:0 }} seconds{% endif %}</dd>
         <dt>Phone network result</dt><dd>{% if call.sip_status_code %}{{ call.sip_status_code }} {{ call.sip_status }}{% else %}–{% endif %}</dd>
         <dt>Status reported by</dt><dd>{{ call.get_status_source_display }}</dd>
-        <dt>Response time, median</dt><dd>{% if call.e2e_latency_p50 is None %}–{% else %}{{ call.e2e_latency_p50|floatformat:2 }} s{% endif %}</dd>
+        <dt>Response time</dt><dd>{% if call.e2e_latency_p50 is None %}–{% else %}{{ call.e2e_latency_p50|floatformat:2 }} s median{% if call.e2e_latency_max is not None %}, slowest {{ call.e2e_latency_max|floatformat:1 }} s{% endif %}{% endif %}</dd>
         <dt>Turns</dt><dd>{{ call.agent_turns|default_if_none:"–" }} by the employee, {{ call.user_turns|default_if_none:"–" }} by the person, {{ call.interruptions|default_if_none:"0" }} interruptions</dd>
       </dl>
     </section>
-
-    {% if transcript %}
-    <section class="panel" id="transcript">
-      <div class="panel-head"><h2>Transcript</h2><span class="help">Numbers masked</span></div>
-      <ol class="transcript">{% for turn in transcript.turns %}<li class="{{ turn.role }}"><b>{% if turn.role == 'assistant' %}AI employee{% else %}Person{% endif %}</b>{{ turn.text }}</li>{% endfor %}</ol>
-    </section>
-    {% endif %}
   </div>
 
   <div class="stack">
@@ -74,10 +154,10 @@
       <div class="panel-head"><h2>Belongs to</h2></div>
       <dl class="facts-grid">
         <dt>Campus</dt><dd>{{ call.campus.name|default:"Whole organisation" }}</dd>
-        <dt>AI employee</dt><dd id="call-employee">{% if call.employee_version %}{{ call.employee_version.employee.name }}, version {{ call.employee_version.number }}{% else %}None: this call used the Agent profile{% endif %}</dd>
+        <dt>AI employee</dt><dd id="call-employee">{% if call.employee_version %}<a href="{% url 'employee-detail' call.employee_version.employee.pk %}">{{ call.employee_version.employee.name }}</a>, version {{ call.employee_version.number }}{% else %}None: this call used the Agent profile{% endif %}</dd>
         <dt>Person</dt><dd>{% if call.contact %}<a href="{% url 'contact-detail' call.contact.pk %}">{{ call.contact.name }}</a>{% elif call.is_rehearsal %}The test number, standing in for the contact{% else %}Not known{% endif %}</dd>
         <dt>Lead</dt><dd>{% if call.lead %}<a href="{% url 'lead-detail' call.lead.pk %}">{{ call.lead.subject }}</a>{% else %}–{% endif %}</dd>
-        <dt>Recording</dt><dd>Not available</dd>
+        <dt>Recording</dt><dd id="belongs-recording"><a href="#recording">{% if rec.recording %}{{ rec.recording.get_status_display }}{% else %}Not recorded{% endif %}</a></dd>
       </dl>
     </section>
     {% if snapshot %}
@@ -88,7 +168,11 @@
         <dt>Version</dt><dd>{{ snapshot.employee.name }}, version {{ snapshot.employee.version }}</dd>
         <dt>Opening line</dt><dd>{{ snapshot.profile.greeting }}</dd>
         <dt>Purpose</dt><dd>{{ snapshot.profile.purpose }}</dd>
+        {% if snapshot.profile.success %}<dt>A successful call</dt><dd>{{ snapshot.profile.success }}</dd>{% endif %}
         <dt>Goals</dt><dd>{{ snapshot.profile.objectives }}</dd>
+        {% if snapshot.profile.situations %}<dt>Situations</dt><dd>{{ snapshot.profile.situations }}</dd>{% endif %}
+        {% if snapshot.profile.escalation %}<dt>Hand over when</dt><dd>{{ snapshot.profile.escalation }}</dd>{% endif %}
+        {% if snapshot.outcomes %}<dt>Possible results</dt><dd>{{ snapshot.outcomes|join:", " }}</dd>{% endif %}
         <dt>Voice</dt><dd>{{ voice.speaker|default:"default" }}, speed {{ voice.pace|default:"1.0" }}{% if voice.language %}, {{ voice.language }}{% endif %}</dd>
         <dt>Knowledge</dt><dd>{% if snapshot.profile.business_info %}{{ snapshot.profile.business_info|length }} characters for {{ snapshot.campus|default:"the organisation" }}{% else %}None{% endif %}</dd>
         <dt>Actions allowed</dt><dd>{{ snapshot.actions|join:", "|default:"None" }}</dd>
@@ -99,7 +183,7 @@
     <form method="post" class="panel" id="create-lead">{% csrf_token %}<input type="hidden" name="action" value="create_lead">
       <div class="panel-head"><h2>Unknown caller</h2></div>
       <div class="field"><label for="lead-name">Caller's name</label><input type="text" id="lead-name" name="name" maxlength="120" required></div>
-      <div class="field"><label for="lead-subject">What they called about</label><input type="text" id="lead-subject" name="subject" maxlength="160" required></div>
+      <div class="field"><label for="lead-subject">What they called about</label><input type="text" id="lead-subject" name="subject" maxlength="160" required value="{{ result.reason|default:''|truncatechars:160 }}"></div>
       <button class="small" type="submit">Add as a lead</button>
       <p class="help">Their number is copied from this call without being shown.</p>
     </form>
@@ -112,3 +196,4 @@
   </div>
 </div>
 {% endblock %}
+{% block scripts %}{% if rec.audio_url %}<script src="{% static 'dashboard/recording.js' %}" defer></script>{% endif %}{% endblock %}

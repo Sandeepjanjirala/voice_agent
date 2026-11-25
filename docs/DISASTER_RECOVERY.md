@@ -148,7 +148,7 @@ Report this to the organisations affected.
   leaked.
 - **Other secrets:** replace each one (see [DEPLOYMENT.md](DEPLOYMENT.md)
   "Secrets"), then revoke the old one at its provider.
-- Check the access log (Privacy & settings → Access log) for what was done with it.
+- Check the access log (Settings → Access log) for what was done with it.
 
 ### Redis is lost
 

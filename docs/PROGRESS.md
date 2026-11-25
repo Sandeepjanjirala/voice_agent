@@ -10,6 +10,9 @@ See [FEATURE_MATRIX.md](FEATURE_MATRIX.md) for the comparison that drives it.
 | C | Campuses, leads, conversations, analytics | Done, 16 Nov 2026 |
 | D | Employees on outbound calls, inbound routing, authorised campaigns | Done, 17 Nov 2026 (dry-run and switched-off parts listed below) |
 | E | Integrations and actions, calendar and WhatsApp, hours and missed callers, jobs, production readiness | Approved for a separate commit, 17 Nov 2026; acceptance and pilot gates in PILOT_READINESS.md |
+| Platform improvements | Longer instructions by signed reference, test and business calling, multi-number inbound, pilot blockers 1 to 3, end-to-end workflow | Built and verified on branch `platform-improvements`, 18 Nov 2026; not committed |
+| Any job, and every call reviewable | Configuration-driven employees; the conversation and its analysis on each call page | Built and verified on the same branch, 24 Nov 2026; not committed |
+| Call recordings | Both sides recorded after consent, encrypted private storage, a player on the call page | Built and verified on the same branch, 24 Nov 2026; awaiting the owner's first real recorded call; not committed |
 
 ## Milestone A
 
@@ -489,6 +492,460 @@ callers and escalation are built. Live transfer still waits for the trunk.
    Business account with approved templates, and an explicit decision to set
    `INTEGRATIONS_LIVE_ENABLED=true`.
 
+## Platform improvements (branch `platform-improvements`, 18 November 2026)
+
+Not committed: waiting for the owner's approval.
+
+**What you can do now**
+
+- **Write longer instructions.**
+  - **The old limit is gone.** An employee's instructions may take
+    `EMPLOYEE_INSTRUCTION_BYTES` (default 6144 bytes, about 2,000 Telugu
+    letters). The old 800-byte metadata limit no longer applies.
+  - **How a call gets them.** It carries a signed reference that expires after
+    five minutes. The worker fetches the call's fixed snapshot from
+    `/api/telephony/call-profile/`, and refuses to dial if it cannot.
+  - **The editor and agent settings show the size as you type.** They use the
+    server's own count: a Telugu letter takes three bytes, and the strictness
+    sentence is included.
+- **Make a test call.** It goes only to a number in `OUTBOUND_ALLOWLIST_NUMBERS`,
+  even when `OUTBOUND_DIALING_MODE=live`. The page sends the number's position
+  in the list, so editing the request cannot reach another number.
+- **Make a business call.**
+  - **Who:** a contact with recorded permission, or someone new whose
+    permission you record.
+  - **How:** choose the campus, published employee, caller ID and purpose. The
+    next page shows every check, and the call is placed only after you confirm.
+    The server checks again then.
+  - **Checks:** consent, the do-not-call list, 09:00 to 21:00 and the campus's
+    hours, the employee and campus, the caller ID, the monthly minutes budget,
+    one call at a time, and the dialing policy.
+  - **Record:** every attempt is recorded with its reason.
+  - **Dialling:** with `CONTACT_DIALING_ENABLED=false` (the default), the checks
+    run and nobody is dialled.
+- **Set a caller ID** per business line under Numbers & channels. It needs
+  two ticks: "Use as the caller ID", and "The provider confirmed it".
+  Optionally, give the line its own outbound trunk.
+- **Inbound:**
+  - Every routed business line joins the one secure trunk, alongside the
+    comma-separated `TELEPHONY_INBOUND_NUMBER` numbers.
+  - The dispatch rule is bound to that trunk, with a new room for each call.
+  - A call with no published employee assigned hears one neutral line
+    (`INBOUND_UNROUTED_MESSAGE`), and LiveKit is asked to keep nothing. The
+    same happens when Django cannot be reached.
+
+**Pilot blockers fixed in code** (details in PILOT_READINESS.md)
+
+- **Inbound fallback:** fails closed, as above.
+- **Outgoing requests:**
+  - Redirects are never followed.
+  - The host is resolved once, and every address it resolves to is checked.
+  - The connection goes to that checked address, with TLS verified against
+    the real host name. This stops DNS rebinding.
+- **Bookings:**
+  - A database rule allows one booking per campus slot, under a per-campus
+    lock.
+  - Google bookings check free/busy first, use an idempotent event ID and must
+    get that ID back.
+  - A timeout leaves the booking "not confirmed", and a retry confirms it.
+- **Webhooks:** switching one off cancels its queued deliveries, and each
+  delivery re-checks the switch when it is sent.
+- **Found while testing:** calendar event IDs in action results were partly
+  masked as phone numbers. They are now kept whole.
+
+**Added later (18 and 24 November)**
+
+- **No login page on your own computer.** With `DEV_AUTO_LOGIN_USER=<username>`
+  in `.env.local`, browsers on this computer open the dashboard signed in
+  (`apps/core/middleware.py`):
+  - It works only with `DJANGO_DEBUG=true`, only from 127.0.0.1 or ::1, and
+    never for `/api/`.
+  - Django refuses to start with it when `DJANGO_DEBUG=false`.
+- **Tests no longer read `.env.local`.** Before this, every test run and browser
+  QA server loaded the developer's real LiveKit keys, Sarvam key, test number
+  and caller ID. No test used them, but one relied on them by accident.
+  `SKIP_ENV_LOCAL` now stops both Django and the worker reading the file under
+  the test settings.
+- **The agent no longer claims to have noted or passed on details.** The agent
+  debugger showed the no-employee agent saying "I've noted your details" (5 of
+  5 runs) and "I'll pass your details to the office team" (1 of 5) when the
+  caller had given none. The prompt rule now reads "You cannot book, check,
+  note, save, fix, tell or ask anyone anything". Afterwards, 10 of 10 runs only
+  said the office team will call back. Scenario `SCN_mPqQGeFaLkWS` in
+  `scenarios.yaml` covers it. The prompt is now at 2,303 of its 2,304 bytes.
+- **The owner's local database** had the four migrations applied, after a copy
+  was saved in `backups/` (git-ignored).
+
+**How it was checked**
+
+- **Python suite:**
+  - SQLite: 879 passed, 1 skipped. The skipped test is the four-thread booking
+    race, which needs PostgreSQL.
+  - PostgreSQL 17: 880 passed.
+  - Not touched by this branch: `test_intake_is_rate_limited` had failed once
+    on PostgreSQL. Its 61 requests could cross a clock minute and reset the
+    per-minute counter. Its clock is now fixed.
+- **Lint and project checks:** ruff check and format, Django `check`,
+  `makemigrations --check`, `uv lock --check` and `uv sync --locked --dry-run`
+  are all clean.
+- **Workflow test:** `tests/django/test_platform_workflow.py` drives the whole
+  workflow through the dashboard:
+  - hire
+  - long Telugu instructions
+  - knowledge and an approved action
+  - publish
+  - campus and caller ID
+  - a business call that fetches its profile by signed reference
+  - the worker's reports
+  - the analysed result
+  - an inbound call on the same line
+- **Simulations:** the inbound SIP calls are simulated in
+  `tests/django/test_inbound_simulation.py` and
+  `tests/voice/test_inbound_fallback.py`.
+- **Browser suites:** dashboard, crm, calling, platform and calls all pass.
+  - `calls.cjs` checks that a raw number sent in place of a position is
+    refused.
+  - It also checks that a position edited in the page is refused.
+  - `dashboard.cjs` checks that the live size equals the server's.
+- **Screenshots:** `tests/browser/screens.cjs` captures 25 screens at 1440 px
+  and 390 px. None scrolls sideways or shows a full contact number.
+- **Agent debugger** (text mode, real LLM through LiveKit Inference, no room or
+  phone):
+  - Each scenario in `scenarios.yaml` was replayed turn by turn, and each
+    still behaves as its expectation says.
+  - The instructions with no employee are byte-for-byte the same as before
+    this branch.
+- **Migrations:**
+  - `telephony/0006_agent_profile_limits`
+  - `integrations/0002_booking_safety_and_cancel`
+  - `calling/0004_business_calling`
+  - `tenancy/0006_business_calling`
+
+**Not checked, or not possible here**
+
+- No real call, booking, message or webhook. LiveKit, Google, WhatsApp and the
+  LLM were fakes in the test suites. The agent debugger used the real LLM.
+- **Simulations could not run** on 24 November. LiveKit Cloud refused them:
+  the project has used this billing period's simulation turns
+  ("MaxSimulationTextTurns"). More turns need a plan upgrade (owner's
+  decision), or the next billing period. Until then the scenarios were checked
+  by hand in the agent debugger instead.
+- **Found, not fixed:** after a plain "thanks", the agent often asks "anything
+  else?" (ఇంకేమైనా help కావాలా?), which the style rules forbid. It did so in 4
+  of 5 runs before the prompt change and 3 of 5 after, so it predates it.
+  Fixing it needs prompt bytes that are not left (2,303 of 2,304).
+- No fresh side-by-side comparison with the reference product. REA needs
+  Chrome's debugging port (9222), which was not reachable this session. The
+  design follows the Milestone A review.
+- Inbound provisioning stays blocked:
+  - LiveKit has not yet confirmed allow-list enforcement.
+  - Vobiz has not yet confirmed its signalling address ranges and SRTP.
+  - The negative test (a call from an unlisted address is rejected) has not
+    been run.
+- Whether Vobiz lets a business line be shown as caller ID on outbound calls
+  is not yet confirmed. That is why the "The provider confirmed it" tick
+  exists.
+
+## Any job, and every call reviewable (24 November 2026)
+
+Same branch, not committed.
+
+**What was wrong**
+
+- **One cautious receptionist for every job.** Every call, whatever its
+  employee, got the same base rules: "do not ask for a name, number or details"
+  and "say only that our office team will call back". An employee set up to
+  collect feedback or check details was told two opposite things on every
+  turn.
+- **Things the form could not say.** It had no place for when to hand over,
+  what success means, how to handle situations, or which results a call can
+  have.
+- **Knowledge rules were only in a lookup**, so the employee might never see
+  them.
+- **Facts from another organisation.** Employees without Knowledge fell back to
+  the Agent profile page's facts. That page is one setting for the whole
+  installation, so the facts could come from another organisation.
+- **The analysis knew nothing about the job.** It used one fixed list of
+  outcomes for every employee, and an appointment field for everyone.
+- **Little to review after a call:**
+  - By default the conversation was deleted once a summary of at most 1,000
+    characters existed.
+  - When kept, it had no times, cut-offs, tools or end reason, and nobody was
+    told when it went.
+- **The end-of-call report could be lost:**
+  - It was sent once, with a 2-second timeout.
+  - It was sent with escaped Unicode (6 bytes for a Telugu letter), so a
+    long Telugu call could exceed Django's 64 kB limit and be refused whole.
+
+**What changed**
+
+- **The prompt has two modes.** With no employee, the cautious rules stay. With
+  an employee, "do what This call says, ask what it asks for, raise no other
+  topic".
+- **New employee fields**, carried through the editor, drafting, publishing,
+  the size budget (mirrored exactly by the live meter) and each call's
+  snapshot:
+  - what a successful call achieves
+  - situations and what to do
+  - when to hand over
+  - possible results
+  - information it may give
+- **Knowledge.** Rules now reach the prompt (whole rules, up to 1 kB).
+  Employees use only their own organisation's Knowledge.
+- **The worker records the conversation as it happened**, when the
+  organisation allows: times, cut-offs, speech-recognition confidence, tool
+  names (never their data) and why the call ended. The report is UTF-8, capped
+  by bytes, and retried. Django accepts it once, so a retry never restores a
+  deleted conversation.
+- **The analysis reads each call against that employee's job.** It records the
+  reason, topics, what the AI said, what was collected, resolution, the
+  employee's own result, open items, next step, follow-up, instruction-
+  following and issues.
+  - An issue or note is kept only if its quote is in the conversation.
+  - Measured issues come from the call's own data.
+  - Follow-up is also decided by the system: requests, open items, failed
+    actions, errors.
+- **The call page shows all of this**, with a chat-style conversation labelled
+  as speech recognition. It says what was kept or when it was deleted. Opening
+  a conversation is written to the access log.
+- **Conversations** can be filtered by "needs follow-up", "has issues" and the
+  employees' own results. Lead pages show each call's result and next step.
+- **Recordings** are evaluated in RECORDINGS.md and not built.
+- **Local testing.** `CONSOLE_PROFILE_FILE` lets console and debugger sessions
+  play any employee.
+
+**How it was checked**
+
+- **Python suite:**
+  - SQLite: 911 passed, 1 skipped.
+  - PostgreSQL 17: 912 passed.
+- **`tests/django/test_conversation_review.py`:**
+  - Three different employees (fee desk, feedback, records check) are set up
+    through the editor and called through the signed endpoints.
+  - Each prompt holds only its own job.
+  - Each analysis is given its own job and conversation.
+  - Invented quotes are dropped.
+  - Off, summary-then-delete and keep each behave as described.
+  - A retried report does not restore a deleted conversation.
+  - Other organisations and campuses get 404, and viewing is logged.
+- **`tests/voice/test_conversation_record.py`:** the prompt modes, the new
+  fields, the transcript details, the end reasons, retries, and a long Telugu
+  report under 64 kB.
+- **Real LLM, no call** (synthetic Telugu and English conversations):
+  - The analysis caught a forbidden discount promise and quoted it.
+  - It found a repeated question in the feedback call.
+  - It read a changed emergency contact as "Details changed".
+- **Agent debugger, text mode:**
+  - Each of the three employees did its own job.
+  - None brought up appointments.
+  - The fee desk answered from its own information and followed its discount
+    situation.
+- **Browser:** all suites pass. The calling suite checks the chat, summary,
+  pending items, measured and quoted issues, and that the panel is not cut off
+  at 1440 and 390 px.
+
+**Found, not fixed**
+
+- With some questions (here a fee), the agent writes English words such as
+  "class" and "fee" in Telugu script, against the style rule. This happened in
+  most runs, with or without these changes, including with the original
+  prompt. Callers hear the same words either way; only the transcript reads
+  differently.
+- After a plain "thanks" the agent often asks "anything else?", against the
+  style rules. This existed before.
+
+**Needs a live test**
+
+- A real phone call, to see the conversation and end reason reported by the
+  real worker.
+- Recording, which needs your decision and a storage bucket.
+
+## Call recordings (24 November 2026)
+
+Same branch, not committed. Details and setup are in RECORDINGS.md.
+
+**What you can do now**
+
+- **Switch it on.** Under Privacy & settings, set the organisation to record
+  never (the default), approved test calls only, or any call, and write the
+  question the AI employee asks.
+- **Consent.** On an allowed call the question follows the opening line. Only a
+  clear yes starts recording; no, an unclear answer, or a later "please don't"
+  means nothing is kept.
+- **Listen.** Under Conversations → a call → Recording:
+  - play, pause, a seek bar and times
+  - the person on the left ear, the AI on the right
+  - click a line of the conversation to play from there
+  - download (admins)
+  - the status, with the reason when there is nothing to play
+
+**How it was built**
+
+- **The worker** attaches LiveKit's own session recorder (`RecorderIO`) at
+  consent and uploads the Ogg file to Django when the call ends. The upload is
+  signed and retried, and the local copy is always deleted.
+- **Django:**
+  - It accepts audio only for a call it allowed and whose person agreed.
+  - It encrypts the file (Fernet) and stores it locally or in private S3 in
+    India.
+  - It streams the audio through ten-minute personal links, logs openings and
+    downloads, and deletes recordings by their own retention setting and with
+    their call.
+- **New permissions:** `calls.recordings` and `calls.recordings_download`.
+- **A new command:** `manage.py recordings key|status|check`.
+- **A new dependency:** `boto3`, locked.
+- **Migrations:** `tenancy/0007_call_recordings` and
+  `calling/0006_call_recordings`.
+
+**How it was checked**
+
+- **Python suite:** SQLite 936 passed, 1 skipped; PostgreSQL 17, 937 passed.
+- **The worker test** runs LiveKit's real recorder on synthetic audio and
+  decodes the file:
+  - the person's tone on the left, the AI's on the right
+  - a reply cut off at 0.5 s stops at 0.5 s
+  - the upload signed exactly as Django checks it
+- **The Django tests** cover:
+  - which calls may be recorded, outbound and inbound
+  - consent, refusal, failure, and audio that never arrives
+  - refused uploads: no consent, not allowed, bad signature, stale, not audio,
+    a duplicate
+  - encrypted storage and byte-range playback
+  - links that are personal, expire, and cannot be turned into downloads
+  - campus and organisation isolation
+  - the access log
+  - retention, and deletion with the call
+  - S3 server-side encryption, with a stubbed client
+- **The calling browser suite** uploads a real Ogg file as the worker would and
+  plays it in Chromium: play, pause, seek, click-to-play from a line of the
+  conversation, and download. It also checks the 390 px layout.
+- **A bug found by the tests and fixed:** the handler that deletes a
+  recording's file with its call was dropped by Python's garbage collector. It
+  is now held strongly.
+
+**Needs a live test (the owner's)**
+
+- **A real recorded call to the approved number.** The recorder has run on
+  synthetic audio, never on a phone line.
+- **S3 in India.** Needs a bucket and credentials; the code is tested with a
+  stubbed client.
+
+## Simple everyday flow and call lists (24 November 2026)
+
+Same branch, not committed. The owner found the dashboard confusing and the
+calls page limited to one fixed number.
+
+**What you can do now**
+
+- **Four steps, in order.** Home and the sidebar lead with the everyday flow:
+  AI employees → Make calls → Calls → Call results, with a steps bar at the
+  top of each of those pages. Settings sits under the four steps.
+- **Everything else under More.** Leads, campuses, campaigns, numbers,
+  knowledge, integrations, the test line and the rest are folded into a "More"
+  section in the sidebar. Nothing was removed.
+- **Make calls.**
+  - Type numbers, one per line with an optional name, or upload an Excel
+    (`.xlsx`) or CSV file with a Phone or Mobile column and an optional Name
+    column. Files without a header row work too.
+  - **Check numbers** lists rows that are not Indian mobile numbers, with the
+    reason, and keeps repeated numbers once. Numbers on the do-not-call list
+    are skipped.
+  - Calling starts only after a tick that everyone agreed to be called. The
+    wording of that confirmation is stored with the list.
+  - The chosen AI employee (or the Agent profile) calls one person at a time.
+    Each row shows its status live and links to the call's result. Pause,
+    resume and cancel work at any time.
+  - The usual rules still apply to every call: 9 AM to 9 PM, campus hours,
+    one call at a time, the monthly minutes budget, and the dialing policy
+    (`OUTBOUND_DIALING_MODE`).
+  - Lists hold up to 500 rows; uploads up to 2 MB. Numbers are stored
+    encrypted and shown masked.
+- **Background jobs without Redis.** `CELERY_TASK_ALWAYS_EAGER` now defaults
+  to on when `REDIS_URL` is empty. Before, jobs were sent to a Redis no worker
+  read, so call results never appeared on the owner's machine.
+
+**How it was built**
+
+- `apps/calling/calllists.py` reads, checks, stores and advances a list. The
+  open list page asks for the next step every 3 seconds. Celery beat does the
+  same every 15 seconds (`operations.advance_call_lists`), so calls continue
+  when Celery runs and the page is closed.
+- The database constraint that allows one active outbound call makes sure two
+  steps can never dial at once.
+- **New models:** `CallList` and `CallListEntry`
+  (`calling/0007_call_lists`).
+- **A new dependency:** `openpyxl`, locked.
+
+**How it was checked**
+
+- **Python suite:** SQLite 948 passed, 1 skipped; PostgreSQL 17, 949 passed.
+- **`tests/django/test_call_lists.py`** covers:
+  - typed lines and Excel and CSV uploads, with or without headers
+  - the 500-row cap
+  - the do-not-call list
+  - that no call starts without the tick
+  - calls one after another with the employee's profile
+  - waiting outside calling hours
+  - pause and cancel
+  - the Agent profile
+  - organisation and campus isolation
+  - the sidebar order
+  - the Redis default
+- **`tests/browser/make_calls.cjs`** runs the whole flow in Chromium:
+  - typed numbers plus an Excel upload
+  - the check and the refusal without the tick
+  - two calls on a simulated line
+  - the result page
+  - no sideways scrolling at 390 px
+- The other browser suites were updated for the new sidebar and pass.
+
+**Needs a live test (the owner's)**
+
+- A real list of two of the owner's own numbers, to confirm that the second
+  call starts after the first ends on a real phone line.
+
+## Unused pages deleted, Settings redesigned (25 November 2026)
+
+Same branch, not committed. The owner asked to delete the pages that were not
+used or only simulated, and found the Settings page hard to read.
+
+**Deleted at the owner's choice** (pages, their code and tests; the database
+tables stay, so old records are kept):
+
+- **Voice studio** and its token API. `/` now opens Home. "Try the draft" and
+  "Call the test number" on an employee are replaced by **Make calls**, which
+  opens Make calls with that employee chosen.
+- **Test line**, its business-call pages and the per-line caller ID choice
+  (nothing else used it). The staff JSON API at `/api/telephony/calls/` stays
+  for the automated tests; every call goes out from the caller ID in
+  `.env.local`.
+- **Agent profile**: the page, the form and the fallback that made calls
+  without an AI employee use it. Make calls always needs an employee; an older
+  list without one pauses instead of calling.
+- **Campaigns** and **Instant leads** (they only ran dry runs), with the intake
+  API, the queue, `run_campaign_call` and the eligibility job.
+- **Integrations & actions**: calendar, WhatsApp, REST and webhook actions (all
+  simulated), their pages, the webhook job, and approved actions on employees
+  and leads. The built-in after-call actions (follow-up task, lead stage)
+  remain. `transport.py` and `safety.py` stay: the voice preview uses them.
+
+**Kept under More**: Leads & contacts, Campuses & staff, Performance, Incoming
+calls, Numbers & channels, Knowledge, Usage & costs, Operations.
+
+**Settings**: one column of sections (Organisation, Calls & privacy, Budget,
+Do-not-call list, Data retention, Access log), each with a short explanation
+beside it and a jump bar at the top. The form lost two fields that did nothing:
+the WhatsApp message cost and "calls at the same time".
+
+**How it was checked**
+
+- Python suite: SQLite 813 passed; PostgreSQL 17, 813 passed. The count fell
+  because the tests of deleted features went with them.
+- Browser suites dashboard, crm, calling, make_calls, screens and platform pass.
+  `calls.cjs`, `voice.cjs` and `live_smoke.cjs` were deleted with their pages.
+- Django check, `makemigrations --check` and `uv lock --check` are clean; no
+  migration was needed.
+
 ## Run the browser check
 
 ```powershell
@@ -497,9 +954,11 @@ node tests/browser/dashboard.cjs                               # window 2
 node tests/browser/crm.cjs                                     # window 2, same server
 ```
 
-For Milestone D, restart the server and run `node tests/browser/calling.cjs`.
-For Milestone E, restart it again and run `node tests/browser/platform.cjs`. It
-starts a webhook receiver on 127.0.0.1:8768 and refuses any other address.
+For Milestone D, restart the server and run `node tests/browser/calling.cjs`,
+then `node tests/browser/make_calls.cjs` and `node tests/browser/screens.cjs` on
+the same server. `screens.cjs` captures every screen at 1440 px and 390 px into
+`browser-artifacts/screens/`. For Milestone E, restart it again and run
+`node tests/browser/platform.cjs`. The server refuses every outside request.
 
 The server uses a disposable database, a canned LLM answer, a simulated phone
 line and made-up people. Restart it before running the pair again.

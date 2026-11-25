@@ -25,11 +25,33 @@ class Organisation(models.Model):
     # logs (Agent observability). Off: every call opts out, whatever the
     # LiveKit project setting is. Deleting data here never deletes theirs.
     cloud_observability = models.BooleanField(default=False)
+
+    class Recording(models.TextChoices):
+        OFF = "off", "Never record calls"
+        TEST_CALLS = "test", "Record approved test calls only, after consent"
+        WITH_CONSENT = "consent", "Record any call, after the person agrees on the call"
+
+    # Our own call recordings (apps/calling/recordings.py), separate from
+    # LiveKit Cloud's copy above. Off unless an admin switches it on; even
+    # then a call is recorded only after the person agrees on the call.
+    recording = models.CharField(
+        max_length=8, choices=Recording.choices, default=Recording.OFF
+    )
+    # Said straight after the opening line on calls that may be recorded.
+    recording_notice = models.CharField(
+        max_length=300,
+        default="This call may be recorded so our team can review it. Is that okay with you?",
+    )
     # Your own rates, for the usage page's cost estimate (rupees). The
     # providers' bills are what counts; these only make an estimate.
     cost_per_minute = models.DecimalField(max_digits=7, decimal_places=2, default=0)
     cost_per_message = models.DecimalField(max_digits=7, decimal_places=2, default=0)
     cost_per_analysis = models.DecimalField(max_digits=7, decimal_places=2, default=0)
+    # Business calling limits. The budget is talk minutes per calendar month
+    # (0: no budget). Concurrency is also capped by the phone line: the current
+    # outbound line carries one call at a time.
+    monthly_call_minutes = models.PositiveIntegerField(default=0)
+    max_concurrent_calls = models.PositiveSmallIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -119,6 +141,10 @@ class RetentionPolicy(models.Model):
     transcript_days = models.PositiveIntegerField(
         default=30,
         help_text="Delete kept call transcripts older than this. 0 keeps them.",
+    )
+    recording_days = models.PositiveIntegerField(
+        default=30,
+        help_text="Delete call recordings older than this. 0 keeps them.",
     )
     audit_days = models.PositiveIntegerField(
         default=0, help_text="Delete access-log entries older than this. 0 keeps them."

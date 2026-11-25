@@ -1,6 +1,6 @@
 # ruff: noqa: F811
-"""Milestone D: published employees on calls, inbound routing, campaigns,
-instant leads, knowledge, call results and the actions that follow them.
+"""Milestone D: published employees on calls, inbound routing, knowledge,
+call results and the actions that follow them.
 
 LiveKit is the fake gateway from test_calls; the LLM is a canned answer; every
 person and number is made up. No test dials, and no test reaches the network.
@@ -9,25 +9,20 @@ person and number is made up. No test dials, and no test reaches the network.
 import io
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
-from django.core.cache import cache
 from django.core.management import call_command
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.calling import analysis, inbound, intake, queue
+from apps.calling import analysis, inbound
 from apps.calling.models import (
     CallAction,
     CallResult,
     CallTranscript,
-    Campaign,
-    IntakeEvent,
-    LeadSource,
     PhoneNumber,
-    QueuedCall,
 )
 from apps.crm import contacts, crypto, retention
 from apps.crm.models import Contact, FollowUp, Lead, OptOut
@@ -770,7 +765,7 @@ def test_knowledge_is_managed_per_campus_and_previewed(world):
     assert not KnowledgeItem.objects.exists()
 
 
-NEW_PAGES = ["numbers", "inbound", "campaigns", "instant", "knowledge"]
+NEW_PAGES = ["numbers", "inbound", "knowledge"]
 
 
 @pytest.mark.parametrize("name", NEW_PAGES)
@@ -784,360 +779,6 @@ def test_new_pages_are_real_and_scoped(world, name, client):
         assert "Not built yet" not in body(response)
     sidebar = body(world.client(world.admin_a).get(reverse("home"))).split("<main>")[0]
     assert "Planned" not in sidebar or 'class="soon"' not in sidebar
-
-
-# --- campaigns -------------------------------------------------------------------------------------
-
-
-def campaign_for(world, employee, **fields):
-    return Campaign.objects.create(
-        organisation=world.org_a,
-        campus=world.north,
-        employee=employee,
-        name="Reminder",
-        purpose="Remind parents about a pending document",
-        days=[0, 1, 2, 3, 4, 5, 6],
-        window_start="09:00",
-        window_end="21:00",
-        **fields,
-    )
-
-
-def test_creating_a_campaign_enforces_hours_and_published_employees(world):
-    employee = employee_for(world)
-    draft = employee_for(world, publish=False)
-    admin = world.client(world.admin_a)
-    data = {
-        "name": "Document reminder",
-        "campus": world.north.pk,
-        "employee": employee.pk,
-        "purpose": "Remind parents about a pending document",
-        "window_start": "10:00",
-        "window_end": "18:00",
-        "days": ["0", "1", "2"],
-        "max_attempts": "2",
-        "retry_after_minutes": "120",
-        "daily_limit": "50",
-        "cooldown_days": "7",
-    }
-    for change, message in (
-        ({"window_start": "07:00"}, "only between 09:00 and 21:00"),
-        ({"window_end": "09:30", "window_start": "10:00"}, "must end after"),
-        ({"employee": draft.pk}, "not one of the"),
-        ({"campus": world.west.pk}, "not one of the"),
-        ({"max_attempts": "9"}, "Between 1 and 5"),
-    ):
-        response = admin.post(reverse("campaign-new"), {**data, **change})
-        assert response.status_code == 200 and message in body(response), change
-    response = admin.post(reverse("campaign-new"), data)
-    campaign = Campaign.objects.get()
-    assert response["Location"] == reverse("campaign-detail", args=[campaign.pk])
-    assert campaign.days == [0, 1, 2] and campaign.organisation == world.org_a
-    assert (
-        world.client(world.staff_north).get(reverse("campaign-new")).status_code == 403
-    )
-
-
-def test_a_dry_run_checks_every_rule_and_dials_nobody(world, gateway):
-    employee = employee_for(world)
-    campaign = campaign_for(world, employee, max_attempts=2)
-    ok = consented(world, world.north, ASHA)
-    no_consent = world.contact(world.admin_a, world.north, number=RAVI, name="Ravi")
-    opted = consented(world, world.north, LATA, name="Lata")
-    contacts.opt_out_number(world.org_a, LATA)
-    erased = consented(world, world.north, "+919876500004", name="Gone")
-    spent = consented(world, world.north, "+919876500005", name="Spent")
-    for contact in (ok, no_consent, opted, erased, spent):
-        QueuedCall.objects.create(
-            organisation=world.org_a,
-            campus=world.north,
-            campaign=campaign,
-            contact=contact,
-        )
-    contacts.erase(erased)
-    QueuedCall.objects.filter(contact=spent).update(attempts=2)
-
-    admin = world.client(world.admin_a)
-    url = reverse("campaign-detail", args=[campaign.pk])
-    response = admin.post(url, {"action": "dry_run"}, follow=True)
-    assert "Record that these people agreed" in body(response)
-    admin.post(
-        url,
-        {
-            "action": "attest",
-            "consent-attested": "on",
-            "consent-note": "Enquiry forms, November",
-        },
-    )
-    campaign.refresh_from_db()
-    assert campaign.status == "ready" and campaign.consent_by == world.admin_a
-    response = admin.post(url, {"action": "dry_run"}, follow=True)
-    assert "1 would be called, 4 skipped. Nobody was called." in body(response)
-
-    status = dict(QueuedCall.objects.values_list("contact__name", "status"))
-    assert status["Asha Rao"] == "would_call"
-    reasons = dict(QueuedCall.objects.values_list("contact__name", "reason"))
-    assert "Permission to call" in reasons["Ravi"]
-    assert "do-not-call" in reasons["Lata"]
-    assert "erased" in reasons["Erased contact"]
-    assert reasons["Spent"] == "No attempts left."
-    run = campaign.runs.get()
-    assert run.summary["would_call"] == 1 and run.summary["dialling_enabled"] is False
-    assert len(run.summary["planned"][0]["attempts"]) == 2
-    page = body(admin.get(url))
-    assert "Real calling is switched off" in page and "Last dry run" in page
-    assert_no_full_number(page)
-    # Nothing was dialled, recorded as a call, or charged an attempt.
-    assert gateway.dispatches == [] and not CallRecord.objects.exists()
-    assert QueuedCall.objects.get(contact=ok).attempts == 0
-
-
-def test_daily_limit_hours_and_cooldown(world):
-    employee = employee_for(world)
-    campaign = campaign_for(world, employee, daily_limit=1, cooldown_days=7)
-    other = campaign_for(world, employee)
-    first = consented(world, world.north, ASHA)
-    second = consented(world, world.north, RAVI, name="Ravi")
-    for contact in (first, second):
-        QueuedCall.objects.create(
-            organisation=world.org_a,
-            campus=world.north,
-            campaign=campaign,
-            contact=contact,
-        )
-    QueuedCall.objects.create(
-        organisation=world.org_a,
-        campus=world.north,
-        campaign=other,
-        contact=second,
-        status="would_call",
-        checked_at=timezone.now() - timedelta(days=2),
-    )
-    queue.dry_run(
-        campaign.queue.all(),
-        queue.Rules.for_campaign(campaign),
-        employee,
-        campaign=campaign,
-    )
-    entries = {e.contact.name: e for e in campaign.queue.select_related("contact")}
-    assert entries["Asha Rao"].status == "would_call"
-    assert entries["Ravi"].status == "skipped"
-    assert "another campaign recently" in entries["Ravi"].reason
-
-    rules = queue.Rules.for_campaign(campaign)
-    late = timezone.make_aware(datetime(2026, 11, 18, 22, 30))
-    slot = timezone.localtime(queue.next_slot(rules, late))
-    assert (slot.date().day, slot.hour) == (19, 9)
-    # The widest hours apply whatever a campaign says.
-    campaign.window_start, campaign.window_end = "06:00", "23:00"
-    assert queue.Rules.for_campaign(campaign).window_start.hour == 9
-    assert queue.Rules.for_campaign(campaign).window_end.hour == 21
-
-
-def test_a_second_person_over_the_daily_limit_moves_to_the_next_day(world):
-    employee = employee_for(world)
-    campaign = campaign_for(world, employee, daily_limit=1, cooldown_days=0)
-    for number, name in ((ASHA, "A"), (RAVI, "B")):
-        QueuedCall.objects.create(
-            organisation=world.org_a,
-            campus=world.north,
-            campaign=campaign,
-            contact=consented(world, world.north, number, name=name),
-        )
-    queue.dry_run(
-        campaign.queue.all(),
-        queue.Rules.for_campaign(campaign),
-        employee,
-        campaign=campaign,
-    )
-    days = sorted(timezone.localtime(e.due_at).date() for e in campaign.queue.all())
-    assert days[1] > days[0]
-
-
-def test_contacts_are_added_from_the_campus_or_an_import(world):
-    employee = employee_for(world)
-    campaign = campaign_for(world, employee)
-    consented(world, world.north, ASHA)
-    world.contact(world.admin_a, world.north, number=RAVI, name="No consent")
-    consented(world, world.south, LATA, name="Other campus")
-    admin = world.client(world.admin_a)
-    url = reverse("campaign-detail", args=[campaign.pk])
-    response = admin.post(
-        url, {"action": "add", "add-source": "consented"}, follow=True
-    )
-    assert "1 contacts added; 0 were already in the campaign." in body(response)
-    response = admin.post(
-        url, {"action": "add", "add-source": "consented"}, follow=True
-    )
-    assert "0 contacts added; 1 were already" in body(response)
-    assert campaign.queue.count() == 1
-    response = admin.post(url, {"action": "add", "add-source": "import"})
-    assert "Choose an import." in body(response)
-    staff = world.client(world.staff_north)
-    assert staff.get(url).status_code == 200
-    assert (
-        staff.post(url, {"action": "add", "add-source": "consented"}).status_code == 403
-    )
-    south = Campaign.objects.create(
-        organisation=world.org_a,
-        campus=world.south,
-        employee=employee,
-        name="S",
-        purpose="p",
-        days=[0],
-    )
-    assert staff.get(reverse("campaign-detail", args=[south.pk])).status_code == 404
-    assert world.client(world.admin_b).get(url).status_code == 404
-
-
-# --- instant leads -------------------------------------------------------------------------------
-
-
-def make_source(world, employee=None, **fields):
-    secret, digest, hint = intake.new_secret()
-    source = LeadSource.objects.create(
-        organisation=world.org_a,
-        campus=world.north,
-        employee=employee,
-        name="Website form",
-        consent_statement="By submitting you agree that we may call you about it.",
-        secret_hash=digest,
-        secret_hint=hint,
-        **fields,
-    )
-    return source, secret
-
-
-def deliver(source, secret, payload):
-    return Client().post(
-        reverse("lead-intake", args=[source.pk]),
-        data=json.dumps(payload),
-        content_type="application/json",
-        HTTP_X_LEAD_SECRET=secret,
-    )
-
-
-def test_a_new_source_shows_its_secret_once_and_stores_only_a_hash(world):
-    employee = employee_for(world)
-    admin = world.client(world.admin_a)
-    response = admin.post(
-        reverse("source-new"),
-        {
-            "name": "Website form",
-            "campus": world.north.pk,
-            "employee": employee.pk,
-            "consent_statement": "By submitting you agree that we may call you.",
-            "call_delay_minutes": "5",
-            "window_start": "09:00",
-            "window_end": "20:00",
-            "is_active": "on",
-        },
-        follow=True,
-    )
-    html = body(response)
-    source = LeadSource.objects.get()
-    shown = html.split("<code>")[1].split("</code>")[0]
-    assert shown.startswith("ls_") and source.secret_hash == intake.hash_secret(shown)
-    assert shown not in json.dumps(list(LeadSource.objects.values()), default=str)
-    assert shown not in body(admin.get(reverse("source-detail", args=[source.pk])))
-    assert deliver(source, shown, {"phone": ASHA}).status_code == 201
-
-
-def test_intake_creates_a_consented_contact_lead_and_queued_call(world, caplog):
-    employee = employee_for(world)
-    source, secret = make_source(world, employee)
-    response = deliver(
-        source,
-        secret,
-        {
-            "phone": "98765 00001",
-            "name": "Asha Rao",
-            "subject": "Visit",
-            "extra": "ignored",
-        },
-    )
-    assert response.status_code == 201 and response.json()["result"] == "accepted"
-    lead = Lead.objects.get()
-    contact = lead.contact
-    assert contact.consent == "granted" and "Website form" in contact.consent_evidence
-    assert "agree that we may call" in contact.consent_evidence
-    assert lead.employee == employee and lead.subject == "Visit"
-    entry = QueuedCall.objects.get()
-    assert entry.source == source and entry.lead == lead
-    event = IntakeEvent.objects.get()
-    assert event.masked_number == "+91********01"
-    assert ASHA not in response.content.decode() and ASHA not in caplog.text
-    assert AuditEvent.objects.get(action="contact.created").actor_name.startswith(
-        "lead source"
-    )
-
-    again = deliver(source, secret, {"phone": ASHA})
-    assert again.json()["result"] == "duplicate" and Lead.objects.count() == 1
-
-
-@pytest.mark.parametrize(
-    "secret, payload, status",
-    [
-        ("wrong", {"phone": "9876500001"}, 401),
-        (None, {"phone": "12345"}, 400),
-        (None, ["not", "an", "object"], 400),
-        (None, {}, 400),
-    ],
-)
-def test_intake_refuses_bad_deliveries(world, secret, payload, status):
-    source, real = make_source(world)
-    response = deliver(source, secret or real, payload)
-    assert response.status_code == status
-    assert not Lead.objects.exists() and not Contact.objects.exists()
-
-
-def test_intake_honours_do_not_call_tests_and_switched_off_sources(world):
-    source, secret = make_source(world)
-    contacts.opt_out_number(world.org_a, ASHA)
-    response = deliver(source, secret, {"phone": ASHA})
-    assert response.json()["result"] == "opted_out" and not Lead.objects.exists()
-    test = deliver(source, secret, {"phone": RAVI, "dry_run": True})
-    assert test.json()["result"] == "test" and not Contact.objects.exists()
-    source.is_active = False
-    source.save()
-    assert deliver(source, secret, {"phone": RAVI}).status_code == 401
-    _other, other_secret = make_source(world)
-    assert deliver(source, other_secret, {"phone": RAVI}).status_code == 401
-
-
-def test_intake_is_rate_limited(world):
-    cache.clear()
-    source, secret = make_source(world)
-    from apps.calling import views
-
-    limit = views.INTAKE_RATE_PER_MINUTE
-    codes = [
-        deliver(source, secret, {"phone": RAVI, "dry_run": True}).status_code
-        for _ in range(limit + 1)
-    ]
-    assert codes[-1] == 429 and codes[0] == 200
-
-
-def test_source_pages_test_delivery_and_dry_run(world, gateway):
-    employee = employee_for(world)
-    source, secret = make_source(world, employee)
-    deliver(source, secret, {"phone": ASHA, "name": "Asha Rao"})
-    admin = world.client(world.admin_a)
-    url = reverse("source-detail", args=[source.pk])
-    response = admin.post(url, {"action": "test"}, follow=True)
-    assert "Test delivery: Test (nothing stored)." in body(response)
-    response = admin.post(url, {"action": "dry_run"}, follow=True)
-    assert "1 would be called" in body(response)
-    assert gateway.dispatches == [] and not CallRecord.objects.exists()
-    page = body(admin.get(url))
-    assert "X-Lead-Secret" in page and secret not in page
-    assert (
-        world.client(world.staff_north).post(url, {"action": "dry_run"}).status_code
-        == 403
-    )
-    assert world.client(world.admin_b).get(url).status_code == 404
-    response = admin.post(url, {"action": "new_secret"}, follow=True)
-    assert deliver(source, secret, {"phone": RAVI}).status_code == 401
 
 
 # --- retention ------------------------------------------------------------------------------------

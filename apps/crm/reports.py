@@ -26,6 +26,8 @@ def call_summary(calls) -> dict:
     talk = [row[2] for row in rows if row[2] is not None]
     latency = [row[3] for row in rows if row[3] is not None]
     return {
+        "follow_up": calls.filter(result__follow_up_needed=True).count(),
+        "with_issues": calls.filter(result__has_issues=True).count(),
         "total": total,
         "answered": len(answered),
         "answer_rate": round(100 * len(answered) / total) if total else None,

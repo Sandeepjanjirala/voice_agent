@@ -6,24 +6,21 @@ import logging
 import time
 
 from django.conf import settings as django_settings
-from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
-from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import render
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
-from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from rest_framework import status
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import calls, profiles
-from .forms import AgentProfileForm
-from .masking import mask_phone
-from .models import AgentProfile, CallRecord
+from apps.tenancy.access import scope_for
+
+from . import calls
+from .models import CallRecord
 
 logger = logging.getLogger(__name__)
 
@@ -42,41 +39,18 @@ def _error(error: calls.CallError) -> Response:
     )
 
 
-@never_cache
-@login_required
-@ensure_csrf_cookie
-def calls_page(request):
-    if not request.user.is_staff:
-        raise PermissionDenied
-    readiness: dict = {"ready": False, "blockers": [], "number": "", "caller_id": ""}
-    try:
-        outbound, plan = calls.outbound_context()
-    except calls.CallNotReadyError as error:
-        readiness["blockers"] = [str(error)]
-    else:
-        readiness.update(
-            ready=plan.ready,
-            mode=outbound.policy.mode,
-            live_hours="{:02d}:00 and {:02d}:00".format(*calls.LIVE_CALLING_HOURS),
-            blockers=[blocker.message for blocker in plan.blockers],
-            number=mask_phone(outbound.rehearsal_number),
-            caller_id=mask_phone(outbound.caller_id),
-            ring_seconds=outbound.ringing_timeout_seconds,
-            max_seconds=outbound.max_call_duration_seconds,
-        )
-        calls.close_stale(outbound)
-    recent = list(CallRecord.objects.select_related("placed_by")[:RECENT_CALLS])
-    active = next((record for record in recent if record.is_active), None)
-    return render(
-        request,
-        "telephony/calls.html",
-        {
-            "readiness": readiness,
-            "reporting": calls.reporting_configured(),
-            "recent": [calls.serialize(record) for record in recent],
-            "active_id": str(active.pk) if active else "",
-        },
-    )
+def _visible_calls(request):
+    """Calls this person may see: their organisation's (and campuses'), or all
+    of them for platform staff working outside any organisation."""
+    scope = scope_for(request)
+    found = CallRecord.objects.select_related("placed_by")
+    if scope is not None and scope.organisation is not None:
+        found = found.filter(organisation=scope.organisation)
+        if not scope.all_campuses:
+            found = found.filter(campus__in=scope.campus_ids)
+    elif not request.user.is_staff:
+        found = found.none()
+    return found
 
 
 @method_decorator(never_cache, name="dispatch")
@@ -87,7 +61,7 @@ class CallListView(APIView):
 
     def get(self, request):
         calls.close_stale()
-        recent = CallRecord.objects.select_related("placed_by")[:RECENT_CALLS]
+        recent = _visible_calls(request)[:RECENT_CALLS]
         return Response({"calls": [calls.serialize(record) for record in recent]})
 
     def post(self, request):
@@ -111,8 +85,36 @@ class CallListView(APIView):
             )
             response["Retry-After"] = str(START_THROTTLE_SECONDS)
             return response
+        from apps.calling import dialer
+        from apps.workforce.models import Employee
+
+        scope = scope_for(request)
+        employee = None
+        if request.data.get("employee") and scope and scope.organisation:
+            employee = (
+                scope.limit_shared(Employee.objects.all())
+                .filter(pk=str(request.data["employee"]))
+                .first()
+            )
+            if employee is None:
+                return Response(
+                    {"error": "Choose one of your published employees.", "details": []},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         try:
-            record = calls.start_call(user=request.user, to=request.data.get("to", ""))
+            if "slot" in request.data:
+                # The page sends the position of an approved number, never a number.
+                record = dialer.place_test(
+                    scope, request.data["slot"], user=request.user, employee=employee
+                ).call
+            else:
+                # The command line and older clients name the number; it must
+                # still be an approved test number.
+                record = calls.start_call(
+                    user=request.user,
+                    to=request.data.get("to", ""),
+                    allowlisted_only=True,
+                )
         except calls.CallError as error:
             logger.warning("outbound call not started: %s", error)
             return _error(error)
@@ -127,7 +129,7 @@ class CallDetailView(APIView):
     permission_classes = (IsAdminUser,)
 
     def get(self, request, pk):
-        record = CallRecord.objects.select_related("placed_by").filter(pk=pk).first()
+        record = _visible_calls(request).filter(pk=pk).first()
         if record is None:
             return Response(
                 {"error": "No such call."}, status=status.HTTP_404_NOT_FOUND
@@ -165,6 +167,94 @@ def _signature_valid(request, secret: str) -> bool:
     message = timestamp.encode() + b"." + request.body
     expected = hmac.new(secret.encode(), message, "sha256").hexdigest()
     return hmac.compare_digest(expected, signature)
+
+
+ROOM_HEADER = "HTTP_X_CALL_ROOM"
+DURATION_HEADER = "HTTP_X_RECORDING_DURATION"
+OFFSET_HEADER = "HTTP_X_RECORDING_OFFSET"
+
+
+@csrf_exempt  # Server-to-server; authenticated by the HMAC signature instead.
+@never_cache
+@require_POST
+def call_recording(request):
+    """The audio of a recorded call, from the voice worker (voice_agent/recording.py).
+
+    The body is the Ogg file. The signature covers the timestamp, the room, the
+    duration, the offset and every byte of the file, with CALL_EVENTS_SECRET.
+    Accepted only for a call Django allowed to be recorded and whose person
+    agreed (apps/calling/recordings.py)."""
+    from apps.calling import recordings
+
+    secret = django_settings.CALL_EVENTS_SECRET
+    if not calls.reporting_configured():
+        return JsonResponse({"error": "Call reporting is not configured."}, status=503)
+    try:
+        length = int(request.META.get("CONTENT_LENGTH") or 0)
+    except ValueError:
+        length = 0
+    if not 0 < length <= recordings.MAX_BYTES:
+        return JsonResponse({"error": "Missing or too large."}, status=413)
+    # Read directly: request.body is capped far below a recording's size.
+    data = request.read(recordings.MAX_BYTES + 1)
+    room = request.META.get(ROOM_HEADER, "")
+    duration = request.META.get(DURATION_HEADER, "")
+    offset = request.META.get(OFFSET_HEADER, "")
+    timestamp = request.META.get(TIMESTAMP_HEADER, "")
+    signature = request.META.get(SIGNATURE_HEADER, "")
+    try:
+        fresh = abs(time.time() - int(timestamp)) <= EVENT_MAX_AGE_SECONDS
+    except ValueError:
+        fresh = False
+    message = f"{timestamp}.{room}.{duration}.{offset}.".encode() + data
+    expected = hmac.new(secret.encode(), message, "sha256").hexdigest()
+    if not fresh or not hmac.compare_digest(expected, signature):
+        return JsonResponse({"error": "Invalid signature."}, status=403)
+    record = CallRecord.objects.filter(room=room).first()
+    if record is None:
+        return JsonResponse({"error": "Unknown call."}, status=404)
+    try:
+        recording = recordings.receive(
+            record, data, duration=_number(duration), offset=_number(offset)
+        )
+    except recordings.RecordingError as error:
+        status_code = error.args[1] if len(error.args) > 1 else 400
+        logger.warning("call recording refused", extra={"call_id": str(record.pk)})
+        return JsonResponse({"error": str(error.args[0])}, status=status_code)
+    logger.info("call recording stored", extra={"call_id": str(record.pk)})
+    return JsonResponse({"status": recording.status}, status=201)
+
+
+def _number(value: str) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+@csrf_exempt  # Server-to-server; authenticated by the HMAC signature instead.
+@never_cache
+@require_POST
+def call_profile(request):
+    """The employee profile of a call that is starting, for the voice worker.
+
+    Two locks: the request is signed with CALL_EVENTS_SECRET, and it carries
+    the call's own short-lived reference (calls.profile_reference). The answer
+    is the call's immutable snapshot, never the employee's current draft."""
+    if not calls.reporting_configured():
+        return JsonResponse({"error": "Call reporting is not configured."}, status=503)
+    if len(request.body) > 2048:
+        return JsonResponse({"error": "Request too large."}, status=413)
+    if not _signature_valid(request, django_settings.CALL_EVENTS_SECRET):
+        return JsonResponse({"error": "Invalid signature."}, status=403)
+    try:
+        data = json.loads(request.body)
+    except ValueError:
+        return JsonResponse({"error": "Invalid JSON."}, status=400)
+    record = calls.record_for_reference(data)
+    if record is None:
+        return JsonResponse({"error": "Unknown or expired reference."}, status=404)
+    return JsonResponse({"agent_profile": record.context_snapshot["profile"]})
 
 
 @csrf_exempt  # Server-to-server; authenticated by the HMAC signature instead.
@@ -229,31 +319,3 @@ def inbound_context(request):
     if metadata is None:
         return JsonResponse({"error": "This number is not routed."}, status=404)
     return JsonResponse(metadata)
-
-
-@never_cache
-@login_required
-def agent_page(request):
-    """Edit the active agent profile. Starts from an example with no business facts."""
-    if not request.user.is_staff:
-        raise PermissionDenied
-    profile = profiles.active_profile()
-    saved = False
-    if request.method == "POST":
-        form = AgentProfileForm(request.POST, instance=profile)
-        if form.is_valid():
-            profile = form.save(commit=False)
-            AgentProfile.objects.exclude(pk=profile.pk).update(is_active=False)
-            profile.is_active = True
-            profile.save()
-            saved = True
-            form = AgentProfileForm(instance=profile)
-    else:
-        form = AgentProfileForm(
-            instance=profile, initial=None if profile else profiles.EXAMPLE
-        )
-    return render(
-        request,
-        "telephony/agent.html",
-        {"form": form, "profile": profile, "saved": saved},
-    )

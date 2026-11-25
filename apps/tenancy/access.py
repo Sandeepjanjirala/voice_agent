@@ -36,14 +36,14 @@ CAMPUS_STAFF_PERMISSIONS = frozenset(
         "reports.view",
         "employees.view",
         "campuses.view",
-        "campaigns.view",
-        "sources.view",
         "numbers.view",
         "knowledge.view",
         "calls.analyse",
-        "integrations.view",
-        "actions.run",
         "missed.handle",
+        # Make calls: call lists for their campuses.
+        "calls.place",
+        # Listen to call recordings of their campuses (each play is logged).
+        "calls.recordings",
     }
 )
 ORG_ADMIN_PERMISSIONS = CAMPUS_STAFF_PERMISSIONS | frozenset(
@@ -53,14 +53,13 @@ ORG_ADMIN_PERMISSIONS = CAMPUS_STAFF_PERMISSIONS | frozenset(
         "contacts.export",
         "contacts.erase",
         "calls.export",
+        # Save a copy of a call recording (each download is logged).
+        "calls.recordings_download",
         "optout.remove",
         "audit.view",
         "retention.manage",
-        "campaigns.manage",
-        "sources.manage",
         "numbers.manage",
         "knowledge.manage",
-        "integrations.manage",
         "operations.view",
         "usage.view",
     }
@@ -87,6 +86,11 @@ class Scope:
     @property
     def all_campuses(self) -> bool:
         return self.campus_ids is None
+
+    @property
+    def can_place_calls(self) -> bool:
+        """For templates: the Make calls button."""
+        return self.can("calls.place")
 
     def can(self, permission: str) -> bool:
         return permission in PERMISSIONS[self.role]

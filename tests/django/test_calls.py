@@ -492,66 +492,6 @@ def test_finished_call_cannot_be_hung_up(gateway) -> None:
         calls.hang_up(record)
 
 
-# --- page -----------------------------------------------------------------------------
-
-
-def test_page_needs_login_and_staff(gateway, django_user_model) -> None:
-    client = Client()
-    assert client.get(reverse("calls")).status_code == 302
-
-    user = django_user_model.objects.create_user(
-        username="plain", password="x-password"
-    )
-    client.force_login(user)
-    assert client.get(reverse("calls")).status_code == 403
-
-
-def test_page_shows_masked_numbers_only(gateway, staff_client) -> None:
-    response = staff_client.get(reverse("calls"))
-    html = response.content.decode()
-
-    assert response.status_code == 200
-    assert "no-store" in response["Cache-Control"]
-    assert "+91********10" in html and "+91********23" in html
-    for secret in (MOBILE, CALLER_ID, PASSWORD, SECRET, "abc123.sip.vobiz.ai"):
-        assert secret not in html
-    assert 'id="call" class="primary call-button" >' in html or 'id="call"' in html
-    assert "csrftoken" in response.cookies
-
-
-def test_page_disables_calling_and_explains_when_not_ready(
-    gateway, env, staff_client
-) -> None:
-    env.setenv("TELEPHONY_CONFIRMED", "")
-
-    html = staff_client.get(reverse("calls")).content.decode()
-
-    assert "Not ready" in html
-    assert "disabled" in html.split('id="call"')[1].split(">")[0]
-
-
-def test_page_warns_when_worker_reporting_is_off(
-    gateway, settings, staff_client
-) -> None:
-    settings.CALL_EVENTS_SECRET = ""
-
-    assert (
-        "CALL_EVENTS_SECRET is not set"
-        in staff_client.get(reverse("calls")).content.decode()
-    )
-
-
-def test_staff_sees_the_phone_calls_link_others_do_not(
-    gateway, staff_client, django_user_model
-) -> None:
-    assert reverse("calls") in staff_client.get(reverse("voice")).content.decode()
-    plain = Client()
-    plain.force_login(
-        django_user_model.objects.create_user(username="p", password="x-pass")
-    )
-    assert reverse("calls") not in plain.get(reverse("voice")).content.decode()
-
-
 # --- API ---------------------------------------------------------------------------------
 
 
@@ -582,7 +522,8 @@ def test_api_refuses_anonymous_and_non_staff(gateway, django_user_model) -> None
 def test_api_enforces_csrf(gateway, staff) -> None:
     client = Client(enforce_csrf_checks=True)
     client.force_login(staff)
-    client.get(reverse("calls"))
+    # Any page with a form sets the CSRF cookie.
+    client.get(reverse("login"))
     url = reverse("telephony:calls")
 
     rejected = client.post(

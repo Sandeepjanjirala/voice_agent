@@ -11,9 +11,7 @@ import base64
 import json
 import os
 import struct
-import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar
 
@@ -41,6 +39,7 @@ QA_ENV = {
 os.environ.update(QA_ENV)
 
 import django  # noqa: E402
+from cryptography.fernet import Fernet  # noqa: E402
 from django.conf import settings  # noqa: E402
 from django.core.management import call_command  # noqa: E402
 
@@ -52,8 +51,40 @@ settings.ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 # Lets the browser test post signed worker reports, as the voice worker would.
 settings.CALL_EVENTS_SECRET = "qa-call-events-secret-not-for-production-0123"
 settings.DATABASES["default"]["NAME"] = str(database)
+# Recordings: a throwaway key and a disposable private folder.
+settings.RECORDING_STORAGE = "local"
+settings.RECORDING_LOCAL_DIR = Path(".test-tmp/qa-recordings").resolve()
+settings.RECORDING_ENCRYPTION_KEYS = [Fernet.generate_key().decode()]
 django.setup()
 call_command("migrate", verbosity=0)
+
+
+def _write_qa_recording(path: Path) -> None:
+    """Six seconds of real stereo Ogg Opus for the browser test to upload as
+    the voice worker would: a tone on the person's side, another on the AI's."""
+    import av
+    import numpy as np
+
+    path.parent.mkdir(exist_ok=True)
+    with av.open(str(path), mode="w", format="ogg") as container:
+        stream = container.add_stream("libopus", rate=48000, layout="stereo")
+        t = np.arange(48000 * 6) / 48000
+        pcm = np.stack([np.sin(2 * np.pi * 440 * t), np.sin(2 * np.pi * 880 * t)])
+        pcm = (pcm * 9000).astype(np.int16)
+        for start in range(0, pcm.shape[1], 960):
+            frame = av.AudioFrame.from_ndarray(
+                pcm[:, start : start + 960].T.reshape(1, -1),
+                format="s16",
+                layout="stereo",
+            )
+            frame.sample_rate = 48000
+            for packet in stream.encode(frame):
+                container.mux(packet)
+        for packet in stream.encode(None):
+            container.mux(packet)
+
+
+_write_qa_recording(Path(".test-tmp/qa-call.ogg"))
 
 from django.contrib.auth import get_user_model  # noqa: E402
 from django.utils import timezone  # noqa: E402
@@ -136,6 +167,26 @@ CANNED_ANALYSIS = {
     "callback_requested": True,
     "callback_when": "Friday evening",
     "opt_out_requested": False,
+    "reason": "The parent wants to talk about a campus visit for their son.",
+    "topics": ["Campus visit", "Class 6"],
+    "info_given": ["Meera said a team member would call back."],
+    "details": [{"label": "Best time", "value": "Friday evening"}],
+    "resolution": "partly",
+    "result": "Call back later",
+    "pending": ["A day and time for the visit"],
+    "next_step": "Call the parent back on Friday evening to fix a visit.",
+    "follow_up_needed": True,
+    "follow_up_reason": "The parent asked for a call back.",
+    "adherence": "followed",
+    # A quote that is in the conversation, and one that is not (dropped).
+    "issues": [
+        {
+            "kind": "unanswered",
+            "detail": "The visit day was not agreed on the call.",
+            "quote": "Call me back Friday evening",
+        },
+        {"kind": "other", "detail": "Invented by the model", "quote": "never said"},
+    ],
 }
 
 
@@ -162,6 +213,7 @@ def canned_draft(system, user, **kwargs):
         "ending": "End once a visit preference is noted.",
         "strictness": 2,
         "open_questions": ["Fee structure", "Campus visit timings"],
+        "outcomes": ["Visit agreed", "Call back later", "Not interested"],
     }
 
 
@@ -201,36 +253,6 @@ class SimulatedGateway:
         SimulatedGateway.deleted.add(room)
 
 
-class Receiver(BaseHTTPRequestHandler):
-    """A webhook receiver on loopback: keeps what it is sent, and lists it at
-    GET /received for the browser test to check the signatures."""
-
-    received: ClassVar[list[dict]] = []
-
-    def do_POST(self):
-        body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
-        Receiver.received.append(
-            {
-                "path": self.path,
-                "headers": {k.lower(): v for k, v in self.headers.items()},
-                "body": body.decode(),
-            }
-        )
-        self.send_response(204)
-        self.end_headers()
-
-    def do_GET(self):
-        payload = json.dumps(Receiver.received).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def log_message(self, *args):
-        pass
-
-
 # One second of silence as WAV: what the "voice service" answers here.
 SILENCE = base64.b64encode(
     b"RIFF"
@@ -241,31 +263,37 @@ SILENCE = base64.b64encode(
     + struct.pack("<I", 16000)
     + bytes(16000)
 ).decode()
-real_send = transport.send
 
 
-def loopback_only(method, url, **kwargs):
-    """Actions may reach the receiver above; the voice service is answered
-    here; anything else is refused, so this server never leaves the machine."""
+def offline(method, url, **kwargs):
+    """The voice service is answered here; anything else is refused, so this
+    server never leaves the machine."""
     if url.startswith(preview.SARVAM_TTS_URL):
         time.sleep(0.3)
         return transport.Response(200, json.dumps({"audios": [SILENCE]}).encode())
-    if not url.startswith(f"http://127.0.0.1:{RECEIVER_PORT}/"):
-        raise transport.TransportError("The QA server only reaches its own receiver.")
-    return real_send(method, url, **kwargs)
+    raise transport.TransportError("The QA server makes no outside requests.")
 
 
-RECEIVER_PORT = 8768
-threading.Thread(
-    target=ThreadingHTTPServer(("127.0.0.1", RECEIVER_PORT), Receiver).serve_forever,
-    daemon=True,
-).start()
-# Live actions, but only towards the loopback receiver (loopback_only above).
-settings.INTEGRATIONS_LIVE_ENABLED = True
-settings.INTEGRATIONS_ALLOW_LOCAL = True
 settings.SARVAM_API_KEY = "qa-sarvam-key-not-real"
-transport.send = loopback_only
+transport.send = offline
 calls.make_gateway = SimulatedGateway
+# Call lists may call at any hour here, so the browser test runs day or night.
+calls.LIVE_CALLING_HOURS = (0, 24)
+
+
+def _write_qa_numbers(path: Path) -> None:
+    """An Excel list for the Make calls test: the approved test number (it is
+    called) and one that is not approved (refused with the reason)."""
+    from openpyxl import Workbook
+
+    book = Workbook()
+    book.active.append(("Name", "Mobile"))
+    book.active.append(("Test parent", 9000000001))
+    book.active.append(("Not approved", "98765 00077"))
+    book.save(path)
+
+
+_write_qa_numbers(Path(".test-tmp/qa-numbers.xlsx"))
 llm.complete_json = canned_draft
 views.DRAFT_THROTTLE_SECONDS = 0
 views.PREVIEW_THROTTLE_SECONDS = 0

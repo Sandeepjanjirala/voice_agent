@@ -453,8 +453,12 @@ async def place_test_call(
     agent_name: str,
     room: str | None = None,
     extra_metadata: dict | None = None,
+    caller_number: str = "",
+    trunk_id: str = "",
 ) -> str:
-    """Ask the worker to place exactly one call. Returns the room name."""
+    """Ask the worker to place exactly one call. Returns the room name.
+    `caller_number` presents a verified caller ID other than the trunk's own;
+    `trunk_id` uses another stored outbound trunk."""
     if not plan.ready:
         codes = ", ".join(blocker.code for blocker in plan.blockers)
         raise ProvisioningRefusedError(f"The outbound plan is blocked ({codes}).")
@@ -462,7 +466,7 @@ async def place_test_call(
         settings.policy.validate(to)
     except DialingPolicyError as error:
         raise ProvisioningRefusedError(str(error)) from None
-    trunk_id = await find_trunk(plan, gateway)
+    trunk_id = trunk_id or await find_trunk(plan, gateway)
     if not trunk_id:
         raise ProvisioningRefusedError(
             "No outbound trunk exists yet. Run `telephony outbound-apply` first."
@@ -483,6 +487,7 @@ async def place_test_call(
             "max_call_duration": settings.max_call_duration_seconds,
             # The worker refuses requests older than this would allow.
             "requested_at": round(time.time(), 3),
+            **({"sip_number": caller_number} if caller_number else {}),
         },
     }
     await gateway.dispatch(

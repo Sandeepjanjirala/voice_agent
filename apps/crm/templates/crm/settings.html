@@ -1,54 +1,95 @@
 {% extends 'dashboard/base.html' %}
-{% block title %}Privacy &amp; settings{% endblock %}
+{% block title %}Settings{% endblock %}
 {% block content %}
+<div class="settings-page">
 <section class="page-head">
   <div>
-    <p class="eyebrow">SETUP</p>
-    <h1>Privacy &amp; settings</h1>
-    <p class="muted">The do-not-call list, how long personal data is kept, and who has looked at it.</p>
+    <h1>Settings</h1>
+    <p class="muted">Who may not be called, what is kept from each call, and for how long.</p>
   </div>
-  {% if manage %}<a class="button small" href="{% url 'audit-log' %}">Access log</a>{% endif %}
 </section>
 {% if crypto_problem %}<p class="notice" role="alert">Contacts cannot be stored yet: {{ crypto_problem }} Run <code>python manage.py contactkeys generate</code> and add the two lines to .env.local.</p>{% endif %}
 
-<div class="grid-2">
-  <div class="stack">
-    <section class="panel" id="do-not-call">
-      <div class="panel-head"><h2>Do-not-call list</h2><span class="tag">{{ opt_outs|length }}</span></div>
-      <p class="help" style="margin-top:0">A number on this list cannot be called by anyone in the organisation, from any campus, and is left out of imports. It stays here even if the contact is erased.</p>
-      <form method="post" novalidate>{% csrf_token %}<input type="hidden" name="action" value="opt_out">
-        {% include 'dashboard/_fields.html' with form=opt_out_form %}
-        <button class="small" type="submit"{% if crypto_problem %} disabled{% endif %}>Add to the list</button>
-      </form>
-      {% if opt_outs %}
-      <div class="table-scroll" style="margin-top:14px"><table class="data" id="optout-table">
-        <thead><tr><th>Number</th><th>Why</th><th>Added</th><th></th></tr></thead>
-        <tbody>{% for entry in opt_outs %}<tr><td>{{ entry.phone_masked }}</td><td class="wrap">{{ entry.reason|default:entry.get_source_display }}</td><td>{{ entry.created_at|date:"j M Y" }}</td><td>{% if can_remove %}<form method="post" action="{% url 'optout-remove' entry.pk %}" data-ask="Take {{ entry.phone_masked }} off the do-not-call list? Only do this if the person asked to be called again.">{% csrf_token %}<button class="small" type="submit">Remove</button></form>{% endif %}</td></tr>{% endfor %}</tbody>
-      </table></div>
-      {% endif %}
-    </section>
-  </div>
+<nav class="settings-jump" aria-label="On this page">
+  {% if manage %}<a href="#organisation">Organisation</a><a href="#calls-privacy">Calls &amp; privacy</a><a href="#budget">Budget</a>{% endif %}
+  <a href="#do-not-call">Do-not-call list</a>
+  {% if manage %}<a href="#retention">Data retention</a><a href="{% url 'audit-log' %}">Access log</a>{% endif %}
+</nav>
 
-  <div class="stack">
-    {% if manage %}
-    <form method="post" class="panel" novalidate>{% csrf_token %}<input type="hidden" name="action" value="organisation">
-      <div class="panel-head"><h2>Organisation</h2></div>
-      {% include 'dashboard/_fields.html' with form=organisation_form %}
-      <button class="small" type="submit">Save</button>
+{% if manage %}
+<form method="post" novalidate id="organisation-form">{% csrf_token %}<input type="hidden" name="action" value="organisation">
+  {% if organisation_form.non_field_errors %}<div class="error" role="alert">{{ organisation_form.non_field_errors|join:" " }}</div>{% endif %}
+  <section class="settings-section" id="organisation">
+    <div class="settings-intro"><h2>Organisation</h2><p>The name the AI employees use on calls.</p></div>
+    <div class="panel">{% include 'dashboard/_field.html' with field=organisation_form.name %}</div>
+  </section>
+  <section class="settings-section" id="calls-privacy">
+    <div class="settings-intro"><h2>Calls &amp; privacy</h2><p>What is kept from each call. Recording happens only after the person agrees on the call.</p></div>
+    <div class="panel">
+      {% include 'dashboard/_field.html' with field=organisation_form.transcripts %}
+      {% include 'dashboard/_field.html' with field=organisation_form.recording %}
+      {% include 'dashboard/_field.html' with field=organisation_form.recording_notice %}
+      {% include 'dashboard/_field.html' with field=organisation_form.cloud_observability %}
+    </div>
+  </section>
+  <section class="settings-section" id="budget">
+    <div class="settings-intro"><h2>Budget</h2><p>A monthly limit on talk time, and your rates for the estimates on Usage &amp; costs.</p></div>
+    <div class="panel">
+      {% include 'dashboard/_field.html' with field=organisation_form.monthly_call_minutes %}
+      <div class="field-pair">
+        {% include 'dashboard/_field.html' with field=organisation_form.cost_per_minute %}
+        {% include 'dashboard/_field.html' with field=organisation_form.cost_per_analysis %}
+      </div>
+    </div>
+  </section>
+  <div class="settings-save"><p class="help">Saves Organisation, Calls &amp; privacy and Budget.</p><button class="primary" type="submit">Save settings</button></div>
+</form>
+{% endif %}
+
+<section class="settings-section" id="do-not-call">
+  <div class="settings-intro"><h2>Do-not-call list <span class="tag">{{ opt_outs|length }}</span></h2><p>Nobody in the organisation can call these numbers, from any campus or list. A number stays here even if the contact is erased.</p></div>
+  <div class="panel">
+    <form method="post" novalidate class="dnc-form">{% csrf_token %}<input type="hidden" name="action" value="opt_out">
+      {% if opt_out_form.non_field_errors %}<div class="error" role="alert">{{ opt_out_form.non_field_errors|join:" " }}</div>{% endif %}
+      <div class="field-pair">
+        {% include 'dashboard/_field.html' with field=opt_out_form.phone %}
+        {% include 'dashboard/_field.html' with field=opt_out_form.reason %}
+      </div>
+      <button class="small" type="submit"{% if crypto_problem %} disabled{% endif %}>Add to the list</button>
     </form>
-    <section class="panel" id="retention">
-      <div class="panel-head"><h2>How long data is kept</h2></div>
-      <form method="post" novalidate>{% csrf_token %}<input type="hidden" name="action" value="retention">
-        {% include 'dashboard/_fields.html' with form=retention_form %}
-        <button class="small" type="submit">Save policy</button>
-      </form>
-      <p class="help" id="retention-preview">Applying the saved policy now would erase {{ retention_preview.contacts }} contact{{ retention_preview.contacts|pluralize }} and delete {{ retention_preview.calls }} call record{{ retention_preview.calls|pluralize }}, {{ retention_preview.transcripts }} transcript{{ retention_preview.transcripts|pluralize }} and {{ retention_preview.audit }} access-log entr{{ retention_preview.audit|pluralize:"y,ies" }}.</p>
-      <form method="post" data-ask="Apply the retention policy now? Erased contacts cannot be brought back.">{% csrf_token %}<input type="hidden" name="action" value="retention_apply"><button class="danger small" type="submit">Apply now</button></form>
-      <p class="help">To apply it on a schedule, run <code>python manage.py retention --apply</code> from a scheduled task.</p>
-    </section>
-    {% else %}
-    <section class="panel"><h2>Organisation settings</h2><p class="help">Retention, the access log and the organisation's name are managed by an organisation admin.</p></section>
-    {% endif %}
+    {% if opt_outs %}
+    <div class="table-scroll" style="margin-top:18px"><table class="data" id="optout-table">
+      <thead><tr><th>Number</th><th>Why</th><th>Added</th><th></th></tr></thead>
+      <tbody>{% for entry in opt_outs %}<tr><td>{{ entry.phone_masked }}</td><td class="wrap">{{ entry.reason|default:entry.get_source_display }}</td><td>{{ entry.created_at|date:"j M Y" }}</td><td>{% if can_remove %}<form method="post" action="{% url 'optout-remove' entry.pk %}" data-ask="Take {{ entry.phone_masked }} off the do-not-call list? Only do this if the person asked to be called again.">{% csrf_token %}<button class="small" type="submit">Remove</button></form>{% endif %}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% else %}<p class="help" style="margin-top:14px">The list is empty.</p>{% endif %}
   </div>
+</section>
+
+{% if manage %}
+<section class="settings-section" id="retention">
+  <div class="settings-intro"><h2>Data retention</h2><p>How many days personal data is kept before it is erased. Run <code>python manage.py retention --apply</code> on a schedule to apply it automatically.</p></div>
+  <div class="panel">
+    <form method="post" novalidate>{% csrf_token %}<input type="hidden" name="action" value="retention">
+      {% if retention_form.non_field_errors %}<div class="error" role="alert">{{ retention_form.non_field_errors|join:" " }}</div>{% endif %}
+      <div class="field-pair">{% for field in retention_form %}{% include 'dashboard/_field.html' %}{% endfor %}</div>
+      <button class="small" type="submit">Save retention</button>
+    </form>
+    <div class="retention-apply">
+      <p class="help" id="retention-preview">Applying the saved policy now would erase {{ retention_preview.contacts }} contact{{ retention_preview.contacts|pluralize }} and delete {{ retention_preview.calls }} call record{{ retention_preview.calls|pluralize }}, {{ retention_preview.transcripts }} transcript{{ retention_preview.transcripts|pluralize }}, {{ retention_preview.recordings }} recording{{ retention_preview.recordings|pluralize }} and {{ retention_preview.audit }} access-log entr{{ retention_preview.audit|pluralize:"y,ies" }}.</p>
+      <form method="post" data-ask="Apply the retention policy now? Erased contacts cannot be brought back.">{% csrf_token %}<input type="hidden" name="action" value="retention_apply"><button class="danger small" type="submit">Apply now</button></form>
+    </div>
+  </div>
+</section>
+<section class="settings-section" id="access-log">
+  <div class="settings-intro"><h2>Access log</h2><p>Who opened conversations, recordings and contact details, and when.</p></div>
+  <div class="panel"><a class="button small" href="{% url 'audit-log' %}">Open the access log</a></div>
+</section>
+{% else %}
+<section class="settings-section">
+  <div class="settings-intro"><h2>Organisation settings</h2></div>
+  <div class="panel"><p class="help" style="margin:0">Calls &amp; privacy, the budget, data retention and the access log are managed by an organisation admin.</p></div>
+</section>
+{% endif %}
 </div>
 {% endblock %}

@@ -40,6 +40,7 @@ from .profile import (
     recording_options,
     voice_for,
 )
+from .recording import recorder_for
 from .telephony import describe_caller, is_phone_caller, log_callers
 
 logger = logging.getLogger("voice_agent")
@@ -102,6 +103,41 @@ async def fetch_profile(
     return parse_profile(json.dumps({PROFILE_KEY: data.get(PROFILE_KEY)}))
 
 
+async def decline_call(
+    ctx: JobContext, settings: VoiceSettings, participant: rtc.Participant
+) -> None:
+    """Say the neutral unrouted message once, keep nothing, and hang up."""
+    logger.warning(
+        "inbound call declined: no assigned employee",
+        extra=describe_caller(participant),
+    )
+    session = build_session(settings)
+    try:
+        await session.start(
+            agent=TeluguAssistant(settings, None),
+            room=ctx.room,
+            room_options=room_io.RoomOptions(participant_identity=participant.identity),
+            record=False,
+        )
+        handle = session.say(
+            settings.inbound_unrouted_message, allow_interruptions=False
+        )
+        await handle.wait_for_playout()
+    except Exception as error:
+        logger.warning(
+            "could not play the unrouted message",
+            extra={"error_type": type(error).__name__},
+        )
+    finally:
+        try:
+            await ctx.api.room.delete_room(api.DeleteRoomRequest(room=ctx.room.name))
+        except Exception as error:
+            logger.warning(
+                "could not delete call room", extra={"error_type": type(error).__name__}
+            )
+        ctx.shutdown(reason="inbound call not routed")
+
+
 async def run_inbound_call(
     ctx: JobContext, settings: VoiceSettings, fallback: AgentProfile | None
 ) -> None:
@@ -112,17 +148,26 @@ async def run_inbound_call(
     profile = fallback
     reporter = None
     if is_phone_caller(participant):
-        profile = await fetch_profile(settings, ctx.room.name, participant) or fallback
+        # Fail closed: a phone call that Django does not assign to a published
+        # employee (unknown number, paused or draft employee, Django down) never
+        # gets a business conversation. The caller hears one neutral line.
+        profile = await fetch_profile(settings, ctx.room.name, participant)
+        if profile is None:
+            await decline_call(ctx, settings, participant)
+            return
         reporter = CallReporter.from_settings(settings, room=ctx.room.name)
     metrics = CallMetrics(keep_transcript=bool(profile and profile.keep_transcript))
     answered_at = time.monotonic()
+    recorder = None
 
     async def finish(reason: str = "") -> None:
         if reporter is not None and not reporter.ended:
+            talk = round(time.monotonic() - answered_at, 1)
+            metrics.finish(talk_seconds=talk)
             await reporter.send(
                 "ended",
                 outcome="completed",
-                talk_seconds=round(time.monotonic() - answered_at, 1),
+                talk_seconds=talk,
                 **metrics.ended_fields(),
             )
         if reporter is not None:
@@ -136,6 +181,9 @@ async def run_inbound_call(
                     "could not delete call room",
                     extra={"error_type": type(error).__name__},
                 )
+        # The caller is off the line; now the recording, if they agreed to one.
+        if recorder is not None:
+            await recorder.finish()
 
     ctx.add_shutdown_callback(finish)
     if reporter is not None:
@@ -145,18 +193,28 @@ async def run_inbound_call(
     session = build_session(settings)
     attach_session_observers(session, settings, session_id=ctx.room.name)
     session.on("conversation_item_added", lambda ev: metrics.observe(ev.item))
+    session.on("function_tools_executed", metrics.observe_tools)
 
     @session.on("close")
-    def _on_close(_event) -> None:
+    def _on_close(event) -> None:
+        metrics.on_close(event)
         ctx.shutdown(reason="inbound call ended")
 
     @ctx.room.on("participant_disconnected")
     def _on_left(left: rtc.RemoteParticipant) -> None:
         if left.identity == participant.identity:
+            metrics.note_end("caller_hung_up")
             ctx.shutdown(reason="caller hung up")
 
+    # Only for a phone call Django allows to be recorded, and only after a yes.
+    if reporter is not None:
+        recorder = recorder_for(
+            ctx, settings, profile, session, reporter, started_at=metrics.started_at
+        )
     await session.start(
-        agent=TeluguAssistant(settings, profile),
+        agent=TeluguAssistant(
+            settings, profile, extra_tools=recorder.tools() if recorder else None
+        ),
         room=ctx.room,
         room_options=room_io.RoomOptions(
             participant_identity=participant.identity,

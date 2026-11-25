@@ -169,7 +169,7 @@ def _ours(plan: TelephonyPlan, snapshot: SipSnapshot):
         trunk
         for trunk in snapshot.trunks
         if trunk.name == plan.trunk.name
-        or (plan.trunk.number and plan.trunk.number in trunk.numbers)
+        or any(number in trunk.numbers for number in plan.trunk.all_numbers)
     ]
     trunk_ids = {trunk.id for trunk in trunks}
     rules = [

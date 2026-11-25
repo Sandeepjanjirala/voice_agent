@@ -9,11 +9,11 @@ what a call will use.
 from dataclasses import dataclass
 from typing import Any
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
 from apps.telephony import profiles
-from apps.telephony.models import AgentProfile
 
 from . import knowledge
 from .config import normalize
@@ -23,39 +23,57 @@ from .voices import SPEECH_LANGUAGE
 # Kept in step with voice_agent/profile.py; a test compares the two.
 PROFILE_KEY = profiles.PROFILE_KEY
 WORKER_LIMITS = {
-    "business_name": 80,
-    "agent_name": 40,
-    "purpose": 300,
-    "greeting": 250,
-    "objectives": 400,
-    "limitations": 300,
-    "ending": 200,
-    "business_info": 4000,
+    "business_name": 160,
+    "agent_name": 60,
+    "purpose": 1200,
+    "greeting": 400,
+    "objectives": 9000,
+    "limitations": 1800,
+    "ending": 600,
+    "business_info": 8000,
+    "success": 600,
+    "situations": 4000,
+    "escalation": 600,
+    "rules": 1200,
 }
-# Bytes shared by the prompt fields; the worker's section budget is 1024.
-PROMPT_BYTES = AgentProfile.PROMPT_BYTES
-PROMPT_FIELDS = ("agent_name", "purpose", "objectives", "limitations", "ending")
+
+
+def instruction_budget() -> int:
+    """Bytes the instruction fields may take together (EMPLOYEE_INSTRUCTION_BYTES)."""
+    return settings.EMPLOYEE_INSTRUCTION_BYTES
+
+
+# Kept for existing imports; the live value is instruction_budget().
+PROMPT_BYTES = 6144
+PROMPT_FIELDS = (
+    "agent_name",
+    "purpose",
+    "objectives",
+    "limitations",
+    "ending",
+    "success",
+    "situations",
+    "escalation",
+)
 FIELD_LABELS = {
     "objectives": "The steps and details to collect",
+    "success": "What a successful call achieves",
+    "situations": "The situations and what to do",
+    "escalation": "When to hand over to a person",
+    "business_info": "The information it may give, with the organisation's facts",
     "limitations": "What it must not do, with the strictness setting",
     "purpose": "Why it is talking to the person",
     "ending": "When and how to end the call",
     "greeting": "The opening line",
     "agent_name": "The name",
 }
-_STRICTNESS = {
+STRICTNESS_SENTENCES = {
     1: "Treat the goals as a loose guide and follow the caller's lead.",
     2: "Keep to the goals, but let the conversation flow naturally.",
     3: "",
     4: "Follow the goals in the order given.",
     5: "Follow the goals in order and keep close to their wording; do not improvise.",
 }
-
-
-def _business() -> tuple[str, str]:
-    """Business name and facts. They still live on the Agent profile page."""
-    profile = profiles.active_profile()
-    return (profile.business_name, profile.business_info) if profile else ("", "")
 
 
 def worker_payload(config: dict, language: str = "") -> dict[str, Any]:
@@ -69,26 +87,47 @@ def worker_payload(config: dict, language: str = "") -> dict[str, Any]:
     if config["questions"]:
         labels = ", ".join(question["label"] for question in config["questions"])
         goals = f"{goals} Find out: {labels}."
-    business_name, business_info = _business()
     return {
-        "business_name": business_name,
+        "business_name": "",
         "agent_name": config["agent_name"],
         "purpose": config["purpose"],
         "greeting": config["greeting"],
         "objectives": goals.strip(),
         "limitations": " ".join(
             part
-            for part in (config["limits"], _STRICTNESS[config["strictness"]])
+            for part in (config["limits"], STRICTNESS_SENTENCES[config["strictness"]])
             if part
         ),
         "ending": config["ending"],
-        "business_info": business_info,
+        "success": config["success"],
+        "situations": situations_text(config["situations"]),
+        "escalation": config["escalation"],
+        # Looked up by the employee when asked (get_business_info), not sent
+        # on every turn. Kept apart so today's Knowledge can be added per call.
+        "information": config["information"],
+        "business_info": config["information"],
         "voice": {
             "speaker": config["voice"]["speaker"],
             "pace": config["voice"]["pace"],
             "language": SPEECH_LANGUAGE.get(language, ""),
         },
     }
+
+
+def situations_text(situations: list[dict]) -> str:
+    """ "When they ask about fees: …; When …" as one line for the prompt.
+    Kept in step with apps/core/static/dashboard/budget.js, which mirrors it."""
+    parts = []
+    for item in situations:
+        when = item["when"]
+        if not when.lower().startswith(("when ", "if ")):
+            when = f"When {when}"
+        parts.append(f"{when}: {item['then']}")
+    return "; ".join(parts)
+
+
+def _joined(*texts: str) -> str:
+    return "\n".join(text for text in texts if text)
 
 
 def prompt_size(config: dict) -> int:
@@ -113,11 +152,13 @@ def problems(config: dict) -> list[str]:
         over = len(payload[field]) - WORKER_LIMITS[field]
         if over > 0:
             found.append(f"{label} is {over} characters too long. Shorten it.")
-    size = prompt_size(config)
-    if size > PROMPT_BYTES:
+    size, budget = prompt_size(config), instruction_budget()
+    if size > budget:
         found.append(
-            f"The script is {size} bytes; the voice agent takes {PROMPT_BYTES} "
-            "(Telugu letters count as three). Shorten the steps, limits or ending."
+            f"The instructions take {size:,} of {budget:,} bytes (a Telugu letter "
+            f"takes three, so about {(size - budget) // 3 + 1:,} Telugu letters too "
+            "many). Shorten the longest step, or move facts into Knowledge, which the "
+            "employee looks up only when asked."
         )
     return found
 
@@ -138,11 +179,6 @@ def publish(employee: Employee, user=None) -> EmployeeVersion:
     """Save the draft as a new version and make it the one calls use."""
     config = normalize(employee.draft)
     reasons = problems(config)
-    unknown = unknown_actions(employee, config["actions"])
-    if unknown:
-        reasons.append(
-            "These actions no longer exist: " + ", ".join(unknown) + ". Untick them."
-        )
     if reasons:
         raise PublishError(reasons)
     with transaction.atomic():
@@ -183,7 +219,7 @@ def copy_into_draft(employee: Employee, version: EmployeeVersion) -> None:
 def _business_name(employee: Employee, campus) -> str:
     organisation = employee.organisation
     if organisation is None:
-        return _business()[0]
+        return ""
     name = f"{organisation.name}, {campus.name}" if campus else organisation.name
     return name[: WORKER_LIMITS["business_name"]]
 
@@ -192,12 +228,21 @@ def _with_knowledge(payload: dict, employee: Employee, campus) -> dict:
     """The payload with today's business name and knowledge for this campus.
     Knowledge applies from the next call, without publishing again."""
     payload = dict(payload)
+    # Already part of business_info; kept in the version only so today's
+    # Knowledge can be added to it here. The worker never needs it.
+    information = payload.pop("information", "")
     payload["business_name"] = _business_name(employee, campus)
     if employee.organisation is not None:
         payload["observability"] = employee.organisation.cloud_observability
     if employee.organisation is not None:
+        # Only this organisation's own facts: its Knowledge and what the
+        # employee was given. The Agent profile page is one setting for the
+        # whole installation, so its facts would reach other organisations.
         facts = knowledge.compile_for(employee.organisation, campus)
-        payload["business_info"] = facts or _business()[1]
+        payload["business_info"] = _joined(information, facts)[
+            : WORKER_LIMITS["business_info"]
+        ]
+        payload["rules"] = knowledge.rules_for(employee.organisation, campus)
     return payload
 
 
@@ -217,6 +262,7 @@ def plan_call(
     lead=None,
     rehearsal: bool = False,
     caller_name: str = "",
+    about: str = "",
 ) -> CallPlan:
     """The published version a phone call uses, its job metadata, and the
     snapshot stored with the call record.
@@ -240,6 +286,8 @@ def plan_call(
         context["name"] = name
     if lead is not None:
         context["about"] = lead.subject
+    elif about:
+        context["about"] = about[:160]
     if context:
         payload["context"] = context
     organisation = employee.organisation
@@ -259,71 +307,15 @@ def plan_call(
         "lead": str(lead.pk) if lead is not None else "",
         "rehearsal": rehearsal,
         "questions": config["questions"],
+        # The results the call report chooses from (analysis.py).
+        "outcomes": config["outcomes"],
         "actions": config["actions"],
-        "action_details": _action_details(employee, config["actions"]),
         "profile": payload,
     }
     return CallPlan(version, {PROFILE_KEY: payload}, snapshot)
-
-
-def _action_details(employee: Employee, keys: list[str]) -> list[dict]:
-    """The organisation's approved actions this call may use, as they are now."""
-    custom = [key.split(":", 1)[1] for key in keys if key.startswith("custom:")]
-    if not custom or employee.organisation is None:
-        return []
-    from apps.integrations.models import ApprovedAction
-
-    return [
-        {
-            "key": action.employee_key,
-            "label": action.label,
-            "kind": action.kind,
-            "integration": action.integration.name if action.integration else "",
-            "enabled": action.is_enabled,
-        }
-        for action in ApprovedAction.objects.filter(
-            organisation=employee.organisation, key__in=custom
-        ).select_related("integration")
-    ]
-
-
-def unknown_actions(employee: Employee, keys: list[str]) -> list[str]:
-    """Approved-action keys that this employee's organisation does not have."""
-    custom = {key.split(":", 1)[1] for key in keys if key.startswith("custom:")}
-    if not custom:
-        return []
-    from apps.integrations.models import ApprovedAction
-
-    known = set(
-        ApprovedAction.objects.filter(
-            organisation=employee.organisation, key__in=custom
-        ).values_list("key", flat=True)
-    )
-    return sorted(custom - known)
 
 
 def call_profile(employee: Employee) -> tuple[EmployeeVersion, dict[str, Any]]:
     """The version a phone call must use, and its job metadata."""
     plan = plan_call(employee)
     return plan.version, plan.metadata
-
-
-def trial_metadata(employee: Employee, source: str) -> dict[str, Any]:
-    """Job metadata for trying an employee in the voice studio.
-
-    "draft" uses the working copy, checked the same way publishing is;
-    "published" uses the stored payload of the version calls use. Both use
-    today's knowledge for the employee's campus, if it has exactly one.
-    """
-    campuses = list(employee.campuses.all()[:2]) if employee.pk else []
-    campus = campuses[0] if len(campuses) == 1 else None
-    if source == "published":
-        if employee.live_version is None:
-            raise PublishError([f"{employee.name} has not been published yet."])
-        payload = _with_knowledge(employee.live_version.payload, employee, campus)
-        return {PROFILE_KEY: payload}
-    reasons = problems(employee.draft)
-    if reasons:
-        raise PublishError(reasons)
-    payload = worker_payload(employee.draft, employee.language)
-    return {PROFILE_KEY: _with_knowledge(payload, employee, campus)}

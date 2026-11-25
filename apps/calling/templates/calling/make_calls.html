@@ -1,0 +1,58 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Make calls{% endblock %}
+{% block content %}
+{% include 'dashboard/_steps.html' with step=2 %}
+<section class="page-head">
+  <div>
+    <h1>Make calls</h1>
+    <p class="muted">Type the numbers or upload a list. Your AI employee calls everyone one after another, and each call's result appears under Call results.</p>
+  </div>
+</section>
+
+<div class="grid-2">
+  <div class="stack">
+    {% if form %}
+    <form method="post" enctype="multipart/form-data" class="panel" id="make-calls-form" novalidate>{% csrf_token %}
+      {% if form.non_field_errors %}<p class="field-error" role="alert" id="form-error">{{ form.non_field_errors|join:" " }}</p>{% endif %}
+      <div class="field">
+        <label for="{{ form.speaker.id_for_label }}">Who speaks</label>{{ form.speaker }}{% if form.speaker.errors %}<p class="field-error" role="alert">{{ form.speaker.errors|join:" " }}</p>{% endif %}
+        <p class="help">Not listed? <a href="{% url 'employee-hire' %}">Set up an AI employee</a> and publish it.</p>
+      </div>
+      <div class="field"><label for="{{ form.purpose.id_for_label }}">What the calls are about <span class="optional">optional</span></label>{{ form.purpose }}{% if form.purpose.errors %}<p class="field-error" role="alert">{{ form.purpose.errors|join:" " }}</p>{% endif %}</div>
+      {% if form.campus.field.choices|length > 1 or form.campus.field.required %}
+      <div class="field"><label for="{{ form.campus.id_for_label }}">Campus</label>{{ form.campus }}{% if form.campus.errors %}<p class="field-error" role="alert">{{ form.campus.errors|join:" " }}</p>{% endif %}</div>
+      {% endif %}
+      <div class="field">
+        <label for="{{ form.numbers.id_for_label }}">{{ form.numbers.label }}</label>{{ form.numbers }}{% if form.numbers.errors %}<p class="field-error" role="alert">{{ form.numbers.errors|join:" " }}</p>{% endif %}
+      </div>
+      <div class="field">
+        <label for="{{ form.upload.id_for_label }}">{{ form.upload.label }}</label>{{ form.upload }}{% if form.upload.errors %}<p class="field-error" role="alert">{{ form.upload.errors|join:" " }}</p>{% endif %}
+        <p class="help">Excel (.xlsx) or CSV with a column named <b>Phone</b> (or Mobile, Number) and, if you like, <b>Name</b>. Up to {{ max_rows }} people. Indian mobile numbers only.</p>
+      </div>
+      <button class="primary" type="submit">Check numbers</button>
+      <p class="help">Nothing is called yet: next you see the list and confirm.</p>
+    </form>
+    {% else %}
+    <section class="panel">
+      <div class="empty-state" id="no-speaker"><strong>First set up who speaks</strong>Calls need a published AI employee that is switched on.<br><a class="button" href="{% url 'employee-hire' %}">Set up an AI employee</a></div>
+    </section>
+    {% endif %}
+  </div>
+
+  <section class="panel" id="recent-lists">
+    <div class="panel-head"><h2>Your call lists</h2></div>
+    {% if recent %}
+    <div class="table-scroll"><table class="data">
+      <thead><tr><th>List</th><th>Status</th><th>Progress</th></tr></thead>
+      <tbody>{% for item in recent %}<tr>
+        <td class="wrap"><a href="{% url 'call-list' item.pk %}">{{ item.name }}</a><small>{% if item.employee %}{{ item.employee.name }}{% else %}No AI employee{% endif %}</small></td>
+        <td><span class="tag{% if item.status == 'running' %} draft{% elif item.status == 'done' %} good{% endif %}">{{ item.get_status_display }}</span></td>
+        <td>{{ item.tally.finished }} of {{ item.tally.total }}</td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    {% else %}
+    <div class="empty-state"><strong>No lists yet</strong>Your lists and their progress appear here.</div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

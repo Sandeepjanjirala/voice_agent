@@ -36,28 +36,38 @@ class OrganisationForm(forms.ModelForm):
         fields = (
             "name",
             "transcripts",
+            "recording",
+            "recording_notice",
             "cloud_observability",
+            "monthly_call_minutes",
             "cost_per_minute",
-            "cost_per_message",
             "cost_per_analysis",
         )
         labels = {  # noqa: RUF012
-            "transcripts": "What the AI employee hears on a call",
-            "cloud_observability": "Let LiveKit Cloud keep call recordings, "
-            "transcripts and traces for debugging",
-            "cost_per_minute": "Your cost per talk minute (₹), for estimates",
-            "cost_per_message": "Your cost per WhatsApp message (₹)",
-            "cost_per_analysis": "Your cost per call summary (₹)",
+            "name": "Organisation name",
+            "transcripts": "The conversation after a call",
+            "recording": "Call recordings",
+            "recording_notice": "The question asked before recording",
+            "cloud_observability": "Let LiveKit Cloud keep calls for debugging",
+            "monthly_call_minutes": "Monthly calling budget (talk minutes)",
+            "cost_per_minute": "Cost per talk minute (₹)",
+            "cost_per_analysis": "Cost per call summary (₹)",
         }
         help_texts = {  # noqa: RUF012
-            "transcripts": "Needed for call summaries and outcomes. Numbers in it "
-            "are masked. Recordings are not kept here.",
-            "cloud_observability": "Off: every call asks LiveKit Cloud to keep "
-            "nothing. On: if Agent observability is on for the LiveKit project, "
-            "LiveKit keeps each call's audio, transcript and logs for 30 days in "
-            "the project's data region (United States or EU, not India), with "
-            "personal details redacted. Deleting data here does not delete "
-            "LiveKit's copy.",
+            "transcripts": "Summary, then delete: staff see the summary but not "
+            "the conversation. Keep: staff can also read the conversation, until "
+            "the days set under Data retention. Off: no conversation and no "
+            "summary. Opening a conversation is logged.",
+            "recording": "Both sides of the call, stored encrypted, for the days "
+            "set under Data retention. If the person says no or does not answer "
+            "clearly, nothing is recorded.",
+            "recording_notice": "Asked right after the opening line, in the "
+            "person's language. Keep it a yes-or-no question.",
+            "cloud_observability": "Off is safest: LiveKit keeps nothing. On: "
+            "LiveKit may keep audio, transcripts and logs for 30 days outside "
+            "India, and deleting data here does not delete its copy.",
+            "monthly_call_minutes": "0 means no limit. Make calls stops dialling once "
+            "this month's talk time reaches it.",
         }
 
 
@@ -307,10 +317,17 @@ class MemberEditForm(_MemberFields):
 class RetentionForm(forms.ModelForm):
     class Meta:
         model = RetentionPolicy
-        fields = ("contact_days", "call_days", "transcript_days", "audit_days")
+        fields = (
+            "contact_days",
+            "call_days",
+            "transcript_days",
+            "recording_days",
+            "audit_days",
+        )
         labels = {  # noqa: RUF012
             "contact_days": "Erase inactive contacts after (days)",
             "call_days": "Delete call records after (days)",
             "transcript_days": "Delete kept transcripts after (days)",
+            "recording_days": "Delete call recordings after (days)",
             "audit_days": "Delete access-log entries after (days)",
         }

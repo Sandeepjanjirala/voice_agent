@@ -5,6 +5,7 @@ record in another organisation or campus is a 404 here, whatever ID is typed.
 """
 
 import csv
+import re
 from datetime import timedelta
 
 from django.conf import settings
@@ -13,14 +14,14 @@ from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from apps.calling import analysis
+from apps.calling import analysis, recordings, review
 from apps.calling.models import CallResult, CallTranscript
-from apps.integrations import webhooks
 from apps.telephony import calls as telephony_calls
 from apps.telephony.masking import mask_phone
 from apps.telephony.models import CallRecord
@@ -209,7 +210,6 @@ def lead_new(request):
                 created_by=scope.user,
             )
             audit.record(scope, "lead.created", lead)
-            webhooks.lead_created(lead, "staff")
             messages.success(request, "Lead added.")
             return redirect("lead-detail", pk=lead.pk)
     return render(request, "crm/lead_new.html", {"form": form, "problem": problem})
@@ -244,7 +244,6 @@ def lead_detail(request, pk):
                     )
                 if before[0] != lead.stage:
                     audit.record(scope, "lead.stage", lead, stage=lead.stage)
-                    webhooks.lead_stage_changed(lead, before[0])
                 messages.success(request, "Lead updated.")
                 return redirect("lead-detail", pk=lead.pk)
         elif action == "note":
@@ -298,28 +297,8 @@ def lead_detail(request, pk):
             "rehearsal_employees": rehearsal_employees,
             "test_number": _test_number(),
             "contact_dialing": settings.CONTACT_DIALING_ENABLED,
-            "lead_actions": _lead_actions(scope, lead),
-            "action_runs": lead.action_runs.select_related("actor", "call")[:20],
-            "appointments": lead.appointments.select_related("campus").order_by(
-                "starts_at"
-            ),
         },
     )
-
-
-def _lead_actions(scope, lead):
-    """The approved actions a person may run for this lead, with their forms."""
-    if not scope.can("actions.run") or lead.contact.is_erased:
-        return []
-    from apps.integrations.forms import run_form
-    from apps.integrations.models import ApprovedAction
-
-    return [
-        (action, run_form(action))
-        for action in ApprovedAction.objects.filter(
-            organisation=scope.organisation, is_enabled=True
-        ).select_related("integration")
-    ]
 
 
 def _open_tasks(scope):
@@ -608,6 +587,28 @@ def _filtered_calls(request, scope):
         days = ""
     if campus:
         found = found.filter(campus=campus)
+    # What staff must look at: calls marked for follow-up, or with problems.
+    attention = request.GET.get("attention", "")
+    if attention == "follow_up":
+        found = found.filter(result__follow_up_needed=True)
+    elif attention == "issues":
+        found = found.filter(result__has_issues=True)
+    else:
+        attention = ""
+    # The employees' own result labels, as they appear on calls in scope.
+    labels = sorted(
+        set(
+            _calls(scope)
+            .exclude(result__result_label="")
+            .exclude(result__isnull=True)
+            .values_list("result__result_label", flat=True)
+        )
+    )
+    label = request.GET.get("result", "")
+    if label in labels:
+        found = found.filter(result__result_label=label)
+    else:
+        label = ""
     return found, {
         "status": status,
         "direction": direction,
@@ -615,6 +616,9 @@ def _filtered_calls(request, scope):
         "campus": campus,
         "outcome": outcome,
         "employee": chosen,
+        "attention": attention,
+        "result": label,
+        "labels": labels,
     }
 
 
@@ -736,6 +740,14 @@ def conversation_detail(request, pk):
         for key, value in (result.answers.items() if result else ())
     ]
     profile = call.context_snapshot.get("profile") or {}
+    turns = [
+        {**turn, "at": review.clock(turn.get("t"))}
+        for turn in (transcript.turns if transcript else [])
+    ]
+    if transcript is not None:
+        # Reading what a person said on a call is personal data: logged.
+        audit.record(scope, "call.transcript_viewed", call, turns=len(turns))
+    issues = result.issues if result else []
     return render(
         request,
         "crm/conversation.html",
@@ -745,8 +757,12 @@ def conversation_detail(request, pk):
             "result": result,
             "answers": answers,
             "transcript": transcript,
+            "turns": turns,
+            "transcript_note": _transcript_note(call, transcript, result),
+            "measured_issues": [i for i in issues if i.get("source") == "data"],
+            "ai_issues": [i for i in issues if i.get("source") != "data"],
+            "rec": _recording_view(request, scope, call),
             "actions": call.actions.all(),
-            "action_runs": call.action_runs.select_related("actor"),
             "missed": getattr(call, "missed", None),
             "snapshot": call.context_snapshot,
             "voice": profile.get("voice") or {},
@@ -756,6 +772,148 @@ def conversation_detail(request, pk):
             and call.contact_id is None
             and call.campus_id is not None,
         },
+    )
+
+
+def _recording_view(request, scope, call) -> dict:
+    """The Recording section: the player and its links when the person may
+    listen, otherwise the actual reason there is nothing to play."""
+    from apps.calling.models import CallRecording
+
+    recording = CallRecording.objects.filter(call=call).first()
+    if recording is not None:
+        recordings.settle(recording)
+    view = {"recording": recording, "can_listen": scope.can("calls.recordings")}
+    decision = (call.context_snapshot or {}).get("recording")
+    if recording is not None and recording.status != CallRecording.Status.AVAILABLE:
+        note = recording.reason or recording.get_status_display()
+    elif recording is not None:
+        note = ""
+    elif call.is_active:
+        note = "Nothing to play while the call is in progress."
+    elif decision is None:
+        note = "Not recorded: call recording was not set up when this call was made."
+    elif not decision.get("allowed"):
+        note = f"Not recorded. {decision.get('reason', '')}".strip()
+    elif call.answered_at is None:
+        note = "Not recorded: nobody answered."
+    else:
+        note = (
+            "Not recorded: the person was not asked, or did not answer, the "
+            "recording question."
+        )
+    view["note"] = note
+    if recording is not None and recording.playable:
+        if not view["can_listen"]:
+            view["note"] = "You do not have permission to listen to call recordings."
+        else:
+            base = reverse("conversation-recording", args=[call.pk])
+            view["audio_url"] = (
+                f"{base}?t={recordings.link_token(recording, scope.user)}"
+            )
+            if scope.can("calls.recordings_download"):
+                token = recordings.link_token(recording, scope.user, download=True)
+                view["download_url"] = f"{base}?download=1&t={token}"
+            # Opening a playable recording is an access, logged like a play.
+            audit.record(scope, "recording.accessed", call)
+    return view
+
+
+@scoped("calls.recordings")
+def conversation_recording(request, pk):
+    """The audio of a call, for the person the link was made for, for ten
+    minutes. Streamed by Django (with byte ranges for seeking); the stored
+    file and its storage are never exposed."""
+    from apps.calling.models import CallRecording
+
+    scope = request.scope
+    call = scope.get(_calls(scope), pk=pk)
+    recording = CallRecording.objects.filter(call=call).first()
+    download = request.GET.get("download") == "1"
+    if recording is None or not recording.playable:
+        raise Http404
+    if download and not scope.can("calls.recordings_download"):
+        raise PermissionDenied
+    if not recordings.token_valid(
+        request.GET.get("t", ""), recording, scope.user, download=download
+    ):
+        return HttpResponse("This link has expired. Reload the call page.", status=403)
+    try:
+        data = recordings.read(recording)
+    except recordings.RecordingError as error:
+        return HttpResponse(f"The recording cannot be played: {error}.", status=503)
+    if download:
+        audit.record(scope, "recording.downloaded", call)
+    return _ranged_audio(request, data, call, download)
+
+
+def _ranged_audio(request, data: bytes, call, download: bool) -> HttpResponse:
+    total = len(data)
+    start, end, status_code = 0, total - 1, 200
+    match = re.fullmatch(r"bytes=(\d*)-(\d*)", request.headers.get("Range", "").strip())
+    if match and (match.group(1) or match.group(2)):
+        if match.group(1):
+            start = int(match.group(1))
+            end = min(int(match.group(2)), total - 1) if match.group(2) else total - 1
+        else:
+            start = max(total - int(match.group(2)), 0)
+        if start > end or start >= total:
+            response = HttpResponse(status=416)
+            response["Content-Range"] = f"bytes */{total}"
+            return response
+        status_code = 206
+    response = HttpResponse(
+        data[start : end + 1], status=status_code, content_type="audio/ogg"
+    )
+    if status_code == 206:
+        response["Content-Range"] = f"bytes {start}-{end}/{total}"
+    response["Accept-Ranges"] = "bytes"
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    name = f"call-{timezone.localtime(call.created_at):%Y%m%d-%H%M}.ogg"
+    response["Content-Disposition"] = (
+        f'{"attachment" if download else "inline"}; filename="{name}"'
+    )
+    return response
+
+
+def _transcript_note(call, transcript, result) -> str:
+    """Why the conversation is or is not shown, in the organisation's terms,
+    so nothing disappears without the page saying so."""
+    organisation = call.organisation
+    mode = organisation.transcripts if organisation else "off"
+    if transcript is not None:
+        if mode == "keep":
+            days = retention.policy_for(organisation).transcript_days
+            return (
+                f"Kept for {days} days under your organisation's retention policy."
+                if days
+                else "Kept with the call under your organisation's setting."
+            )
+        return "Kept until the summary is written, then deleted, as your organisation's setting says."
+    if result is not None and result.transcript_deleted_at:
+        return (
+            f"The conversation was deleted on {timezone.localtime(result.transcript_deleted_at):%d %b %Y at %H:%M} "
+            "after the summary was written, as your organisation's setting says "
+            '("Use it for the call summary, then delete it"). An admin can choose to '
+            "keep conversations under Privacy & settings."
+        )
+    if call.is_active:
+        return "The conversation is shown here when the call ends."
+    if call.answered_at is None:
+        return "Nobody answered, so there was no conversation."
+    if mode == "off":
+        return (
+            "Your organisation does not keep what was said on calls, so there is no "
+            "conversation or summary. An admin can change this under Privacy & settings."
+        )
+    if call.employee_version_id is None:
+        return (
+            "This call used the Agent profile, which does not report the conversation."
+        )
+    return (
+        "The voice worker did not report the conversation for this call "
+        "(CALL_EVENTS_URL and CALL_EVENTS_SECRET must be set for the worker)."
     )
 
 
@@ -802,7 +960,6 @@ def _lead_from_caller(request, scope, call):
     )
     CallRecord.objects.filter(pk=call.pk).update(contact=contact, lead=lead)
     audit.record(scope, "lead.created", lead, from_call=str(call.pk))
-    webhooks.lead_created(lead, "call")
     messages.success(
         request,
         "Lead added. Permission to call them back is not recorded yet: "
@@ -915,7 +1072,7 @@ def privacy_settings(request):
             )
             if organisation_form.is_valid():
                 organisation_form.save()
-                messages.success(request, "Organisation saved.")
+                messages.success(request, "Settings saved.")
                 return redirect("settings")
         elif action == "retention":
             retention_form = RetentionForm(request.POST, instance=policy, prefix="keep")
@@ -930,7 +1087,7 @@ def privacy_settings(request):
                 request,
                 f"Retention applied: {counts['contacts']} contacts erased, "
                 f"{counts['calls']} call records, {counts['transcripts']} "
-                f"transcripts and {counts['audit']} "
+                f"transcripts, {counts['recordings']} recordings and {counts['audit']} "
                 "access-log entries deleted.",
             )
             return redirect("settings")

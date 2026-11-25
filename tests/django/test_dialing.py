@@ -1,19 +1,16 @@
-"""Outbound destinations under the dialing policy: the phone calls page,
-calling a lead, and dispatching one campaign entry, in allowlist and live
-modes. LiveKit is the fake gateway from test_calls; no call leaves the test."""
+"""Outbound destinations under the dialing policy: test calls, calling a
+lead, and the approved test numbers, in allowlist and live modes. LiveKit is the fake gateway from test_calls; no call leaves the test."""
 
 # The fixtures imported from test_calls are named as test parameters.
 # ruff: noqa: F811
 
-from datetime import datetime, time, timedelta
+from datetime import datetime, time
 
 import pytest
 from django.core.cache import cache
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.calling import outbound as calling_outbound
-from apps.calling.models import Campaign, QueuedCall
 from apps.crm.models import Contact
 from apps.telephony import calls
 from apps.telephony.models import CallRecord
@@ -103,22 +100,32 @@ def test_malformed_numbers_never_dial(env, gateway, staff_client, mode, to, at_e
     assert gateway.dispatches == []
 
 
-def test_live_mode_dials_a_number_not_on_any_list(
+def test_test_calls_stay_on_the_allowlist_even_in_live_mode(
     env, gateway, staff_client, at_eleven
 ):
-    policy(env, "live", numbers="")
+    policy(env, "live")
     response = start(staff_client, RAVI)
-    assert response.status_code == 201
+    assert response.status_code == 400
+    assert "Test calls go only to numbers" in response.json()["error"]
+    assert gateway.dispatches == []
+    cache.clear()  # the refused attempt still counts towards the 5 s throttle
+    assert start(staff_client, SECOND).status_code == 201
+
+
+def test_live_mode_dials_any_valid_number_only_through_the_policy(
+    env, gateway, at_eleven
+):
+    policy(env, "live", numbers="")
+    calls.start_call(to=RAVI)
     assert dialled(gateway) == [RAVI]
 
 
-def test_live_mode_keeps_to_calling_hours(env, gateway, staff_client, monkeypatch):
+def test_live_mode_keeps_to_calling_hours(env, gateway, monkeypatch):
     policy(env, "live", numbers="")
     late = timezone.make_aware(datetime.combine(timezone.localdate(), time(22, 30)))
     monkeypatch.setattr(timezone, "now", lambda: late)
-    response = start(staff_client, RAVI)
-    assert response.status_code == 400
-    assert "between 09:00 and 21:00" in response.json()["error"]
+    with pytest.raises(calls.CallError, match="between 09:00 and 21:00"):
+        calls.start_call(to=RAVI)
     assert gateway.dispatches == []
 
 
@@ -128,16 +135,14 @@ def test_the_caller_id_is_never_a_destination(env, gateway, staff_client, at_ele
     assert response.status_code == 400 and gateway.dispatches == []
 
 
-def test_the_page_names_the_mode_and_never_shows_a_full_number(
-    env, gateway, staff_client
-):
+def test_test_numbers_are_offered_masked_by_position(env, gateway):
+    from apps.calling import dialer
+
     policy(env)
-    page = body(staff_client.get(reverse("calls")))
-    assert 'id="phone-number"' in page and "Allowlist" in page
+    offered = dialer.test_numbers()
+    assert offered == [(0, "+91********10"), (1, "+91********99")]
     for number in (MOBILE, SECOND):
-        assert number not in page
-    policy(env, "live")
-    assert "Live dialing" in body(staff_client.get(reverse("calls")))
+        assert number not in str(offered)
 
 
 def test_rehearsals_ring_the_first_allowlisted_number(env, gateway):
@@ -300,90 +305,3 @@ def test_staff_of_another_organisation_cannot_call_the_lead(
         reverse("lead-call", args=[lead.pk]), {"employee": str(employee.pk)}
     )
     assert response.status_code == 404 and gateway.dispatches == []
-
-
-# --- one campaign entry ----------------------------------------------------------------
-
-
-def campaign_entry(world, employee, number=ASHA, **fields):
-    from .test_calling import consented
-
-    contact = consented(world, world.north, number)
-    campaign = Campaign.objects.create(
-        organisation=world.org_a,
-        campus=world.north,
-        employee=employee,
-        name="Visit reminder",
-        status=fields.pop("status", Campaign.Status.READY),
-        consent_attested=fields.pop("consent_attested", True),
-        window_start=time(9),
-        window_end=time(20),
-        days=[0, 1, 2, 3, 4, 5, 6],
-        **fields,
-    )
-    return QueuedCall.objects.create(
-        organisation=world.org_a,
-        campus=world.north,
-        contact=contact,
-        campaign=campaign,
-        due_at=timezone.now() - timedelta(minutes=1),
-    )
-
-
-@pytest.mark.parametrize(
-    ("mode", "numbers"), [("allowlist", f"{MOBILE},{ASHA}"), ("live", "")]
-)
-def test_one_campaign_entry_is_dispatched_once(
-    env, gateway, world, settings, at_eleven, mode, numbers
-):
-    settings.CONTACT_DIALING_ENABLED = True
-    policy(env, mode, numbers)
-    entry = campaign_entry(world, employee_for(world))
-    record = calling_outbound.run_campaign_entry(entry.pk, user=world.admin_a)
-    assert dialled(gateway) == [ASHA]
-    assert record.contact == entry.contact
-    entry.refresh_from_db()
-    assert (entry.status, entry.attempts) == (QueuedCall.Status.DONE, 1)
-    CallRecord.objects.update(status=CallRecord.Status.COMPLETED)
-    with pytest.raises(calls.CallError, match="already been dispatched"):
-        calling_outbound.run_campaign_entry(entry.pk, user=world.admin_a)
-    assert len(gateway.dispatches) == 1
-
-
-def test_a_campaign_entry_off_the_allowlist_keeps_its_attempt(
-    env, gateway, world, settings, at_eleven
-):
-    settings.CONTACT_DIALING_ENABLED = True
-    policy(env)
-    entry = campaign_entry(world, employee_for(world))
-    with pytest.raises(calls.CallError, match="not in OUTBOUND_ALLOWLIST_NUMBERS"):
-        calling_outbound.run_campaign_entry(entry.pk)
-    entry.refresh_from_db()
-    assert (entry.status, entry.attempts) == (QueuedCall.Status.QUEUED, 0)
-    assert gateway.dispatches == []
-
-
-@pytest.mark.parametrize(
-    "fields",
-    [{"status": Campaign.Status.DRAFT}, {"consent_attested": False}],
-)
-def test_only_ready_attested_campaigns_dispatch(
-    env, gateway, world, settings, at_eleven, fields
-):
-    settings.CONTACT_DIALING_ENABLED = True
-    policy(env, "live", numbers="")
-    entry = campaign_entry(world, employee_for(world), **fields)
-    with pytest.raises(calls.CallError, match="ready and consent"):
-        calling_outbound.run_campaign_entry(entry.pk)
-    assert gateway.dispatches == []
-
-
-def test_the_campaign_command_needs_confirm(env, gateway, world, settings, at_eleven):
-    from django.core.management import CommandError, call_command
-
-    settings.CONTACT_DIALING_ENABLED = True
-    policy(env, "live", numbers="")
-    entry = campaign_entry(world, employee_for(world))
-    with pytest.raises(CommandError, match="--confirm"):
-        call_command("run_campaign_call", str(entry.pk))
-    assert gateway.dispatches == []

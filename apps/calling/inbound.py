@@ -11,6 +11,7 @@ or logged. A caller on the do-not-call list is still answered: they called us.
 """
 
 import logging
+import os
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -22,7 +23,9 @@ from apps.telephony.masking import mask_phone
 from apps.telephony.models import CallRecord
 from apps.tenancy import hours
 from apps.workforce import publishing
+from dialing import DialingPolicyError, load_policy
 
+from . import recordings
 from .models import CallResult, MissedCall, PhoneNumber
 
 logger = logging.getLogger(__name__)
@@ -116,6 +119,14 @@ def answer(*, room: str, called: str, caller: str) -> dict | None:
         plan.metadata[publishing.PROFILE_KEY]["notice"] = notice
         plan.snapshot["profile"]["notice"] = notice
         plan.snapshot["after_hours"] = True
+    # Whether the worker may ask to record: an approved test call is one from
+    # a number on the outbound allowlist (the owner's own phone).
+    recordings.mark_call(
+        plan.metadata[publishing.PROFILE_KEY],
+        plan.snapshot,
+        organisation,
+        test_number=bool(caller_number) and caller_number in _approved_numbers(),
+    )
     try:
         with transaction.atomic():
             record = CallRecord.objects.create(
@@ -147,6 +158,13 @@ def answer(*, room: str, called: str, caller: str) -> dict | None:
         extra={"call_id": str(record.pk), "employee_version": plan.version.number},
     )
     return plan.metadata
+
+
+def _approved_numbers() -> tuple[str, ...]:
+    try:
+        return load_policy(os.environ).numbers
+    except DialingPolicyError:
+        return ()
 
 
 def after_hours_notice(campus) -> str:
@@ -226,3 +244,15 @@ def _record_unanswered(room: str, called: str, caller: str) -> None:
     except IntegrityError:
         return
     _missed(record, MissedCall.Reason.NOT_ROUTED, " ".join(reasons))
+
+
+def trunk_numbers() -> tuple[str, ...]:
+    """Business lines the inbound trunk must accept: every number routed to an
+    employee on the dashboard, in all organisations. A number that is not
+    routed is not added, so the provider's calls to it are rejected by LiveKit
+    instead of reaching the worker."""
+    return tuple(
+        PhoneNumber.objects.filter(routing_enabled=True, employee__isnull=False)
+        .order_by("number")
+        .values_list("number", flat=True)
+    )

@@ -85,6 +85,20 @@ class Command(BaseCommand):
         call.add_argument("--yes-place-one-call", action="store_true")
         call.add_argument("--no-wait", action="store_true")
 
+    def _routed_numbers(self) -> tuple[str, ...]:
+        """Business lines routed on the dashboard, accepted by the same trunk.
+        Without a readable database the plan uses TELEPHONY_INBOUND_NUMBER only."""
+        from apps.calling.inbound import trunk_numbers
+
+        try:
+            return trunk_numbers()
+        except Exception as error:
+            self.stderr.write(
+                f"Routed numbers could not be read ({type(error).__name__}); "
+                "planning with TELEPHONY_INBOUND_NUMBER only."
+            )
+            return ()
+
     def handle(self, *args, action, **options):
         try:
             if action.startswith("outbound") or action == "call":
@@ -93,7 +107,9 @@ class Command(BaseCommand):
             else:
                 self.telephony = load_telephony_settings()
                 self.plan = build_plan(
-                    self.telephony, agent_name=django_settings.LIVEKIT_AGENT_NAME
+                    self.telephony,
+                    agent_name=django_settings.LIVEKIT_AGENT_NAME,
+                    extra_numbers=self._routed_numbers(),
                 )
         except TelephonyConfigError as error:
             raise CommandError(f"Telephony configuration error: {error}") from None
@@ -173,10 +189,10 @@ class Command(BaseCommand):
             codes = ", ".join(blocker.code for blocker in self.plan.blockers)
             raise CommandError(f"Refusing to apply: the plan is blocked ({codes}).")
         if not dry_run:
-            if confirm_number != self.telephony.inbound_number:
+            if confirm_number not in self.plan.trunk.all_numbers:
                 raise CommandError(
-                    "Refusing to apply: --confirm-number must be the full inbound "
-                    "number."
+                    "Refusing to apply: --confirm-number must be one of the full "
+                    "inbound numbers."
                 )
             if not yes_change_livekit:
                 raise CommandError("Refusing to apply: pass --yes-change-livekit.")

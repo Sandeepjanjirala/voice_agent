@@ -19,13 +19,20 @@ from django.views.decorators.http import require_POST
 from apps.crm import crypto
 from apps.crm.models import FollowUp, Lead
 from apps.telephony import calls
-from apps.telephony.masking import mask_phone
 from apps.telephony.models import CallRecord
 from apps.tenancy import audit
 from apps.tenancy.access import scope_for, scoped
 
 from . import llm, preview, publishing
-from .config import ACTIONS, LIMITS, MAX_QUESTIONS, MAX_STEPS, normalize
+from .config import (
+    ACTIONS,
+    LIMITS,
+    MAX_OUTCOMES,
+    MAX_QUESTIONS,
+    MAX_SITUATIONS,
+    MAX_STEPS,
+    normalize,
+)
 from .drafting import EXAMPLES, draft_employee
 from .forms import BriefForm, EmployeeForm
 from .models import Employee, EmployeeVersion
@@ -34,7 +41,6 @@ from .voices import PACE_CHOICES, VOICES
 logger = logging.getLogger(__name__)
 
 DRAFT_THROTTLE_SECONDS = 10
-CALL_THROTTLE_SECONDS = 5
 PREVIEW_THROTTLE_SECONDS = 2
 ACTIVITY_SHOWN = 8
 HOME_CALLS = 5
@@ -66,8 +72,8 @@ def home(request):
     if scope is None:
         if request.user.is_superuser:
             return redirect("organisation-setup")
-        # Everyone else has one page: the voice studio.
-        return redirect("voice")
+        # Not in any organisation yet: nothing to show but how to get in.
+        return render(request, "workforce/no_organisation.html")
     now = timezone.now()
     calls_seen = scope.limit(CallRecord.objects.all())
     team = _employees(scope)
@@ -98,10 +104,10 @@ def home(request):
             "help": "Set the LiveKit keys in .env.local.",
         },
         {
-            "label": "Outbound test line ready",
+            "label": "Outbound calling ready",
             "done": _outbound_ready(),
-            "help": "The platform's Phone calls page shows what is missing.",
-            "url_name": "calls" if request.user.is_staff else "",
+            "help": "Numbers & channels shows what is missing.",
+            "url_name": "numbers" if scope.can("numbers.view") else "",
         },
         {
             "label": "Call results reported by the voice worker",
@@ -121,10 +127,25 @@ def home(request):
             "url_name": "employees",
         },
     ]
+    from apps.calling import calllists
+    from apps.calling.models import CallList, CallResult
+
+    lists = CallList.objects.filter(organisation=scope.organisation)
+    if scope.campus_ids is not None:
+        lists = scope.limit(lists)
+    active_list = lists.filter(
+        status__in=(CallList.Status.RUNNING, CallList.Status.PAUSED)
+    ).first()
     return render(
         request,
         "workforce/home.html",
         {
+            "active_list": active_list,
+            "active_tally": calllists.counts(active_list) if active_list else None,
+            "can_call": scope.can("calls.place"),
+            "follow_ups": CallResult.objects.filter(
+                follow_up_needed=True, call__in=calls_seen
+            ).count(),
             "stats": {
                 "employees": employees,
                 "published": published,
@@ -253,6 +274,8 @@ def _posted_config(post, current: dict) -> dict:
     inputs, in the order shown on the page."""
     names = post.getlist("step_name")
     guidance = post.getlist("step_guidance")
+    when = post.getlist("situation_when")
+    then = post.getlist("situation_then")
     return normalize(
         {
             **current,
@@ -273,6 +296,13 @@ def _posted_config(post, current: dict) -> dict:
                 "pace": post.get("voice_pace", ""),
             },
             "actions": post.getlist("action"),
+            "success": post.get("success", ""),
+            "situations": [
+                {"when": a, "then": b} for a, b in zip(when, then, strict=False)
+            ],
+            "escalation": post.get("escalation", ""),
+            "outcomes": post.getlist("outcome"),
+            "information": post.get("information", ""),
         }
     )
 
@@ -284,16 +314,6 @@ def employee_detail(request, pk):
     if request.method == "POST" and form.is_valid():
         employee = form.save(commit=False)
         employee.draft = _posted_config(request.POST, employee.draft)
-        # Only the organisation's own approved actions can be ticked.
-        unknown = publishing.unknown_actions(employee, employee.draft["actions"])
-        if unknown:
-            gone = {f"custom:{key}" for key in unknown}
-            employee.draft["actions"] = [
-                key for key in employee.draft["actions"] if key not in gone
-            ]
-            messages.warning(
-                request, "Left out actions that do not exist: " + ", ".join(unknown)
-            )
         employee.save()
         # Only campuses of this organisation can be chosen, whatever was posted.
         employee.campuses.set(
@@ -317,56 +337,43 @@ def employee_detail(request, pk):
             "limits": LIMITS,
             "max_steps": MAX_STEPS,
             "max_questions": MAX_QUESTIONS,
+            "max_situations": MAX_SITUATIONS,
+            "max_outcomes": MAX_OUTCOMES,
             "strictness_levels": range(1, 6),
+            # The live meter adds the same sentence the worker receives.
+            "strictness_sentences": {
+                str(level): sentence
+                for level, sentence in publishing.STRICTNESS_SENTENCES.items()
+            },
             "voices": VOICES,
             "paces": PACE_CHOICES,
             "actions": ACTIONS,
-            "test_line": _test_line(),
+            "can_call": request.scope.can_place_calls,
             "campuses": request.scope.campuses().filter(is_active=True),
             "assigned": set(employee.campuses.values_list("pk", flat=True)),
             # About the saved draft, not about unsaved typing.
             "problems": publishing.problems(employee.draft),
             "prompt_size": publishing.prompt_size(employee.draft),
-            "prompt_budget": publishing.PROMPT_BYTES,
+            "prompt_budget": publishing.instruction_budget(),
             "has_changes": publishing.has_changes(employee),
             "versions": employee.versions.select_related("published_by")[
                 :VERSIONS_SHOWN
             ],
-            "approved_actions": _approved_actions(employee),
-            "missing_actions": publishing.unknown_actions(employee, config["actions"]),
             "preview_ready": bool(settings.SARVAM_API_KEY),
             **_where_it_works(request.scope, employee),
         },
     )
 
 
-def _approved_actions(employee):
-    from apps.integrations.models import ApprovedAction
-
-    if employee.organisation_id is None:
-        return ApprovedAction.objects.none()
-    return ApprovedAction.objects.filter(
-        organisation_id=employee.organisation_id
-    ).select_related("integration")
-
-
 def _where_it_works(scope, employee) -> dict:
-    """Numbers, campaigns and lead sources that use the employee, and what it
-    did lately."""
-    from apps.integrations.models import ActionRun
-
+    """Numbers that use the employee, and what it did lately."""
     calls_made = scope.limit(
         CallRecord.objects.filter(employee_version__employee=employee)
     ).select_related("contact", "employee_version", "result")
     return {
         "numbers": scope.limit(employee.numbers.select_related("campus")),
-        "employee_campaigns": scope.limit(employee.campaigns.select_related("campus")),
-        "sources": scope.limit(employee.lead_sources.select_related("campus")),
         "recent_calls": calls_made[:ACTIVITY_SHOWN],
         "call_count": calls_made.count(),
-        "recent_runs": ActionRun.objects.filter(
-            organisation=scope.organisation, call__in=calls_made
-        ).select_related("actor", "call")[:ACTIVITY_SHOWN],
     }
 
 
@@ -413,59 +420,6 @@ def employee_voice_preview(request, pk):
     response = HttpResponse(audio, content_type="audio/mpeg")
     response["Cache-Control"] = "private, no-store"
     return response
-
-
-def _test_line() -> dict:
-    """Whether a test call can be placed, and to which (masked) number."""
-    try:
-        outbound, plan = calls.outbound_context()
-    except calls.CallError as error:
-        return {"ready": False, "reason": str(error), "number": ""}
-    reason = "" if plan.ready else " ".join(b.message for b in plan.blockers)
-    return {
-        "ready": plan.ready,
-        "reason": reason,
-        "number": mask_phone(outbound.allowed_number),
-    }
-
-
-@scoped("employees.manage")
-@require_POST
-def employee_test_call(request, pk):
-    """Place one real call to the approved test number, using the employee's
-    published version. Nothing else can be dialled from here."""
-    employee = _employee(request, pk)
-    assigned = list(employee.campuses.all()[:2])
-    # A call belongs to a campus only when the employee has just one.
-    campus = assigned[0] if len(assigned) == 1 else None
-    try:
-        plan = publishing.plan_call(employee, campus=campus)
-    except publishing.PublishError as error:
-        messages.error(request, "No call was placed. " + " ".join(error.reasons))
-        return redirect("employee-detail", pk=employee.pk)
-    version = plan.version
-    if not cache.add(
-        f"outbound-call:{request.user.pk}", True, timeout=CALL_THROTTLE_SECONDS
-    ):
-        messages.error(request, "Please wait a few seconds before calling again.")
-        return redirect("employee-detail", pk=employee.pk)
-    try:
-        record = calls.start_call(user=request.user, call_plan=plan, campus=campus)
-    except calls.CallError as error:
-        logger.warning("employee test call not started: %s", error)
-        messages.error(
-            request, " ".join(["No call was placed.", str(error), *error.details])
-        )
-        return redirect("employee-detail", pk=employee.pk)
-    logger.info(
-        "employee test call started",
-        extra={"call_id": str(record.pk), "employee_version": version.number},
-    )
-    messages.success(
-        request,
-        f"Calling the test number with {employee.name}, version {version.number}.",
-    )
-    return redirect("conversation-detail", pk=record.pk)
 
 
 @scoped("employees.manage")

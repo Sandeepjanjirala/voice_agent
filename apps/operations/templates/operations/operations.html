@@ -5,41 +5,27 @@
   <div>
     <p class="eyebrow">SETUP</p>
     <h1>Operations</h1>
-    <p class="muted">Background jobs, queues and anything that failed. Jobs are safe to run again: each one picks up only what is still to do.</p>
+    <p class="muted">Background jobs and anything that failed. Jobs are safe to run again: each one picks up only what is still to do.</p>
   </div>
 </section>
 {% if broker_problem %}<p class="notice" role="alert" id="broker">Job queue: {{ broker_problem }}{% if eager %} Jobs run inside each request instead (development only).{% endif %}</p>{% else %}<p class="notice good-note" id="broker">Job queue (Redis) is reachable.</p>{% endif %}
 
-<div class="tiles six">
+<div class="tiles">
   <div class="tile"><p class="tile-label">Calls waiting for analysis</p><p class="tile-value">{{ analysis.waiting }}</p><p class="tile-note">{{ analysis.retrying }} retrying, {{ analysis.gave_up }} given up</p></div>
-  <div class="tile"><p class="tile-label">Webhook deliveries waiting</p><p class="tile-value">{{ webhooks.waiting }}</p><p class="tile-note">{{ webhooks.failed }} given up, {{ webhooks.delivered }} delivered this week</p></div>
   <div class="tile"><p class="tile-label">Failed jobs this week</p><p class="tile-value" id="failed-jobs">{{ failed_jobs }}</p><p class="tile-note">All organisations' jobs</p></div>
-  {% for label, count in queue.items %}<div class="tile"><p class="tile-label">Call queue: {{ label|lower }}</p><p class="tile-value">{{ count }}</p><p class="tile-note">Campaigns and instant leads</p></div>{% endfor %}
 </div>
 
-<div class="grid-2">
-  <div class="stack">
-    <section class="panel">
-      <div class="panel-head"><h2>Scheduled jobs</h2></div>
-      <div class="table-scroll"><table class="data" id="job-table">
-        <thead><tr><th>Job</th><th>Every</th><th>Last run</th><th>Result</th></tr></thead>
-        <tbody>{% for name, task, seconds in schedule %}<tr><td>{{ name }}<small>{{ task }}</small></td><td>{% if seconds >= 3600 %}{% widthratio seconds 3600 1 %} h{% else %}{% widthratio seconds 60 1 %} min{% endif %}</td>{% for job, run in jobs %}{% if job in task %}<td>{{ run.started_at|date:"j M, H:i"|default:"Never" }}</td><td class="wrap">{% if run %}<span class="tag{% if run.status == 'ok' %} good{% elif run.status == 'failed' %} bad{% endif %}">{{ run.get_status_display }}</span>{% if run.error %}<small>{{ run.error }}</small>{% endif %}{% else %}–{% endif %}</td>{% endif %}{% endfor %}</tr>{% endfor %}</tbody>
-      </table></div>
-    </section>
-    <section class="panel">
-      <div class="panel-head"><h2>Recent job runs</h2></div>
-      {% if runs %}<ul class="timeline">{% for run in runs %}<li><span class="tag{% if run.status == 'ok' %} good{% elif run.status == 'failed' %} bad{% endif %}">{{ run.get_status_display }}</span> {{ run.name }}<small>{{ run.started_at|date:"j M, H:i:s" }}{% if run.seconds is not None %} · {{ run.seconds }} s{% endif %}{% if run.summary %} · {% for key, value in run.summary.items %}{{ key }} {{ value }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}{% if run.error %} · {{ run.error }}{% endif %}</small></li>{% endfor %}</ul>{% else %}<p class="help">No job has run yet.</p>{% endif %}
-    </section>
-  </div>
-  <div class="stack">
-    <section class="panel">
-      <div class="panel-head"><h2>Failed actions this week</h2><a href="{% url 'action-runs' %}?status=failed">All</a></div>
-      {% include 'integrations/_runs.html' with runs=failed_actions %}
-    </section>
-    <section class="panel">
-      <div class="panel-head"><h2>Webhooks that gave up</h2></div>
-      {% if failed_deliveries %}<ul class="timeline">{% for item in failed_deliveries %}<li><a href="{% url 'integration-detail' item.integration_id %}">{{ item.integration.name }}</a>: {{ item.event }}<small>{{ item.last_error }} · {{ item.created_at|date:"j M, H:i" }}</small></li>{% endfor %}</ul>{% else %}<p class="help">None.</p>{% endif %}
-    </section>
-  </div>
+<div class="stack">
+  <section class="panel">
+    <div class="panel-head"><h2>Scheduled jobs</h2></div>
+    <div class="table-scroll"><table class="data" id="job-table">
+      <thead><tr><th>Job</th><th>Every</th><th>Last run</th><th>Result</th></tr></thead>
+      <tbody>{% for name, task, seconds in schedule %}<tr><td>{{ name }}<small>{{ task }}</small></td><td>{% if seconds >= 3600 %}{% widthratio seconds 3600 1 %} h{% else %}{% widthratio seconds 60 1 %} min{% endif %}</td>{% for job, run in jobs %}{% if job in task %}<td>{{ run.started_at|date:"j M, H:i"|default:"Never" }}</td><td class="wrap">{% if run %}<span class="tag{% if run.status == 'ok' %} good{% elif run.status == 'failed' %} bad{% endif %}">{{ run.get_status_display }}</span>{% if run.error %}<small>{{ run.error }}</small>{% endif %}{% else %}–{% endif %}</td>{% endif %}{% endfor %}</tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>Recent job runs</h2></div>
+    {% if runs %}<ul class="timeline">{% for run in runs %}<li><span class="tag{% if run.status == 'ok' %} good{% elif run.status == 'failed' %} bad{% endif %}">{{ run.get_status_display }}</span> {{ run.name }}<small>{{ run.started_at|date:"j M, H:i:s" }}{% if run.seconds is not None %} · {{ run.seconds }} s{% endif %}{% if run.summary %} · {% for key, value in run.summary.items %}{{ key }} {{ value }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}{% if run.error %} · {{ run.error }}{% endif %}</small></li>{% endfor %}</ul>{% else %}<p class="help">No job has run yet.</p>{% endif %}
+  </section>
 </div>
 {% endblock %}

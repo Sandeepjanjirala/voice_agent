@@ -23,10 +23,10 @@ The test-number fixture is synthetic too; it is not the owner's live number.
 | Assigned inbound employee | `test_calling.py`, journey: signed routing, invalid signatures, paused/draft refusal | SIP allowlist enforcement or a live inbound call |
 | Approved-number outbound | Fake gateway verifies only configured test destination, never contact number | Actual authorised number answering |
 | Leads and follow-up | Intake consent/DNC tests, call analysis, journey | Consent evidence for real school contacts |
-| Actions and results | `test_integrations.py`: allowed/refused/failed/simulated outcomes | Provider success under malformed responses, concurrent execution or uncertain timeouts |
-| Calendar, REST, WhatsApp, webhooks | Mock HTTP requests, token refresh, template consent, signatures/retries; local calendar data persists | Approved accounts, delivery, provider permissions and concurrent booking safety |
+| Actions and results | Built-in follow-up and lead-stage actions after analysis | Integrations were removed on 25 Nov 2026 |
+| Calendar, REST, WhatsApp, webhooks | Removed on 25 Nov 2026 at the owner's request | – |
 | Summaries/privacy | Canned LLM, transcript masking/deletion, recording preference tests | Real-model summary accuracy or provider retention terms |
-| Campaign/instant-lead dry runs | Consent, opt-out, hours, quotas and intake tests; no dispatch | Live campaign execution (disabled) |
+| Make calls lists | Typed and Excel/CSV lists, consent tick, do-not-call, hours, one at a time, browser flow on a simulated line | A real list on a real phone line |
 | Celery/Redis | Eager task execution, job locks/reminders, Beat registration; E report records prior real local Redis/worker/Beat run | Production queue health, Redis-loss recovery or external exactly-once effects |
 | Analytics/call records | Scoped conversations, immutable call context, usage aggregation | Actual provider billing reconciliation |
 | Deployment/recovery | Production Django checks; E report records local compose/backup/restore drill | Real domain, host, load, off-device recovery or existing-data migration |
@@ -44,7 +44,24 @@ was made in this review. The voice implementation was preserved, not tuned.
 Secret checks compare staged blobs against local credential values and common
 credential/file patterns; they are not a full-history security certification.
 
-## Actual blockers found in this review
+## Status of the blockers (18 November 2026, branch `platform-improvements`)
+
+The code parts of blockers 1 to 3 are fixed, with regression tests. What
+still needs outside parties or the owner is unchanged and listed under each.
+
+| Blocker | Fixed in code | Regression evidence | Still needed |
+| --- | --- | --- | --- |
+| 1. Inbound fallback | The worker fails closed. A phone call that Django does not assign to a published employee (404, Django unreachable, paused or draft employee) hears one neutral line (`INBOUND_UNROUTED_MESSAGE`). No business conversation starts, LiveKit Cloud is asked to keep nothing (`record=False`), and the room is deleted | `tests/voice/test_inbound_fallback.py` (404, 503, unreachable, custom message) | LiveKit enforcing `allowed_addresses`, Vobiz ranges and SRTP, the negative security test |
+| 2. HTTP redirects and DNS rebinding | `transport.send` resolves the host once and checks every address. It connects only to that address, with TLS checked against the real host name. It never follows a redirect, and only `http` and `https` are allowed | `tests/django/test_transport_safety.py`: a real local redirect is not followed, a rebinding answer is not reconnected to, private, link-local and IPv6-local answers are refused, TLS uses the host name | An egress firewall in production is still good practice (DEPLOYMENT.md) |
+| 3a. Concurrent booking | A database rule allows one active booking per campus slot. The check and insert run under a per-campus row lock | `tests/django/test_booking_safety.py`: a forced race is refused by the database; a real four-thread race runs on PostgreSQL and exactly one wins | – |
+| 3b. Google results and retries | The slot is held locally first and checked in Google free/busy. The event is inserted with an ID derived from the hold, so a retry cannot duplicate it. Success needs that ID back. A timeout keeps the slot "not confirmed" and the retry confirms it (409 means already made) | Same file: busy slot, missing or wrong ID, unparseable answer, timeout then safe retry | Testing against an owner-approved Google calendar |
+| 3c. Webhook revocation | Switching a webhook off cancels its queued deliveries at once, and every delivery re-checks the switch at the moment of sending | Same file: queued delivery not sent after switch-off; page save cancels the queue | – |
+| Run-log identifiers | Event, appointment and message IDs in action results are no longer partly masked as if they were phone numbers (an intermittent test failure exposed this). Inputs and free text are still masked | `test_identifiers_with_long_digit_runs_are_not_masked_but_numbers_are` | – |
+
+Blockers 4 to 6 (live transfer, off-device backup, production cutover) are
+not code changes and stand as written below.
+
+## Actual blockers found in the 17 November review
 
 1. **Inbound authentication is not verified.** Obtain project-specific LiveKit
    confirmation that allowed addresses are enforced; verify rejected unlisted
@@ -94,8 +111,8 @@ Vobiz support or prove that enforcement is enabled for this project.
 
 1. Complete and independently restore the private code/secret/database backups.
 2. Close HTTP safety and booking/result blockers with targeted tests. Keep
-   `INTEGRATIONS_LIVE_ENABLED=false`, `INTEGRATIONS_ALLOW_LOCAL=false` and
-   stored-contact dialing disabled throughout this work.
+   `INTEGRATIONS_ALLOW_LOCAL=false` and stored-contact dialing disabled
+   throughout this work.
 3. Configure one synthetic pilot campus and published employee in the dashboard:
    approved facts, voice, opening hours, escalation owner, permitted actions,
    least-privilege staff and retention choices. Routine campus and workflow

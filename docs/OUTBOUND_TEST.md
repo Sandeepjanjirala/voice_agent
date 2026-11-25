@@ -6,7 +6,7 @@ No call has been placed yet; the code has only been run against a fake LiveKit.
 
 ## How it works
 
-1. `manage.py telephony call` (or the Phone calls page) checks the number against the
+1. `manage.py telephony call` (or Make calls in the dashboard) checks the number against the
    dialing policy (`OUTBOUND_DIALING_MODE`, `OUTBOUND_ALLOWLIST_NUMBERS`; see the
    README) and asks the existing `telugu-agent` worker to place the call.
 2. The worker checks the number against the same policy, dials through the stored

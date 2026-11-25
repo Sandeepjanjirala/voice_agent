@@ -13,7 +13,10 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-load_dotenv(BASE_DIR / ".env.local")
+# The test settings set SKIP_ENV_LOCAL, so a developer's real keys, numbers and
+# addresses never reach the test suite or the browser QA servers.
+if not os.environ.get("SKIP_ENV_LOCAL", "").strip():
+    load_dotenv(BASE_DIR / ".env.local")
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -97,6 +100,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.core.middleware.DevAutoLoginMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -151,6 +155,14 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "home"
 LOGOUT_REDIRECT_URL = "login"
+# Local development only: requests from this computer are signed in as this
+# user, with no login page (apps/core/middleware.py). Needs DJANGO_DEBUG=true.
+DEV_AUTO_LOGIN_USER = os.environ.get("DEV_AUTO_LOGIN_USER", "").strip()
+if DEV_AUTO_LOGIN_USER and not DEBUG:
+    raise ImproperlyConfigured(
+        "DEV_AUTO_LOGIN_USER is for local development only: it needs "
+        "DJANGO_DEBUG=true. Remove it on a deployed server."
+    )
 
 # Server-only credentials; never included in template context.
 LIVEKIT_URL = os.environ.get("LIVEKIT_URL", "").strip()
@@ -176,18 +188,57 @@ EMPLOYEE_DRAFT_MODEL = os.environ.get("EMPLOYEE_DRAFT_MODEL", "").strip()
 # Stored phone numbers (apps/crm/crypto.py). Newest encryption key first.
 CONTACT_ENCRYPTION_KEYS = _env_list("CONTACT_ENCRYPTION_KEYS")
 CONTACT_LOOKUP_KEY = os.environ.get("CONTACT_LOOKUP_KEY", "").strip()
+# Call recordings (apps/calling/recordings.py). Every file is encrypted with
+# these keys (Fernet; the first encrypts, all decrypt) before it is stored,
+# locally or in S3, so the storage alone never holds playable audio.
+RECORDING_ENCRYPTION_KEYS = _env_list("RECORDING_ENCRYPTION_KEYS")
+# "local": a private folder on this server, for development and single-server
+# installations. "s3": a private S3-compatible bucket (in India: ap-south-1).
+RECORDING_STORAGE = os.environ.get("RECORDING_STORAGE", "").strip().lower() or "local"
+if RECORDING_STORAGE not in ("local", "s3"):
+    raise ImproperlyConfigured("RECORDING_STORAGE must be local or s3.")
+RECORDING_LOCAL_DIR = Path(
+    os.environ.get("RECORDING_LOCAL_DIR", "").strip() or BASE_DIR / "private_recordings"
+)
+RECORDING_S3_BUCKET = os.environ.get("RECORDING_S3_BUCKET", "").strip()
+RECORDING_S3_REGION = os.environ.get("RECORDING_S3_REGION", "").strip() or "ap-south-1"
+# Only for S3-compatible services other than AWS; blank uses AWS.
+RECORDING_S3_ENDPOINT = os.environ.get("RECORDING_S3_ENDPOINT", "").strip()
+RECORDING_S3_ACCESS_KEY_ID = os.environ.get("RECORDING_S3_ACCESS_KEY_ID", "").strip()
+RECORDING_S3_SECRET_ACCESS_KEY = os.environ.get(
+    "RECORDING_S3_SECRET_ACCESS_KEY", ""
+).strip()
+# Blank: S3-managed encryption (SSE-S3). A KMS key ID or ARN: SSE-KMS.
+RECORDING_S3_KMS_KEY_ID = os.environ.get("RECORDING_S3_KMS_KEY_ID", "").strip()
 # Decrypting a stored contact's number in order to dial it. Off on purpose:
 # Stored-contact dialing remains separately gated; outbound destinations also use the dialing policy.
 CONTACT_DIALING_ENABLED = _env_bool("CONTACT_DIALING_ENABLED", False)
 
-# --- Integrations and actions (apps/integrations) ------------------------------
-# Off: no action reaches an outside service (calendar, WhatsApp, REST, webhooks).
-# Each run is checked and logged as "simulated" with the request it would send.
-# Turn on only on an installation authorised to act on real customers' behalf.
-INTEGRATIONS_LIVE_ENABLED = _env_bool("INTEGRATIONS_LIVE_ENABLED", False)
-# Development only: allow http:// and private or loopback hosts (a local test
-# receiver). Never on in production.
+# --- Outside requests (apps/integrations/transport.py, safety.py) ---------------
+# Development only: allow http:// and private or loopback hosts. Never on in
+# production.
 INTEGRATIONS_ALLOW_LOCAL = DEBUG and _env_bool("INTEGRATIONS_ALLOW_LOCAL", False)
+# Bytes an AI employee's instructions may take together (purpose, steps, limits,
+# ending), counted as UTF-8: a Telugu letter takes three. They are sent to the
+# LLM on every turn, so the size is bounded; 6144 holds about 2000 Telugu
+# letters. The worker's AGENT_PROFILE_BUDGET_BYTES must be at least this + 2048.
+try:
+    EMPLOYEE_INSTRUCTION_BYTES = int(
+        os.environ.get("EMPLOYEE_INSTRUCTION_BYTES", "") or 6144
+    )
+except ValueError as error:
+    raise ImproperlyConfigured(
+        "EMPLOYEE_INSTRUCTION_BYTES must be a number."
+    ) from error
+if not 800 <= EMPLOYEE_INSTRUCTION_BYTES <= 16384:
+    raise ImproperlyConfigured("EMPLOYEE_INSTRUCTION_BYTES must be 800 to 16384.")
+# Phone calls carry only a signed reference to their snapshot in LiveKit job
+# metadata; the worker fetches the profile from /api/telephony/call-profile/.
+# On by default when the worker can reach Django (CALL_EVENTS_URL is set).
+CALL_PROFILE_BY_REFERENCE = _env_bool(
+    "CALL_PROFILE_BY_REFERENCE",
+    bool(os.environ.get("CALL_EVENTS_URL") or os.environ.get("CALL_PROFILE_URL")),
+)
 # Voice previews in the employee editor call Sarvam's text-to-speech API.
 SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "").strip()
 
@@ -198,7 +249,10 @@ SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "").strip()
 REDIS_URL = os.environ.get("REDIS_URL", "").strip()
 CELERY_BROKER_URL = REDIS_URL or "redis://127.0.0.1:6379/0"
 CELERY_RESULT_BACKEND = None
-CELERY_TASK_ALWAYS_EAGER = _env_bool("CELERY_TASK_ALWAYS_EAGER", False)
+# Without REDIS_URL there is no queue this project's worker reads, so jobs
+# (call summaries, call lists) run inside Django instead. Otherwise they would go
+# to whatever Redis listens on the default port, and never run.
+CELERY_TASK_ALWAYS_EAGER = _env_bool("CELERY_TASK_ALWAYS_EAGER", not REDIS_URL)
 CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_ACKS_LATE = True
@@ -208,14 +262,10 @@ CELERY_TASK_SOFT_TIME_LIMIT = 240
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_BEAT_SCHEDULE = {
     "analyse-calls": {"task": "operations.analyse_calls", "schedule": 120.0},
-    "deliver-webhooks": {"task": "operations.deliver_webhooks", "schedule": 60.0},
+    "advance-call-lists": {"task": "operations.advance_call_lists", "schedule": 15.0},
     "follow-up-reminders": {
         "task": "operations.follow_up_reminders",
         "schedule": 900.0,
-    },
-    "campaign-eligibility": {
-        "task": "operations.campaign_eligibility",
-        "schedule": 3600.0,
     },
     "usage-report": {"task": "operations.usage_report", "schedule": 3600.0},
     "retention": {"task": "operations.retention", "schedule": 86400.0},

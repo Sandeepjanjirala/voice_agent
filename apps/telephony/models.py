@@ -32,6 +32,15 @@ class CallRecord(models.Model):
         INFERRED = "inferred", "Inferred"
         TIMEOUT = "timeout", "Timed out"
 
+    class EndReason(models.TextChoices):
+        """Why a conversation ended, as the voice worker saw it."""
+
+        CALLER = "caller_hung_up", "The person hung up"
+        AGENT = "agent_ended", "The AI employee ended the call"
+        TIME_LIMIT = "time_limit", "The call reached its time limit"
+        ERROR = "error", "A technical error ended the call"
+        SYSTEM = "system", "Ended by the system"
+
     ACTIVE = (Status.INITIATING, Status.RINGING, Status.ANSWERED)
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -47,6 +56,7 @@ class CallRecord(models.Model):
         max_length=8, choices=Source.choices, default=Source.DJANGO
     )
     failure_reason = models.CharField(max_length=200, blank=True)
+    end_reason = models.CharField(max_length=16, choices=EndReason.choices, blank=True)
     sip_status_code = models.PositiveSmallIntegerField(null=True, blank=True)
     sip_status = models.CharField(max_length=64, blank=True)
     placed_by = models.ForeignKey(
@@ -167,7 +177,8 @@ class AgentProfile(models.Model):
     """What the agent is for. One profile is active; it is sent to the voice
     worker with every call and browser conversation."""
 
-    # The worker gives the prompt section 1024 bytes; leave room for its labels.
+    # Sent to the LLM on every turn, so bounded together by
+    # EMPLOYEE_INSTRUCTION_BYTES (the same budget as AI employees).
     PROMPT_FIELDS = (
         "agent_name",
         "call_purpose",
@@ -175,18 +186,17 @@ class AgentProfile(models.Model):
         "limitations",
         "ending",
     )
-    PROMPT_BYTES = 800
 
     name = models.CharField(max_length=60, unique=True)
     is_active = models.BooleanField(default=False)
     business_name = models.CharField(max_length=80, blank=True)
-    agent_name = models.CharField(max_length=40, blank=True)
-    call_purpose = models.CharField(max_length=300, blank=True)
-    greeting = models.CharField(max_length=250, blank=True)
-    objectives = models.TextField(max_length=400, blank=True)
-    limitations = models.TextField(max_length=300, blank=True)
-    ending = models.CharField(max_length=200, blank=True)
-    business_info = models.TextField(max_length=4000, blank=True)
+    agent_name = models.CharField(max_length=60, blank=True)
+    call_purpose = models.TextField(max_length=1200, blank=True)
+    greeting = models.TextField(max_length=400, blank=True)
+    objectives = models.TextField(max_length=4000, blank=True)
+    limitations = models.TextField(max_length=1500, blank=True)
+    ending = models.TextField(max_length=600, blank=True)
+    business_info = models.TextField(max_length=8000, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -202,15 +212,21 @@ class AgentProfile(models.Model):
         return self.name
 
     def clean(self) -> None:
+        from django.conf import settings
         from django.core.exceptions import ValidationError
 
-        size = sum(len(getattr(self, f).encode("utf-8")) for f in self.PROMPT_FIELDS)
-        if size > self.PROMPT_BYTES:
+        size = self.prompt_size()
+        budget = settings.EMPLOYEE_INSTRUCTION_BYTES
+        if size > budget:
             raise ValidationError(
                 "Purpose, goals, limits and ending are too long together "
-                f"({size} of {self.PROMPT_BYTES} bytes; Telugu letters count as three). "
-                "Shorten them, or move facts into Business information."
+                f"({size:,} of {budget:,} bytes; a Telugu letter takes three). "
+                "Shorten the longest one, or move facts into Business information, "
+                "which the agent looks up only when asked."
             )
+
+    def prompt_size(self) -> int:
+        return sum(len(getattr(self, f).encode("utf-8")) for f in self.PROMPT_FIELDS)
 
     def payload(self) -> dict[str, str]:
         """What the voice worker receives (voice_agent/profile.py)."""

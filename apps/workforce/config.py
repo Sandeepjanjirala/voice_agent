@@ -12,21 +12,32 @@ from typing import Any
 from .voices import DEFAULT_PACE, PACE_CHOICES, VOICE_NAMES
 
 SCHEMA = 2
-CUSTOM_ACTION = re.compile(r"custom:[a-z0-9_-]{1,40}")
-MAX_STEPS = 6
-MAX_QUESTIONS = 8
+MAX_STEPS = 12
+MAX_QUESTIONS = 12
 MAX_OPEN_QUESTIONS = 8
+# "When this happens, do that" rules, and the results a call can end with.
+MAX_SITUATIONS = 10
+MAX_OUTCOMES = 8
+# Characters per field. The real limit is the byte budget of the instructions
+# together (EMPLOYEE_INSTRUCTION_BYTES), checked when publishing and shown live
+# in the editor; these only stop a single field from being unreasonable.
 LIMITS = {
-    "agent_name": 40,
-    "role": 80,
-    "greeting": 250,
-    "purpose": 300,
-    "limits": 300,
-    "ending": 200,
-    "step_name": 40,
-    "step_guidance": 160,
-    "question": 80,
-    "open_question": 160,
+    "agent_name": 60,
+    "role": 120,
+    "greeting": 400,
+    "purpose": 1200,
+    "limits": 1500,
+    "ending": 600,
+    "step_name": 80,
+    "step_guidance": 600,
+    "question": 120,
+    "open_question": 200,
+    "success": 600,
+    "escalation": 600,
+    "situation_when": 200,
+    "situation_then": 400,
+    "outcome": 60,
+    "information": 4000,
 }
 DEFAULT_STRICTNESS = 3
 PACES = tuple(float(value) for value, _ in PACE_CHOICES)
@@ -66,6 +77,15 @@ def _items(value: Any) -> list:
     return value if isinstance(value, list) else []
 
 
+def _lines(value: Any, limit: int) -> str:
+    """Plain text that keeps its line breaks (one fact per line), never
+    longer than `limit`."""
+    if not isinstance(value, str):
+        return ""
+    lines = (" ".join(line.split()) for line in value.splitlines())
+    return "\n".join(line for line in lines if line)[:limit].strip()
+
+
 def normalize(raw: Any) -> dict[str, Any]:
     """A valid configuration built from untrusted input. Unknown keys are dropped."""
     raw = raw if isinstance(raw, dict) else {}
@@ -89,6 +109,23 @@ def normalize(raw: Any) -> dict[str, Any]:
             questions.append({"key": _key(label, taken), "label": label})
     questions = questions[:MAX_QUESTIONS]
 
+    situations = []
+    for item in _items(raw.get("situations")):
+        if not isinstance(item, dict):
+            continue
+        when = _text(item.get("when"), LIMITS["situation_when"])
+        then = _text(item.get("then"), LIMITS["situation_then"])
+        if when and then:
+            situations.append({"when": when, "then": then})
+    situations = situations[:MAX_SITUATIONS]
+
+    outcomes = []
+    for item in _items(raw.get("outcomes")):
+        label = _text(item, LIMITS["outcome"])
+        if label and label.lower() not in (o.lower() for o in outcomes):
+            outcomes.append(label)
+    outcomes = outcomes[:MAX_OUTCOMES]
+
     open_questions = [
         text
         for item in _items(raw.get("open_questions"))
@@ -110,9 +147,9 @@ def normalize(raw: Any) -> dict[str, Any]:
     for action in _items(raw.get("actions")):
         if not isinstance(action, str) or action in actions:
             continue
-        # Built-in actions, or an organisation's approved action by its key
-        # (checked against the organisation when the employee is saved).
-        if action in ACTIONS or CUSTOM_ACTION.fullmatch(action):
+        # Built-in actions only; anything else (such as an old "custom:" key)
+        # is dropped.
+        if action in ACTIONS:
             actions.append(action)
 
     return {
@@ -132,4 +169,13 @@ def normalize(raw: Any) -> dict[str, Any]:
             "pace": pace if pace in PACES else DEFAULT_PACE,
         },
         "actions": actions,
+        # The rest of the job, all optional. What a good call achieves, how to
+        # handle particular situations and when to hand over reach the call's
+        # prompt; the possible results only the analysis after the call; the
+        # information it may give is looked up by the employee when asked.
+        "success": _text(raw.get("success"), LIMITS["success"]),
+        "situations": situations,
+        "escalation": _text(raw.get("escalation"), LIMITS["escalation"]),
+        "outcomes": outcomes,
+        "information": _lines(raw.get("information"), LIMITS["information"]),
     }

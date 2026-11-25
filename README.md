@@ -14,6 +14,7 @@ secure trunk authentication. Nothing is deployed. See [docs/ROADMAP.md](docs/ROA
 | [docs/PROGRESS.md](docs/PROGRESS.md) | Dashboard build: what each milestone delivered and how it was checked |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production setup (not deployed): services, HTTPS, secrets, monitoring, what LiveKit Cloud keeps |
 | [docs/DISASTER_RECOVERY.md](docs/DISASTER_RECOVERY.md) | Backups, restore drill and recovery runbooks |
+| [docs/RECORDINGS.md](docs/RECORDINGS.md) | Call recordings: how they work, consent, storage in India, costs, and the steps for a first recorded test call |
 | [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) | Feature-by-feature comparison with the reference product, and what is still missing |
 | [docs/CONTACT_KEYS.md](docs/CONTACT_KEYS.md) | Backing up, recovering and rotating the keys that protect stored phone numbers |
 | [docs/INBOUND.md](docs/INBOUND.md) | Inbound routing, call lifecycle, and the transfer design |
@@ -22,7 +23,7 @@ secure trunk authentication. Nothing is deployed. See [docs/ROADMAP.md](docs/ROA
 | [docs/PHASE2_IMPLEMENTATION.md](docs/PHASE2_IMPLEMENTATION.md) | Inbound telephony integration: what was built, verified, and what is not yet proven |
 | [docs/PHASE2_READINESS.md](docs/PHASE2_READINESS.md) | Provider comparison, costs, regulation and the Phase 2 plan |
 | [docs/CALL_TERMINATION_DESIGN.md](docs/CALL_TERMINATION_DESIGN.md) | Goodbye and hang-up behaviour, off unless `AGENT_CAN_END_CALL=true` |
-| [docs/PHASE1_5_VERIFICATION.md](docs/PHASE1_5_VERIFICATION.md) | Run the Django voice studio and review browser verification |
+| [docs/PHASE1_5_VERIFICATION.md](docs/PHASE1_5_VERIFICATION.md) | History: the browser voice studio (since removed) and its verification |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Full incoming/outgoing calling roadmap, Phases 1?5 |
 | [docs/AUDIT.md](docs/AUDIT.md) | What the implementation brief got right and wrong against current SDKs |
 | [docs/PHASE1_VERIFICATION.md](docs/PHASE1_VERIFICATION.md) | What was tested, what was not, and the microphone tests you need to run |
@@ -35,7 +36,7 @@ Two processes that are started and deployed separately:
 | Process | Code | Does |
 | :--- | :--- | :--- |
 | Voice worker | `voice_agent/` | LiveKit Agents: Sarvam STT, LLM, Sarvam TTS, turn-taking |
-| Django backend | `config/`, `apps/` | Django + DRF: authenticated voice studio, secure room tokens and health API; business dashboard later |
+| Django backend | `config/`, `apps/` | Django + DRF: the dashboard (AI employees, Make calls, call results, settings), the worker's signed APIs and the health API |
 
 The worker never imports Django and Django never imports the voice stack. A test
 enforces this.
@@ -119,13 +120,18 @@ lk agent debugger stop
 uv run voice_agent/agent.py start            # production mode
 ```
 
+To talk to one of your AI employees without a phone call, point
+`CONSOLE_PROFILE_FILE` in `.env.local` at a JSON file holding its profile
+(`{"agent_profile": {...}}`, as Django sends it). Console and debugger sessions
+then play that employee. A dispatched call never reads the file.
+
 After a conversation, summarise the measured latency:
 
 ```powershell
 uv run python scripts/latency_report.py
 ```
 
-## Run your Django voice studio
+## Run the dashboard
 
 Use the existing virtual environment directly; global `uv` is not needed to run it.
 In PowerShell from this repository:
@@ -137,38 +143,78 @@ In PowerShell from this repository:
 ```
 
 Skip `createsuperuser` if you already have a Django account. In another window,
-start the existing worker if it is not already connected:
+start the worker, which places and answers the calls:
 
 ```powershell
 $env:PYTHONUTF8 = "1"
 .\.venv\Scripts\python.exe -m voice_agent.agent dev
 ```
 
-Open <http://127.0.0.1:8000/>, sign in, choose **Start Conversation**, and allow the
-microphone. Use headphones. **End Conversation** stops capture and disconnects.
-The page shows user and agent transcripts and the assistant's current state.
-Microphone access requires localhost or HTTPS. No React, build step or CDN is needed.
+Open <http://127.0.0.1:8000/> and sign in; it opens Home.
+
+To skip the login page on your own machine, put your username in `.env.local`:
+`DEV_AUTO_LOGIN_USER=YOUR_USERNAME`. Browsers on this computer then open the
+dashboard already signed in. It works only with `DJANGO_DEBUG=true` and only
+for requests from this computer. Django refuses to start with it when
+`DJANGO_DEBUG=false`. Signing out signs you straight back in; to try another
+account, clear the setting and restart Django.
 
 Both processes use the existing `.env.local`. Django needs `LIVEKIT_URL`,
 `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and the same `AGENT_NAME` as the worker.
-API secrets stay on the server. Each start creates an isolated room with a
-five-minute microphone-only join token and dispatches `telugu-agent`.
+API secrets stay on the server.
 
 The health API remains at <http://127.0.0.1:8000/api/health/>.
-Django's existing SQLite fallback stores login/session data locally. PostgreSQL and
-business records remain Phase 4. See [the verification and testing guide](docs/PHASE1_5_VERIFICATION.md)
-for exact browser coverage and pending human checks.
+
+## Everyday use: calls in four steps
+
+After signing in, the sidebar shows the four steps first:
+
+1. **AI employees:** who speaks. Hire one from a short description, edit it,
+   then publish. To hear it, press **Make calls** on its page and call your
+   own number.
+2. **Make calls:** type numbers (one per line, with a name if you like) or
+   upload an Excel/CSV list with a Phone (or Mobile) column and an optional
+   Name column.
+   - Click **Check numbers**. Rows that are not Indian mobile numbers are
+     listed with the reason, and repeated numbers are kept once.
+   - Tick that everyone agreed to be called, then **Start calling**.
+3. **Calls:** the list page shows each person's status live. The AI calls one
+   person at a time, between 9 AM and 9 PM, skipping the do-not-call list.
+   Pause, resume or cancel at any time. Keep the page open, or run Celery so
+   calls continue in the background.
+4. **Call results:** every call, with its recording (if switched on),
+   conversation, summary and next step.
+
+Everything else is under **More** in the sidebar: Leads & contacts,
+Campuses & staff, Performance, Incoming calls, Numbers & channels, Knowledge,
+Usage & costs and Operations.
+
+Who can be called follows `OUTBOUND_DIALING_MODE`:
+- `live`: any valid Indian mobile, after the confirmation above.
+- `allowlist`: only `OUTBOUND_ALLOWLIST_NUMBERS`; other rows show
+  "Could not call" with the reason.
 
 ## Dashboard and AI employees (staff only)
 
 Signing in as a staff user opens <http://127.0.0.1:8000/home/>: your AI employees,
 this week's calls and a setup checklist. **Hire an employee** takes a job described
-in plain language and drafts an editable employee: name, opening line, steps,
-details to collect, limits and ending. Edit it, press **Try the draft** to talk to
-it in the Voice studio, then **Publish**. Each publish is a numbered version; older
-versions can be copied back into the draft. **Call the test number** on a published
-employee places one real call to the approved test number with that version. Sections marked *Planned* in the sidebar open a page that
-says what works today and what is still to come.
+in plain language and drafts an editable employee for that job, whatever it is:
+fee questions, feedback, reminders, checking details, reception, support. The
+draft has:
+
+- a name and opening line
+- why it is calling and what a successful call achieves
+- steps and details to collect
+- situations and what to do in each
+- limits, when to hand over to a person, and how to end
+- the possible results of a call (your own labels)
+- information it may give
+
+Nothing about any one kind of call is built in: the employee does what its form
+says. Edit it, then **Publish**. Each publish is a numbered version; older
+versions can be copied back into the draft. **Make calls** on a published
+employee opens Make calls with that employee chosen, to call your own number
+and hear it.
 
 Drafting uses the same `LLM_*` settings as the voice worker, so it needs no extra
 key. If the LLM cannot be reached, the draft starts from a plain template and says so.
@@ -209,38 +255,75 @@ One dialing policy, read by Django and the voice worker alike:
 | :--- | :--- |
 | `OUTBOUND_DIALING_MODE=allowlist` (default) | Only numbers in `OUTBOUND_ALLOWLIST_NUMBERS` (comma-separated, +91…). Anything else is refused with a message, before LiveKit is touched |
 | `OUTBOUND_DIALING_MODE=live` | Any valid number, between 09:00 and 21:00 and, for a campus, in its opening hours. Not to be used until real outbound calling is approved |
-| `CONTACT_DIALING_ENABLED=true` | A lead's **Call** button and `manage.py run_campaign_call <entry> --confirm` may dial the contact's own number, if they agreed to be called; the policy above still applies |
+| `CONTACT_DIALING_ENABLED=true` | A lead's **Call** button may dial a stored contact who agreed to be called; the policy above still applies. Off (the default): nobody is dialled from a lead. Make calls does not use this switch: it has its own consent tick |
 
-Numbers are typed on the Phone calls page or come from the lead; none is fixed
-in code. Restart Django and the worker after changing these.
+Make calls applies its own checks to every number on a list: the do-not-call
+list, 09:00 to 21:00 and the campus's opening hours, one call at a time, the
+monthly minutes budget (under **Settings**), and the dialing policy above.
 
-### Calling channels, campaigns and results
+Every call goes out from the outbound caller ID set in `.env.local`. Restart
+Django and the worker after changing these settings.
+
+### Numbers, knowledge and results
 
 - **Numbers & channels**: business lines, each with a campus and the published
   employee that answers it. Inbound calls stay off until the SIP trunk can be
   authenticated; see [docs/INBOUND.md](docs/INBOUND.md).
-- **Campaigns** and **Instant leads** run as dry runs: they show who would be
-  called and when, and dial nobody. Instant leads arrive at
-  `POST /api/intake/<source id>/` with the source's `X-Lead-Secret`.
 - **Knowledge**: facts and rules per campus, given to each call.
-- After a call, the transcript is analysed automatically by a background job.
-  The job writes the summary and carries out the employee's permitted actions.
-  By default the transcript is then deleted. **Analyse again** reruns it by
-  hand.
+- After a call, the conversation is analysed against that employee's own job
+  by a background job, which then carries out the employee's permitted
+  actions (a follow-up task, a lead's stage). Each call page (**Call results**)
+  shows:
+  - why the call happened and a summary
+  - the result (one of the employee's own results) and whether it was resolved
+  - what was collected, and what the AI told the person
+  - what is still open, the next step, and whether staff must follow up
+  - whether the AI followed its instructions
+  - problems: those measured from the call (cut-offs, long waits, repeats,
+    unclear speech, failed tools), and those read from the conversation,
+    which are shown only with a quote that is really in it
+  - the conversation itself as a chat with times, marked as what speech
+    recognition heard, and how the call ended
 
-### Integrations, actions and operations (Milestone E)
+  What is kept follows the organisation's setting under Settings:
+  - Off: nothing.
+  - Summary, then delete (the default): the conversation goes once the summary
+    is written, and the page says when.
+  - Keep: the conversation is also kept for the retention days.
 
-- **Integrations & actions** connects the campus calendar, Google Calendar,
-  WhatsApp Business, your own REST API and signed webhooks. Admins approve
-  each action; staff run them from a lead, and employees use the ones ticked
-  for them after calls.
-  - Outside services are only simulated until `INTEGRATIONS_LIVE_ENABLED=true`.
+  Opening a conversation is written to the access log. Conversations can be
+  filtered to calls that need follow-up or have issues. **Analyse again**
+  reruns the analysis by hand.
+
+### Call recordings
+
+Off until an admin chooses it under Settings: never (the default),
+approved test calls only, or any call. Even then a call is recorded only after
+the person says yes to the question added to the opening line; on no or no
+clear answer nothing is captured.
+
+- **What is recorded:** both sides of the real call audio, with the person on
+  the left channel and the AI on the right.
+- **Storage:** encrypted with `RECORDING_ENCRYPTION_KEYS`, in a private folder
+  or a private S3 bucket in India.
+- **Playback:** on the call page, with play, seek, the transcript linked to the
+  audio, and download for admins. Every access is logged.
+- **Retention:** recordings are deleted on their own schedule, separate from
+  transcripts.
+
+Setup and the steps for a first test call are in
+[docs/RECORDINGS.md](docs/RECORDINGS.md); `manage.py recordings key|status|check`
+helps.
+
+### Campuses and operations
+
 - **Campuses**: opening hours, holidays, the closed message and who takes
   escalations. **Incoming calls** lists missed callers.
 - **Operations**, **Usage & costs** and the notification bell show jobs,
   failures and monthly usage.
 
-Background jobs need Redis and Celery. Start them in two more windows:
+For call lists to keep going with the page closed, and for jobs on a schedule,
+run Redis and Celery in two more windows:
 
 ```powershell
 # REDIS_URL=redis://127.0.0.1:6379/0 in .env.local, with Redis running
@@ -248,8 +331,8 @@ Background jobs need Redis and Celery. Start them in two more windows:
 .\.venv\Scripts\python.exe -m celery -A config beat --loglevel INFO
 ```
 
-Without Redis, set `CELERY_TASK_ALWAYS_EAGER=true` on your own machine and jobs
-run inside the request that queues them.
+Without `REDIS_URL`, jobs run inside Django (the request that queues them, or
+the open Make calls page), so call results and call lists work with no Redis.
 
 ## Inbound telephony
 
@@ -269,14 +352,11 @@ only when the plan has no blockers; `teardown` removes them. Settings are under
 "Inbound telephony" in [.env.example](.env.example). Follow
 [docs/VOBIZ_SETUP.md](docs/VOBIZ_SETUP.md) for the first real call.
 
-## Phone calls page (outbound, staff only)
+## Call records and the worker
 
-Staff users get a **Phone calls** link next to Voice studio. Type the number to
-call; it is checked against the dialing policy (above). One call at a time, after
-you press **Call** and confirm. It shows the call live (initiating, ringing, answered, then completed,
-rejected, no answer or failed), lets you end it, and lists recent calls. Every call,
-including `manage.py telephony call`, is stored as a record with a masked number,
-timestamps, talk time, SIP status and latency.
+Every call, including `manage.py telephony call`, is stored as a record with a
+masked number, timestamps, talk time, SIP status and latency, and appears under
+**Call results**.
 
 Make your account staff once (or use a superuser):
 
@@ -284,23 +364,15 @@ Make your account staff once (or use a superuser):
 .\.venv\Scripts\python.exe manage.py shell -c "from django.contrib.auth import get_user_model as U; U().objects.filter(username='YOUR_USERNAME').update(is_staff=True)"
 ```
 
-Run it, in three PowerShell windows from this folder:
-
-```powershell
-# 1. Django
-.\.venv\Scripts\python.exe manage.py migrate
-.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
-
-# 2. Voice worker (restart it after changing .env.local)
-$env:PYTHONUTF8 = "1"
-.\.venv\Scripts\python.exe -m voice_agent.agent dev
-```
-
-3. Open <http://127.0.0.1:8000/calls/> and sign in.
-
 `CALL_EVENTS_URL` and `CALL_EVENTS_SECRET` in `.env.local` let the worker report each
 call's outcome, SIP status and latency to Django (signed; no numbers or transcripts).
-Without them the page still works and infers outcomes from LiveKit, with less detail.
+Without them calls still work and outcomes are inferred from LiveKit, with less detail.
+
+With `CALL_EVENTS_URL` set, a call no longer carries the employee's instructions
+in its LiveKit metadata. It carries a signed reference that expires after five
+minutes, and the worker fetches the call's fixed instructions from
+`/api/telephony/call-profile/` with the same secret. If the worker cannot fetch
+them, it does not dial. `CALL_PROFILE_BY_REFERENCE=false` turns this off.
 
 ### PostgreSQL
 
@@ -334,8 +406,17 @@ Edit `.env.local` and restart the worker. Every setting is described in
 | `AGENT_GREETING` | Telugu greeting | First thing the agent says |
 
 The prompt is in `voice_agent/prompts/__init__.py` and the Telugu style sheet in
-`voice_agent/grammar/te_style.md`. Together they must stay under 2.3 kB, and the
-per-call agent profile section under 1 kB; tests check both.
+`voice_agent/grammar/te_style.md`. Together they must stay under 2.3 kB; a test
+checks it.
+
+An AI employee's own instructions (name, purpose, steps, details to collect,
+limits and ending) may take up to `EMPLOYEE_INSTRUCTION_BYTES` (default 6144
+bytes, about 2,000 Telugu letters, since a Telugu letter takes three bytes and an
+English letter one). The editor shows the size as you type, using the same
+count as the server. A longer draft can be saved and shortened later, but it
+cannot be published. The worker's
+`AGENT_PROFILE_BUDGET_BYTES` (default 8192) must be at least that plus 2048, for
+the caller's context and notices. Facts belong in **Knowledge**.
 
 ## Tests and linting
 
@@ -373,7 +454,7 @@ uv sync --reinstall-package ruff
 
 Ask IT to exclude the project's `.venv` folder if this keeps happening.
 
-### Tests for the phone calls page
+### Browser tests
 
 ```powershell
 # Python: unit, API and cross-process tests (no network, no calls)
@@ -389,11 +470,9 @@ Remove-Item Env:TEST_DATABASE_URL
 node tests/browser/dashboard.cjs                               # window 2
 node tests/browser/crm.cjs                                     # window 2, same server
 node tests/browser/calling.cjs                                 # after restarting the server
+node tests/browser/make_calls.cjs                              # window 2, same server
+node tests/browser/screens.cjs                                 # window 2, same server
 node tests/browser/platform.cjs                                # Milestone E, after restarting again
-
-# Browser: real Chromium and Django, simulated LiveKit, fake numbers
-.\.venv\Scripts\python.exe -m tests.browser.calls_server   # window 1; Ctrl+C when done
-node tests/browser/calls.cjs                                 # window 2
 ```
 
 The browser QA server sets fake numbers and credentials before Django starts, so it
@@ -425,13 +504,13 @@ voice_agent/          LiveKit worker (separate process)
   observability.py    logging, per-turn latency, spoken error fallback
   prompts/  grammar/  system prompt and Telugu style sheet
 config/               Django project (settings, urls, asgi)
-apps/core/            health API, voice views, templates and static assets
-apps/telephony/       telephony: trunk planning, outbound calls, call records, calls page
+apps/core/            health API, navigation, shared templates and static assets
+apps/telephony/       telephony: trunk planning, outbound calls, call records, worker APIs
 apps/workforce/       AI employees: hire wizard, LLM drafting, draft editor, dashboard home
 apps/tenancy/         organisations, campuses, roles and scope, access log
 apps/crm/             encrypted contacts, leads, follow-ups, import, reports, retention
-apps/calling/         numbers, inbound routing, campaigns, instant leads, call results
-apps/integrations/    integrations, approved actions, runs, appointments, webhooks
+apps/calling/         Make calls lists, numbers, inbound routing, knowledge, call results, recordings
+apps/integrations/    outside-request safety (transport, safety); old integration tables, kept for their data
 apps/operations/      background jobs, notifications, usage, operations, readiness
 deploy/               production compose, web image, Caddy (HTTPS), backups
 scenarios/            proposed scenarios that are not yet run in CI

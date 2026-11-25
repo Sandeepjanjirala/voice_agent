@@ -168,7 +168,12 @@ class Appointment(models.Model):
 
     class Status(models.TextChoices):
         BOOKED = "booked", "Booked"
+        # Sent to an outside calendar, but its answer did not arrive (timeout).
+        # The slot stays held; running the booking again is safe (same event ID).
+        UNCONFIRMED = "unconfirmed", "Not confirmed yet"
         CANCELLED = "cancelled", "Cancelled"
+
+    HOLDING = (Status.BOOKED, Status.UNCONFIRMED)
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     organisation = models.ForeignKey(
@@ -188,13 +193,28 @@ class Appointment(models.Model):
     starts_at = models.DateTimeField(db_index=True)
     ends_at = models.DateTimeField()
     status = models.CharField(
-        max_length=10, choices=Status.choices, default=Status.BOOKED
+        max_length=12, choices=Status.choices, default=Status.BOOKED
     )
     external_id = models.CharField(max_length=200, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ("starts_at",)
+        constraints = (
+            # One booking per campus slot, whatever races in: the database
+            # refuses the second one even if two requests check at once.
+            models.UniqueConstraint(
+                fields=["campus", "starts_at"],
+                condition=models.Q(status__in=("booked", "unconfirmed")),
+                name="one_booking_per_campus_slot",
+            ),
+        )
+
+    @property
+    def google_event_id(self) -> str:
+        """The event ID used in Google Calendar: the same on every retry, so a
+        repeated request cannot make a second event (base32hex: 0-9, a-v)."""
+        return f"sca{self.pk.hex}"
 
 
 class WebhookDelivery(models.Model):
@@ -205,6 +225,7 @@ class WebhookDelivery(models.Model):
         DELIVERED = "delivered", "Delivered"
         FAILED = "failed", "Gave up"
         SIMULATED = "simulated", "Simulated (not sent)"
+        CANCELLED = "cancelled", "Cancelled: webhook switched off"
 
     integration = models.ForeignKey(
         Integration, on_delete=models.CASCADE, related_name="deliveries"

@@ -1,24 +1,21 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import include, path
+from django.views.generic import RedirectView
 
+from apps.calling import list_views as calling_lists
 from apps.calling import views as calling_views
-from apps.core import dashboard_views, voice_views
+from apps.core import dashboard_views
 from apps.core.navigation import MODULES
 from apps.crm import views as crm_views
-from apps.integrations import views as integration_views
 from apps.operations import views as operations_views
-from apps.telephony import views as telephony_views
 from apps.tenancy import views as tenancy_views
 from apps.workforce import views as workforce_views
 
 urlpatterns = [
-    path("", voice_views.workspace, name="voice"),
+    path("", RedirectView.as_view(pattern_name="home"), name="root"),
     path("accounts/login/", auth_views.LoginView.as_view(), name="login"),
     path("accounts/logout/", auth_views.LogoutView.as_view(), name="logout"),
-    path("api/voice/token/", voice_views.token, name="voice-token"),
-    path("calls/", telephony_views.calls_page, name="calls"),
-    path("agent/", telephony_views.agent_page, name="agent"),
     path("api/telephony/", include("apps.telephony.urls")),
     path("admin/", admin.site.urls),
     path("api/", include("apps.core.urls")),
@@ -32,11 +29,6 @@ urlpatterns = [
         "employees/<uuid:pk>/redraft/",
         workforce_views.employee_redraft,
         name="employee-redraft",
-    ),
-    path(
-        "employees/<uuid:pk>/test-call/",
-        workforce_views.employee_test_call,
-        name="employee-test-call",
     ),
     path(
         "employees/<uuid:pk>/publish/",
@@ -103,6 +95,18 @@ urlpatterns = [
         crm_views.conversation_detail,
         name="conversation-detail",
     ),
+    path("make-calls/", calling_lists.make_calls, name="make-calls"),
+    path("make-calls/<uuid:pk>/", calling_lists.call_list, name="call-list"),
+    path(
+        "make-calls/<uuid:pk>/step/",
+        calling_lists.call_list_step,
+        name="call-list-step",
+    ),
+    path(
+        "conversations/<uuid:pk>/recording/",
+        crm_views.conversation_recording,
+        name="conversation-recording",
+    ),
     path("performance/", crm_views.performance, name="performance"),
     path("settings/", crm_views.privacy_settings, name="settings"),
     path("settings/access-log/", tenancy_views.audit_log, name="audit-log"),
@@ -111,39 +115,11 @@ urlpatterns = [
         crm_views.opt_out_remove,
         name="optout-remove",
     ),
-    path("campaigns/", calling_views.campaigns, name="campaigns"),
-    path("campaigns/new/", calling_views.campaign_new, name="campaign-new"),
-    path("campaigns/<uuid:pk>/", calling_views.campaign_detail, name="campaign-detail"),
-    path("instant/", calling_views.instant, name="instant"),
-    path("instant/new/", calling_views.source_new, name="source-new"),
-    path("instant/<uuid:pk>/", calling_views.source_detail, name="source-detail"),
-    path("api/intake/<uuid:pk>/", calling_views.lead_intake, name="lead-intake"),
     path("inbound/", calling_views.incoming, name="inbound"),
     path("numbers/", calling_views.numbers, name="numbers"),
     path("numbers/<uuid:pk>/", calling_views.number_edit, name="number-edit"),
     path("knowledge/", calling_views.knowledge_list, name="knowledge"),
     path("knowledge/<int:pk>/", calling_views.knowledge_edit, name="knowledge-edit"),
-    path("integrations/", integration_views.overview, name="integrations"),
-    path(
-        "integrations/new/", integration_views.integration_new, name="integration-new"
-    ),
-    path(
-        "integrations/<uuid:pk>/",
-        integration_views.integration_detail,
-        name="integration-detail",
-    ),
-    path("integrations/actions/new/", integration_views.action_new, name="action-new"),
-    path(
-        "integrations/actions/<uuid:pk>/",
-        integration_views.action_detail,
-        name="action-detail",
-    ),
-    path("integrations/runs/", integration_views.runs, name="action-runs"),
-    path(
-        "leads/<uuid:pk>/actions/<uuid:action_pk>/",
-        integration_views.run_on_lead,
-        name="lead-action",
-    ),
     path("notifications/", operations_views.notifications, name="notifications"),
     path("operations/", operations_views.operations, name="operations"),
     path("usage/", operations_views.usage, name="usage"),

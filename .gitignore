@@ -72,3 +72,6 @@ transcripts/
 # Database backups and the production settings file stay off Git.
 backups/
 deploy/.env.production
+
+# Call recordings stored on this server (RECORDING_STORAGE=local): encrypted, never committed.
+private_recordings/

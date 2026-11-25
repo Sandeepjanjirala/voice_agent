@@ -36,7 +36,7 @@ def _trunk_differences(plan: TelephonyPlan, trunk: TrunkView) -> list[str]:
     spec = plan.trunk
     checks = {
         "name": (spec.name, trunk.name),
-        "numbers": ((spec.number,), trunk.numbers),
+        "numbers": (tuple(sorted(spec.all_numbers)), tuple(sorted(trunk.numbers))),
         "auth username": (spec.auth_username, trunk.auth_username),
         "allowed addresses": (
             tuple(sorted(spec.allowed_addresses)),
@@ -78,7 +78,7 @@ def reconcile(plan: TelephonyPlan, snapshot: SipSnapshot) -> Reconciliation:
         trunk
         for trunk in snapshot.trunks
         if trunk.name == plan.trunk.name
-        or (plan.trunk.number and plan.trunk.number in trunk.numbers)
+        or any(number in trunk.numbers for number in plan.trunk.all_numbers)
     ]
     if len(ours) > 1:
         ids = ", ".join(trunk.id for trunk in ours)

@@ -24,31 +24,14 @@ def analyse_call(call_id: str) -> None:
         cache.delete(f"analyse-call:{call_id}")
 
 
-@shared_task(name="operations.deliver_webhook", ignore_result=True)
-def deliver_webhook(delivery_id: int) -> None:
-    from apps.integrations import webhooks
-
-    webhooks.deliver(delivery_id)
-
-
 @shared_task(name="operations.analyse_calls", ignore_result=True)
 def analyse_calls() -> None:
     jobs.analyse_calls()
 
 
-@shared_task(name="operations.deliver_webhooks", ignore_result=True)
-def deliver_webhooks() -> None:
-    jobs.deliver_webhooks()
-
-
 @shared_task(name="operations.follow_up_reminders", ignore_result=True)
 def follow_up_reminders() -> None:
     jobs.follow_up_reminders()
-
-
-@shared_task(name="operations.campaign_eligibility", ignore_result=True)
-def campaign_eligibility() -> None:
-    jobs.campaign_eligibility()
 
 
 @shared_task(name="operations.usage_report", ignore_result=True)
@@ -59,3 +42,11 @@ def usage_report() -> None:
 @shared_task(name="operations.retention", ignore_result=True)
 def retention() -> None:
     jobs.retention()
+
+
+@shared_task(name="operations.advance_call_lists", ignore_result=True)
+def advance_call_lists() -> None:
+    """Call lists keep calling, one after another, without a page open."""
+    from apps.calling import calllists
+
+    calllists.advance_running()

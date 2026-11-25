@@ -18,9 +18,7 @@ from .models import JobRun, Notification
 
 JOB_NAMES = (
     "analyse_calls",
-    "deliver_webhooks",
     "follow_up_reminders",
-    "campaign_eligibility",
     "usage_report",
     "retention",
 )
@@ -64,8 +62,7 @@ def _broker() -> str:
 
 @scoped("operations.view")
 def operations(request):
-    from apps.calling.models import CallResult, QueuedCall
-    from apps.integrations.models import ActionRun, WebhookDelivery
+    from apps.calling.models import CallResult
 
     scope = request.scope
     organisation = scope.organisation
@@ -73,12 +70,6 @@ def operations(request):
     latest = {}
     for name in JOB_NAMES:
         latest[name] = JobRun.objects.filter(name=name).first()
-    queue = dict(
-        QueuedCall.objects.filter(organisation=organisation)
-        .values_list("status")
-        .annotate(n=Count("id"))
-    )
-    deliveries = WebhookDelivery.objects.filter(integration__organisation=organisation)
     results = CallResult.objects.filter(call__organisation=organisation)
     return render(
         request,
@@ -89,23 +80,6 @@ def operations(request):
             "failed_jobs": JobRun.objects.filter(
                 status=JobRun.Status.FAILED, started_at__gte=week
             ).count(),
-            "queue": {
-                label: queue.get(value, 0) for value, label in QueuedCall.Status.choices
-            },
-            "webhooks": {
-                "waiting": deliveries.filter(
-                    status=WebhookDelivery.Status.PENDING
-                ).count(),
-                "failed": deliveries.filter(
-                    status=WebhookDelivery.Status.FAILED
-                ).count(),
-                "delivered": deliveries.filter(
-                    status=WebhookDelivery.Status.DELIVERED, created_at__gte=week
-                ).count(),
-            },
-            "failed_deliveries": deliveries.filter(
-                status=WebhookDelivery.Status.FAILED
-            ).select_related("integration")[:10],
             "analysis": {
                 "waiting": results.filter(status=CallResult.Status.PENDING).count(),
                 "retrying": results.filter(
@@ -115,11 +89,6 @@ def operations(request):
                     status=CallResult.Status.FAILED, next_attempt_at__isnull=True
                 ).count(),
             },
-            "failed_actions": ActionRun.objects.filter(
-                organisation=organisation,
-                status=ActionRun.Status.FAILED,
-                created_at__gte=week,
-            ).select_related("lead")[:10],
             "broker_problem": _broker(),
             "eager": settings.CELERY_TASK_ALWAYS_EAGER,
             "schedule": [
@@ -141,7 +110,6 @@ def _month(value: str) -> date:
 @scoped("usage.view")
 def usage(request):
     from apps.calling.models import CallResult
-    from apps.integrations.models import ActionRun
     from apps.telephony.models import CallRecord
     from apps.tenancy.models import AuditEvent
 
@@ -161,15 +129,6 @@ def usage(request):
     analyses = CallResult.objects.filter(
         call__in=calls, status=CallResult.Status.DONE
     ).count()
-    runs = ActionRun.objects.filter(
-        organisation=organisation, created_at__date__gte=start, created_at__date__lt=end
-    )
-    if not scope.all_campuses:
-        runs = runs.filter(lead__campus__in=scope.campus_ids)
-    run_counts = dict(runs.values_list("status").annotate(n=Count("id")))
-    messages_sent = runs.filter(
-        kind="whatsapp_template", status=ActionRun.Status.SUCCEEDED
-    ).count()
     previews = AuditEvent.objects.filter(
         organisation=organisation,
         action="voice.preview",
@@ -178,7 +137,6 @@ def usage(request):
     ).count()
     cost = (
         minutes * organisation.cost_per_minute
-        + messages_sent * organisation.cost_per_message
         + analyses * organisation.cost_per_analysis
     ).quantize(Decimal("0.01"))
 
@@ -221,13 +179,8 @@ def usage(request):
                 "answered": totals["answered"],
                 "minutes": round(float(minutes), 1),
                 "analyses": analyses,
-                "messages": messages_sent,
                 "previews": previews,
                 "cost": cost,
-            },
-            "runs": {
-                label: run_counts.get(value, 0)
-                for value, label in ActionRun.Status.choices
             },
             "by_employee": grouped(
                 "employee_version__employee", "employee_version__employee__name"
@@ -237,7 +190,6 @@ def usage(request):
             "has_rates": any(
                 (
                     organisation.cost_per_minute,
-                    organisation.cost_per_message,
                     organisation.cost_per_analysis,
                 )
             ),

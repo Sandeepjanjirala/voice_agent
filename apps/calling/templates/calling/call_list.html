@@ -1,0 +1,63 @@
+{% extends 'dashboard/base.html' %}{% load static %}
+{% block title %}{{ call_list.name }}{% endblock %}
+{% block content %}
+{% include 'dashboard/_steps.html' with step=3 %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow"><a href="{% url 'make-calls' %}">MAKE CALLS</a></p>
+    <h1>{{ call_list.name }}</h1>
+    <p class="muted">{% if call_list.employee %}{{ call_list.employee.name }}{% else %}No AI employee{% endif %} speaks{% if call_list.purpose %} · about: {{ call_list.purpose }}{% endif %}{% if call_list.campus %} · {{ call_list.campus.name }}{% endif %}.</p>
+  </div>
+  <span class="tag{% if call_list.status == 'running' %} draft{% elif call_list.status == 'done' %} good{% elif call_list.status == 'cancelled' %} bad{% endif %}" id="list-status">{{ call_list.get_status_display }}</span>
+</section>
+
+<div id="call-list" data-step-url="{{ step_url }}" data-status="{{ call_list.status }}">
+  {% if call_list.status == 'ready' %}
+  <form method="post" class="panel start-panel" id="start-form">{% csrf_token %}
+    <input type="hidden" name="action" value="start">
+    <h2>{{ tally.waiting }} {{ tally.waiting|pluralize:"person,people" }} will be called, one after another</h2>
+    <p class="help">Calls are made between 9 AM and 9 PM, one at a time. Each call is real and billed by your telephony provider. Results appear under Call results.</p>
+    {% if tally.skipped %}<p class="help">{{ tally.skipped }} will not be called: on the do-not-call list.</p>{% endif %}
+    <label class="check-label consent"><input type="checkbox" name="consent" value="yes" required id="consent"> <span>Everyone on this list agreed to be called by {{ call_list.organisation.name }} about this.</span></label>
+    <div class="form-actions"><button class="primary" type="submit" id="start-calling">Start calling</button></div>
+  </form>
+  {% else %}
+  <section class="panel" id="progress-panel">
+    <div class="progress-head">
+      <b><span data-finished>{{ tally.finished }}</span> of <span data-total>{{ tally.total }}</span> done</b>
+      <span class="muted small" data-counts>{{ tally.answered }} answered · {{ tally.no_answer }} no answer · {{ tally.failed }} could not call · {{ tally.skipped }} not called</span>
+    </div>
+    <progress max="{{ tally.total }}" value="{{ tally.finished }}" data-bar></progress>
+    <p class="help" data-waiting>{% if call_list.status == 'running' %}{{ call_list.waiting|default:"Calling… keep this page open while the calls are made." }}{% elif call_list.status == 'paused' %}{{ call_list.waiting|default:"Paused." }}{% elif call_list.status == 'done' %}All done. Open each result below, or see Call results.{% else %}Cancelled. Nobody else will be called from this list.{% endif %}</p>
+    {% if call_list.status == 'running' or call_list.status == 'paused' %}
+    <div class="form-actions">
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="{% if call_list.status == 'running' %}pause{% else %}resume{% endif %}"><button type="submit" class="{% if call_list.status == 'paused' %}primary{% endif %}" id="pause-resume">{% if call_list.status == 'running' %}Pause{% else %}Resume{% endif %}</button></form>
+      <form method="post" data-ask="Stop this list? Nobody else on it will be called.">{% csrf_token %}<input type="hidden" name="action" value="cancel"><button type="submit" class="danger" id="cancel-list">Cancel the rest</button></form>
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {% if call_list.rejected_rows %}
+  <details class="panel" id="rejected">
+    <summary><b>{{ call_list.rejected_rows|length }} row{{ call_list.rejected_rows|length|pluralize }} could not be used</b></summary>
+    <ul class="plain-list">{% for row in call_list.rejected_rows %}<li>Row {{ row.row }}{% if row.text %} ({{ row.text }}){% endif %}: {{ row.reason }}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+
+  <section class="panel">
+    <div class="panel-head"><h2>People</h2>{% if call_list.status == 'ready' %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="cancel"><button class="small" type="submit">Discard this list</button></form>{% endif %}</div>
+    <div class="table-scroll"><table class="data" id="entries">
+      <thead><tr><th>#</th><th>Name</th><th>Number</th><th>Status</th><th>Result</th></tr></thead>
+      <tbody>{% for entry in entries %}<tr data-entry="{{ entry.pk }}">
+        <td>{{ entry.position }}</td>
+        <td>{{ entry.name|default:"–" }}</td>
+        <td>{{ entry.phone_masked }}</td>
+        <td><span class="tag{% if entry.status == 'answered' %} good{% elif entry.status == 'calling' %} draft{% elif entry.status == 'failed' or entry.status == 'no_answer' %} bad{% endif %}" data-status>{{ entry.get_status_display }}</span><small data-reason>{{ entry.reason }}</small></td>
+        <td data-result>{% if entry.call_id %}<a href="{% url 'conversation-detail' entry.call_id %}">Open</a>{% else %}–{% endif %}</td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}{% if call_list.status == 'running' %}<script src="{% static 'calling/call_list.js' %}" defer></script>{% endif %}{% endblock %}

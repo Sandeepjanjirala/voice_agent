@@ -8,20 +8,22 @@ replaced when a report arrives. Nothing here ever dials a number other than
 OUTBOUND_TEST_ALLOWED_NUMBER, and nothing retries.
 """
 
+import hmac
 import math
+import time
 from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
 from asgiref.sync import async_to_sync
 from django.conf import settings as django_settings
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.tenancy.access import organisation_of
 from dialing import DialingPolicyError
 
-from . import profiles
 from .conf import TelephonyConfigError
 from .livekit_gateway import TelephonyGatewayError
 from .masking import mask_phone, mask_phones_in
@@ -143,6 +145,62 @@ def reporting_configured() -> bool:
     return len(getattr(django_settings, "CALL_EVENTS_SECRET", "")) >= 32
 
 
+# --- a call's profile by reference ---------------------------------------------------
+# LiveKit keeps job metadata, so a planned call carries only a short-lived,
+# signed reference to its snapshot; the worker fetches the profile itself
+# (POST /api/telephony/call-profile/, voice_agent/call_profile.py).
+PROFILE_REF_KEY = "agent_profile_ref"
+PROFILE_REF_SECONDS = 300
+
+
+def profile_by_reference() -> bool:
+    return reporting_configured() and bool(
+        getattr(django_settings, "CALL_PROFILE_BY_REFERENCE", False)
+    )
+
+
+def _profile_token(call_id: str, expires: str) -> str:
+    message = f"call-profile:{call_id}:{expires}".encode()
+    secret = django_settings.CALL_EVENTS_SECRET.encode()
+    return hmac.new(secret, message, "sha256").hexdigest()
+
+
+def profile_reference(record) -> dict[str, str]:
+    expires = str(int(time.time()) + PROFILE_REF_SECONDS)
+    return {
+        "call": str(record.pk),
+        "expires": expires,
+        "token": _profile_token(str(record.pk), expires),
+    }
+
+
+def record_for_reference(data) -> "CallRecord | None":
+    """The call a reference names, if it is genuine, unexpired and the call is
+    still going. Anything else is None."""
+    if not isinstance(data, dict):
+        return None
+    call_id, expires, token = (
+        str(data.get(k) or "") for k in ("call", "expires", "token")
+    )
+    if not (call_id and expires.isdigit() and token):
+        return None
+    if not hmac.compare_digest(_profile_token(call_id, expires), token):
+        return None
+    if int(expires) < time.time():
+        return None
+    try:
+        record = CallRecord.objects.filter(pk=call_id).first()
+    except (ValueError, ValidationError):
+        return None
+    if (
+        record is None
+        or not record.is_active
+        or not record.context_snapshot.get("profile")
+    ):
+        return None
+    return record
+
+
 # --- changing a record safely ---------------------------------------------------
 
 
@@ -192,20 +250,27 @@ def _check_live_hours(campus) -> None:
 def start_call(
     *,
     user=None,
+    organisation=None,
     to=None,
     contact=None,
     gateway: OutboundGateway | None = None,
     call_plan=None,
     campus=None,
     lead=None,
+    caller_number: str = "",
+    trunk_id: str = "",
+    allowlisted_only: bool = False,
 ) -> CallRecord:
     """Record and place one call to the allow-listed number.
 
+    `allowlisted_only` (test calls): the destination must be on the allowlist
+    whatever OUTBOUND_DIALING_MODE says. `caller_number` and `trunk_id` choose a
+    verified caller ID and its trunk (business calls; apps/calling/dialer.py).
+
     With a `call_plan` (workforce.publishing.plan_call) the call uses that
     published AI employee version, and the record keeps the plan's snapshot of
-    exactly what the worker was given; otherwise it uses the active agent
-    profile, as before. `lead` links the call to the lead it rehearses. Either
-    way only the allow-listed number is dialled.
+    exactly what the worker was given; otherwise the worker uses its own
+    default instructions. `lead` links the call to the lead it rehearses.
     """
     outbound, plan = outbound_context()
     if not plan.ready:
@@ -220,7 +285,16 @@ def start_call(
         to = outbound.policy.validate(to)
     except DialingPolicyError as error:
         raise CallError(str(error)) from None
-    if to == outbound.caller_id:
+    if (
+        allowlisted_only
+        and to not in outbound.policy.numbers
+        and to != outbound.allowed_number
+    ):
+        raise CallError(
+            "Test calls go only to numbers in OUTBOUND_ALLOWLIST_NUMBERS. Use a "
+            "business call for anyone else."
+        )
+    if to in (outbound.caller_id, caller_number):
         raise CallError("The destination must differ from the caller ID.")
     if outbound.policy.mode == "live":
         _check_live_hours(campus)
@@ -239,9 +313,11 @@ def start_call(
                 room=new_room_name(),
                 masked_number=mask_phone(to),
                 placed_by=user if getattr(user, "is_authenticated", False) else None,
+                # The employee's organisation; else the one the person is
+                # working in (a platform superuser chooses it in the sidebar).
                 organisation=call_plan.version.employee.organisation
                 if call_plan
-                else organisation_of(user),
+                else organisation or organisation_of(user),
                 campus=campus,
                 lead=lead,
                 contact=contact,
@@ -253,6 +329,11 @@ def start_call(
             "A call is already in progress. Wait for it to end."
         ) from None
 
+    _mark_recording(
+        record,
+        call_plan.snapshot.get("profile") if call_plan else None,
+        test_number=to in outbound.policy.numbers or to == outbound.allowed_number,
+    )
     try:
         async_to_sync(place_test_call)(
             plan,
@@ -261,9 +342,15 @@ def start_call(
             to=to,
             agent_name=django_settings.LIVEKIT_AGENT_NAME,
             room=record.room,
-            extra_metadata=call_plan.metadata
+            extra_metadata=(
+                {PROFILE_REF_KEY: profile_reference(record)}
+                if profile_by_reference()
+                else call_plan.metadata
+            )
             if call_plan
-            else profiles.profile_metadata(),
+            else None,
+            caller_number=caller_number,
+            trunk_id=trunk_id,
         )
     except CallInProgressError as error:
         _close_failed(record, str(error))
@@ -275,6 +362,31 @@ def start_call(
         _close_failed(record, str(error))
         raise CallUpstreamError(str(error)) from None
     return record
+
+
+def _mark_recording(
+    record: CallRecord, payload: dict | None, *, test_number: bool
+) -> None:
+    """Whether the worker may ask to record this call (apps/calling/recordings).
+    `payload` is the profile the worker gets; the decision is kept with the call."""
+    from apps.calling import recordings
+
+    snapshot = dict(record.context_snapshot or {})
+    if payload is None:
+        # No profile: nothing on the call could ask the person, so no recording.
+        snapshot["recording"] = {
+            "allowed": False,
+            "reason": "This call had no AI employee or agent profile to ask the "
+            "person for consent.",
+        }
+    else:
+        recordings.mark_call(
+            payload, snapshot, record.organisation, test_number=test_number
+        )
+    if "profile" in snapshot:
+        snapshot["profile"] = payload
+    record.context_snapshot = snapshot
+    CallRecord.objects.filter(pk=record.pk).update(context_snapshot=snapshot)
 
 
 def _close_failed(record: CallRecord, reason: str) -> None:
@@ -448,11 +560,18 @@ def apply_worker_event(payload: dict) -> CallRecord:
     """Apply a verified report from the voice worker. Safe to receive twice."""
     room = payload.get("room")
     event = payload.get("event")
-    if not isinstance(room, str) or event not in ("answered", "ended"):
+    if not isinstance(room, str) or event not in ("answered", "ended", "recording"):
         raise CallEventError("Unknown call event.")
     record = CallRecord.objects.filter(room=room).first()
     if record is None:
         raise CallEventError("No call record for that room.")
+    if event == "recording":
+        # The person agreed to or declined recording, or the worker could not
+        # record (apps/calling/recordings).
+        from apps.calling import recordings
+
+        recordings.note_event(record, payload)
+        return record
     now = timezone.now()
 
     if event == "answered":
@@ -481,6 +600,9 @@ def apply_worker_event(payload: dict) -> CallRecord:
         sip_status = (
             mask_phones_in(reason_text)[:64] if isinstance(reason_text, str) else ""
         )
+        end_reason = payload.get("end_reason")
+        if end_reason not in CallRecord.EndReason.values:
+            end_reason = ""
 
         def change(locked: CallRecord) -> bool:
             authoritative = locked.is_active or locked.status_source in SOFT_SOURCES
@@ -506,6 +628,8 @@ def apply_worker_event(payload: dict) -> CallRecord:
             if code is not None:
                 locked.sip_status_code = code
                 locked.sip_status = sip_status
+            if end_reason:
+                locked.end_reason = end_reason
             for name, value in metrics.items():
                 if value is not None:
                     setattr(locked, name, value)

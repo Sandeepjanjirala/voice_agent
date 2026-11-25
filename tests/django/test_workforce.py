@@ -10,7 +10,6 @@ import urllib.error
 from datetime import timedelta
 from pathlib import Path
 
-import jwt
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
@@ -302,7 +301,8 @@ def test_dashboard_pages_need_a_staff_account(name, client, plain_client, staff_
     assert anonymous["Location"].startswith(reverse("login"))
     plain = plain_client.get(url)
     if name == "home":
-        assert plain.status_code == 302 and plain["Location"] == reverse("voice")
+        assert plain.status_code == 200
+        assert 'id="no-organisation"' in plain.content.decode()
     else:
         assert plain.status_code == 403
     response = staff_client.get(url)
@@ -344,7 +344,7 @@ def test_every_sidebar_entry_resolves_and_marks_the_current_page(staff_client):
         reverse(name)
     for name, label in (
         ("employees", "AI employees"),
-        ("campaigns", "Campaigns"),
+        ("make-calls", "Make calls"),
         ("leads", "Leads &amp; contacts"),
     ):
         html = staff_client.get(reverse(name)).content.decode()
@@ -362,19 +362,17 @@ def test_planned_modules_say_plainly_that_they_are_not_built(staff_client):
         assert "<form" not in html.split("<main>")[1].split("</main>")[0]
 
 
-def test_plain_users_see_only_the_voice_studio_in_the_sidebar(plain_client):
-    html = plain_client.get(reverse("voice")).content.decode()
-    shell = html.split("<main>")[0]
-    assert "Voice studio" in shell
-    for hidden in ("AI employees", "Phone calls", "Hire an employee"):
-        assert hidden not in shell
+def test_someone_outside_any_organisation_sees_no_sidebar(plain_client):
+    html = plain_client.get(reverse("home")).content.decode()
+    assert 'class="sidebar"' not in html
+    assert "You are not in an organisation yet" in html
+    for hidden in ("AI employees", "Make calls", "Voice studio"):
+        assert hidden not in html
 
 
-def test_existing_pages_live_inside_the_shell(staff_client):
-    for name, label in (("voice", "Voice studio"), ("calls", "Phone calls")):
-        html = staff_client.get(reverse(name)).content.decode()
-        assert f'aria-current="page">{label}</a>' in html
-        assert 'class="sidebar"' in html
+def test_the_address_on_its_own_opens_home(staff_client):
+    response = staff_client.get("/")
+    assert response.status_code == 302 and response["Location"] == reverse("home")
 
 
 def test_the_login_page_has_no_sidebar(client):
@@ -397,7 +395,7 @@ def test_home_reports_real_numbers(staff_client):
         "answer_rate": None,
         "response": None,
     }
-    assert "No employees yet" in response.content.decode()
+    assert "Set one up" in response.content.decode()
 
     make_employee()
     now = timezone.now()
@@ -439,7 +437,7 @@ def test_home_reports_real_numbers(staff_client):
     assert stats["employees"] == 1 and stats["week_total"] == 2
     assert stats["answer_rate"] == 50 and stats["response"] == 1.2
     html = response.content.decode()
-    assert "Meera" in html and "+91********01" in html
+    assert "+91********01" in html, "the latest call is listed"
     assert "+91********09" not in html and "+91********08" not in html
     done = {item["label"]: item["done"] for item in response.context["setup"]}
     assert done["First AI employee drafted"] is True
@@ -638,7 +636,8 @@ def test_employee_list_filters(staff_client):
 def test_the_worker_and_django_agree_on_the_profile_format():
     assert publishing.WORKER_LIMITS == worker_profile._LIMITS
     assert publishing.PROFILE_KEY == worker_profile.PROFILE_KEY
-    assert publishing.PROMPT_BYTES < worker_profile.PROFILE_BUDGET_BYTES
+    # The worker's section holds the instructions plus labels and caller context.
+    assert publishing.instruction_budget() + 2048 <= worker_profile.PROFILE_BUDGET_BYTES
 
 
 def test_a_publishable_script_reaches_the_worker_whole():
@@ -647,8 +646,11 @@ def test_a_publishable_script_reaches_the_worker_whole():
     )
     employee = make_employee()
     assert publishing.problems(employee.draft) == []
-    metadata = publishing.trial_metadata(employee, "draft")
-    payload = metadata[publishing.PROFILE_KEY]
+    # The draft as a call would carry it, with today's knowledge.
+    payload = publishing._with_knowledge(
+        publishing.worker_payload(employee.draft, employee.language), employee, None
+    )
+    metadata = {publishing.PROFILE_KEY: payload}
     parsed = worker_profile.parse_profile(json.dumps(metadata))
     # Nothing was clamped on the way.
     voice = payload.pop("voice")
@@ -662,9 +664,10 @@ def test_a_publishable_script_reaches_the_worker_whole():
     )
     assert voice["language"] == "te-IN", "Telugu + English speaks Telugu"
     # The employee speaks for its organisation. Without knowledge entries the
-    # facts still come from the Agent profile.
+    # facts never come from the installation's Agent profile, which another
+    # organisation may have written.
     assert parsed.business_name == "Test Organisation"
-    assert parsed.business_info == "9-4"
+    assert parsed.business_info == ""
     assert parsed.greeting == AI_DRAFT["greeting"]
     assert "2. Ask which class the child is joining." in parsed.objectives
     assert "Find out: Class, Preferred campus." in parsed.objectives
@@ -687,13 +690,18 @@ def test_strictness_changes_what_the_worker_is_told():
 
 def test_problems_explain_what_blocks_a_call():
     assert len(publishing.problems({})) == 4
-    long_steps = [{"name": "Step", "guidance": "g" * 150}] * 6
+    long_steps = [{"name": "Step", "guidance": "g" * 600}] * 12
     reasons = publishing.problems({**AI_DRAFT, "steps": long_steps})
-    assert any("steps and details" in reason for reason in reasons)
-    telugu = {**AI_DRAFT, "purpose": "తె" * 150, "ending": "తె" * 100}
-    reasons = publishing.problems(telugu)
     assert any("bytes" in reason for reason in reasons)
-    assert publishing.prompt_size(telugu) > publishing.PROMPT_BYTES
+    telugu = {
+        **AI_DRAFT,
+        "purpose": "తె" * 600,
+        "limits": "తె" * 600,
+        "ending": "తె" * 300,
+    }
+    reasons = publishing.problems(telugu)
+    assert any("Telugu letters too many" in reason for reason in reasons)
+    assert publishing.prompt_size(telugu) > publishing.instruction_budget()
 
 
 def _publish(client, employee, **kwargs):
@@ -821,75 +829,3 @@ def test_deleting_an_employee_removes_its_versions(staff_client):
     _publish(staff_client, employee)
     staff_client.post(reverse("employee-delete", args=[employee.pk]))
     assert not Employee.objects.exists() and not EmployeeVersion.objects.exists()
-
-
-# --- trying an employee in the voice studio ----------------------------------------
-
-
-@pytest.fixture
-def livekit(settings):
-    settings.LIVEKIT_URL = "wss://test.livekit.cloud"
-    settings.LIVEKIT_API_KEY = "test-api-key"
-    settings.LIVEKIT_API_SECRET = "test-secret-with-at-least-32-characters"
-    return settings
-
-
-def _dispatched_profile(response, livekit):
-    claims = jwt.decode(
-        response.json()["token"], livekit.LIVEKIT_API_SECRET, algorithms=["HS256"]
-    )
-    (dispatch,) = claims["roomConfig"]["agents"]
-    return worker_profile.parse_profile(dispatch.get("metadata"))
-
-
-def test_the_voice_studio_can_try_a_draft_or_the_published_version(
-    staff_client, livekit
-):
-    employee = make_employee()
-    _publish(staff_client, employee)
-    staff_client.post(
-        reverse("employee-detail", args=[employee.pk]),
-        _editor_post(name="Meera", greeting="Draft greeting, I am an AI assistant."),
-    )
-    page = staff_client.get(
-        reverse("voice"), {"employee": employee.pk, "source": "draft"}
-    ).content.decode()
-    assert "Trying <strong>Meera</strong> (draft)" in page
-    assert f"employee={employee.pk}&amp;source=draft" in page
-
-    token_url = reverse("voice-token")
-    draft = staff_client.post(f"{token_url}?employee={employee.pk}&source=draft")
-    assert _dispatched_profile(draft, livekit).greeting.startswith("Draft greeting")
-    cache.clear()
-    published = staff_client.post(
-        f"{token_url}?employee={employee.pk}&source=published"
-    )
-    assert _dispatched_profile(published, livekit).greeting == AI_DRAFT["greeting"]
-
-
-def test_trying_is_refused_when_it_cannot_work(staff_client, plain_client, livekit):
-    token_url = reverse("voice-token")
-    unpublished = make_employee()
-    response = staff_client.post(
-        f"{token_url}?employee={unpublished.pk}&source=published"
-    )
-    assert response.status_code == 400
-    assert "has not been published" in response.json()["error"]
-
-    broken = make_employee(draft=config.normalize({"agent_name": "Meera"}))
-    response = staff_client.post(f"{token_url}?employee={broken.pk}&source=draft")
-    assert response.status_code == 400 and "opening line" in response.json()["error"]
-
-    for bad in ("not-a-uuid", "00000000-0000-0000-0000-000000000000"):
-        assert staff_client.post(f"{token_url}?employee={bad}").status_code == 404
-    # Someone who is not staff cannot use an employee's script.
-    response = plain_client.post(f"{token_url}?employee={unpublished.pk}")
-    assert response.status_code == 404
-    page = plain_client.get(reverse("voice"), {"employee": unpublished.pk})
-    assert "Trying" not in page.content.decode()
-
-
-def test_an_ordinary_conversation_still_uses_the_agent_profile(staff_client, livekit):
-    make_employee()
-    response = staff_client.post(reverse("voice-token"))
-    assert _dispatched_profile(response, livekit) is None

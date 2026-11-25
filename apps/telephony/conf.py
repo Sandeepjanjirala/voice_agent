@@ -48,6 +48,8 @@ class TelephonySettings:
     hide_caller_number: bool
     room_prefix: str
     confirmed: frozenset[str]
+    # Every number the inbound trunk accepts; inbound_number is the first.
+    inbound_numbers: tuple[str, ...] = ()
 
 
 def _choice(env: Mapping[str, str], name: str, default: str, allowed) -> str:
@@ -114,11 +116,22 @@ def load_telephony_settings(env: Mapping[str, str] | None = None) -> TelephonySe
             f"TELEPHONY_PROVIDER must be one of: {', '.join(sorted(PROVIDERS))}."
         )
 
-    number = env.get("TELEPHONY_INBOUND_NUMBER", "").strip().replace(" ", "")
-    if number and not _E164.match(number):
-        raise TelephonyConfigError(
-            "TELEPHONY_INBOUND_NUMBER must be in E.164 form, such as +91XXXXXXXXXX."
+    # One number, or several separated by commas: every business line the
+    # inbound trunk accepts. Numbers routed on the dashboard are added by
+    # `manage.py telephony` (apps/calling/inbound.trunk_numbers).
+    numbers = tuple(
+        dict.fromkeys(
+            part.strip().replace(" ", "")
+            for part in env.get("TELEPHONY_INBOUND_NUMBER", "").split(",")
+            if part.strip()
         )
+    )
+    if any(not _E164.match(n) for n in numbers):
+        raise TelephonyConfigError(
+            "TELEPHONY_INBOUND_NUMBER must be in E.164 form, such as +91XXXXXXXXXX "
+            "(several separated by commas)."
+        )
+    number = numbers[0] if numbers else ""
 
     subdomain = env.get("LIVEKIT_SIP_SUBDOMAIN", "").strip().lower()
     if subdomain and not _SUBDOMAIN.match(subdomain):
@@ -162,6 +175,7 @@ def load_telephony_settings(env: Mapping[str, str] | None = None) -> TelephonySe
     return TelephonySettings(
         provider=provider,
         inbound_number=number,
+        inbound_numbers=numbers,
         sip_subdomain=subdomain,
         sip_region=_choice(env, "LIVEKIT_SIP_REGION", default_region, SIP_REGIONS),
         transport=_choice(env, "SIP_INBOUND_TRANSPORT", "tls", TRANSPORTS),

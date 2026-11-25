@@ -130,6 +130,17 @@ class VoiceSettings:
     # Where an inbound phone call asks Django which AI employee answers it.
     # Unset keeps inbound calls on the job's own profile, as before.
     inbound_context_url: str | None = None
+    # Where the worker fetches a phone call's employee profile by reference.
+    call_profile_url: str | None = None
+    # Where the worker uploads a recorded call's audio (recording.py).
+    call_recording_url: str | None = None
+    # Bytes the per-call "This call" section of the prompt may take.
+    profile_budget_bytes: int = 8192
+    # Said, then the call ends, when a phone call has no assigned employee.
+    inbound_unrouted_message: str = ""
+    # Local testing only: a JSON employee profile for `lk agent console` and
+    # `lk agent debugger` sessions (never used for a dispatched call).
+    console_profile_file: str = ""
 
     def describe(self) -> dict[str, object]:
         """Selected models and tuning, safe to log (no secrets, no prompts)."""
@@ -348,6 +359,16 @@ def _turn_settings(env: _Env) -> TurnSettings:
 
 
 MIN_CALL_EVENTS_SECRET_LENGTH = 32
+# Neutral and business-free: it names no organisation and promises nothing.
+DEFAULT_UNROUTED_MESSAGE = (
+    "క్షమించండి, ఈ నంబర్ ఇప్పుడు calls తీసుకోవడం లేదు. "
+    "దయచేసి కాసేపటి తర్వాత మళ్ళీ call చేయండి. Sorry, this number cannot take "
+    "calls right now. Please try again later."
+)
+# The per-call prompt section: employee instructions (Django allows 6144 bytes
+# by default, EMPLOYEE_INSTRUCTION_BYTES) plus labels, caller context and a
+# notice. It is re-sent on every turn, so it is bounded, but not tightly.
+PROFILE_BUDGET_DEFAULT = 8192
 
 
 def _call_events_settings(env: _Env) -> dict[str, str | None]:
@@ -365,10 +386,24 @@ def _call_events_settings(env: _Env) -> dict[str, str | None]:
         raise ConfigError("INBOUND_CONTEXT_URL must start with http:// or https://")
     if inbound and not secret:
         raise ConfigError("INBOUND_CONTEXT_URL needs CALL_EVENTS_SECRET to sign with")
+    # Defaults to the address next to CALL_EVENTS_URL (/api/telephony/...).
+    profile_url = env.str("CALL_PROFILE_URL")
+    if not profile_url and url and url.rstrip("/").endswith("/call-events"):
+        profile_url = url.rstrip("/")[: -len("call-events")] + "call-profile/"
+    if profile_url and not profile_url.startswith(("http://", "https://")):
+        raise ConfigError("CALL_PROFILE_URL must start with http:// or https://")
+    # Where a recorded call's audio goes (voice_agent/recording.py); same rule.
+    recording_url = env.str("CALL_RECORDING_URL")
+    if not recording_url and url and url.rstrip("/").endswith("/call-events"):
+        recording_url = url.rstrip("/")[: -len("call-events")] + "call-recording/"
+    if recording_url and not recording_url.startswith(("http://", "https://")):
+        raise ConfigError("CALL_RECORDING_URL must start with http:// or https://")
     return {
         "call_events_url": url,
         "call_events_secret": secret,
         "inbound_context_url": inbound,
+        "call_profile_url": profile_url if secret else None,
+        "call_recording_url": recording_url if secret else None,
     }
 
 
@@ -409,4 +444,12 @@ def load_settings(env: Mapping[str, str] | None = None) -> VoiceSettings:
         tts=_tts_settings(reader),
         llm=_llm_settings(reader),
         turn=_turn_settings(reader),
+        profile_budget_bytes=reader.int(
+            "AGENT_PROFILE_BUDGET_BYTES", PROFILE_BUDGET_DEFAULT, 1024, 32768
+        ),
+        inbound_unrouted_message=(
+            reader.str("INBOUND_UNROUTED_MESSAGE", DEFAULT_UNROUTED_MESSAGE)
+            or DEFAULT_UNROUTED_MESSAGE
+        )[:300],
+        console_profile_file=reader.str("CONSOLE_PROFILE_FILE", ""),
     )

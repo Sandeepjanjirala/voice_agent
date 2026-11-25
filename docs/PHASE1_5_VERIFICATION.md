@@ -1,5 +1,9 @@
 # Phase 1.5 — Django voice studio
 
+> **Removed on 25 November 2026 at the owner's request.** The browser voice
+> studio and its token API are gone; this page is kept as history. To hear an AI
+> employee, call your own number from Make calls.
+
 **Local functional acceptance: PASS, with incomplete extended checks below.**
 Verified locally on Windows on 13 November 2026; updated after owner browser testing. The existing worker, model settings,
 prompts, scenarios and .env.local were not changed.

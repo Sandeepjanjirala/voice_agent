@@ -120,7 +120,7 @@ Session recording options and Data residency):
 
 - **Calls with an organisation profile normally ask LiveKit to keep nothing.** The worker starts
   every call with `record=False` unless the organisation has turned on "Let
-  LiveKit Cloud keep call recordings…" under Privacy & settings. With
+  LiveKit Cloud keep call recordings…" under Settings. With
   `record=False`, the docs say no audio, transcript, traces or logs are
   uploaded.
   Legacy or fallback calls without an explicit profile recording choice follow
@@ -150,8 +150,7 @@ Session recording options and Data residency):
 
 | Switch | Effect while off |
 | :--- | :--- |
-| `INTEGRATIONS_LIVE_ENABLED=false` | Bookings, WhatsApp messages, REST requests and webhooks are checked and logged as "simulated"; nothing leaves the server |
-| `CONTACT_DIALING_ENABLED=false` | Stored contacts cannot be dialled; campaigns and instant leads stay dry runs |
+| `CONTACT_DIALING_ENABLED=false` | A lead's stored contact cannot be dialled from the lead page |
 | `OUTBOUND_DIALING_MODE=allowlist` | Only numbers in `OUTBOUND_ALLOWLIST_NUMBERS` can be dialled, by Django and by the worker |
 | `TELEPHONY_CONFIRMED` without `livekit_allowed_addresses_enforced` | No inbound trunk is created ([INBOUND.md](INBOUND.md)) |
 

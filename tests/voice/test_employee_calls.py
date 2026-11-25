@@ -13,7 +13,7 @@ from voice_agent import inbound
 from voice_agent.call_reporting import (
     SIGNATURE_HEADER,
     TIMESTAMP_HEADER,
-    TRANSCRIPT_TOTAL_CHARS,
+    TRANSCRIPT_TOTAL_BYTES,
     CallMetrics,
     sign,
 )
@@ -107,7 +107,7 @@ def test_who_the_call_is_with_reaches_the_prompt_within_budget():
     )
     section = profile_instructions(profile)
     assert "- You are speaking with Asha Rao." in section
-    assert "- They enquired about: Brochure request" in section
+    assert "- This call is about: Brochure request" in section
     long = parse_profile(meta(context={"name": "n" * 500, "about": "a" * 900}))
     assert len(long.caller_name) == 60 and len(long.about) == 160
 
@@ -134,20 +134,22 @@ def test_the_transcript_is_kept_only_when_the_profile_allows_it():
     on.observe(_item("system", "not part of the conversation"))
     fields = on.ended_fields()
     assert "agent_turns" in fields
-    assert fields["transcript"] == [
-        {"role": "assistant", "text": "Hello, who am I speaking to?"},
-        {"role": "user", "text": "Call me on 98******10 please"},
+    assert [(turn["role"], turn["text"]) for turn in fields["transcript"]] == [
+        ("assistant", "Hello, who am I speaking to?"),
+        ("user", "Call me on 98******10 please"),
     ]
 
 
 def test_a_long_transcript_is_cut_to_fit_one_report():
+    # Telugu: three bytes a letter in UTF-8, as the report is sent.
     metrics = CallMetrics(keep_transcript=True)
     for _ in range(200):
-        metrics.observe(_item("user", "x" * 1000))
+        metrics.observe(_item("user", "తె" * 1000))
     kept = metrics.transcript()
-    assert sum(len(turn["text"]) for turn in kept) <= TRANSCRIPT_TOTAL_CHARS
+    size = len(json.dumps(kept, ensure_ascii=False).encode())
+    assert size <= TRANSCRIPT_TOTAL_BYTES < 64_000
     assert all(len(turn["text"]) <= 600 for turn in kept)
-    assert len(json.dumps(kept)) < 64_000
+    assert len(kept) > 20
 
 
 # --- inbound lookup --------------------------------------------------------------------

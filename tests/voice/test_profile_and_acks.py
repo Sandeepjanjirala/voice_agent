@@ -45,8 +45,8 @@ def test_jobs_without_a_profile(raw) -> None:
 def test_profile_fields_are_clamped() -> None:
     profile = parse_profile(meta(purpose="p" * 5000, business_info="i" * 9000))
 
-    assert len(profile.purpose) == 300
-    assert len(profile.business_info) == 4000
+    assert len(profile.purpose) == 1200
+    assert len(profile.business_info) == 8000
 
 
 def test_profile_section_states_purpose_and_stays_in_budget() -> None:

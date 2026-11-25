@@ -34,12 +34,14 @@ async function noSidewaysScroll(page, label) {
     await page.waitForURL(`${BASE}/home/`);
     assert.equal(await page.locator('nav a[aria-current=page]').textContent(), 'Home');
     assert.equal(await page.locator('#stat-employees').textContent(), '0');
-    await page.getByText('No employees yet').waitFor();
+    await page.locator('#home-steps').getByText('Set one up').waitFor();
     await page.screenshot({ path: 'browser-artifacts/dashboard-home-empty.png', fullPage: true });
 
     // Every sidebar entry opens a page that marks itself current.
     const links = await page.locator('.side-nav a').evaluateAll(all => all.map(a => ({ href: a.getAttribute('href'), label: a.textContent })));
-    assert.ok(links.length >= 14, `only ${links.length} sidebar links`);
+    assert.deepEqual(links.map(link => link.label), ['Home', 'AI employees', 'Make calls', 'Call results', 'Settings',
+      'Leads & contacts', 'Campuses & staff', 'Performance', 'Incoming calls', 'Numbers & channels', 'Knowledge',
+      'Usage & costs', 'Operations']);
     for (const { href, label } of links) {
       const response = await page.goto(BASE + href);
       assert.equal(response.status(), 200, `${label} answered ${response.status()}`);
@@ -49,11 +51,12 @@ async function noSidewaysScroll(page, label) {
 
     // No section of the sidebar is a placeholder any more.
     assert.equal(await page.locator('.side-nav a.soon').count(), 0);
-    await page.goto(`${BASE}/campaigns/`);
+    await page.goto(`${BASE}/numbers/`);
     assert.equal(await page.getByText('Not built yet').count(), 0);
 
     // Hire wizard: an example fills the brief and picks its kind of call.
-    await page.locator('.pagebar').getByRole('link', { name: 'Hire an employee' }).click();
+    await page.goto(`${BASE}/employees/`);
+    await page.locator('#hire-button').click();
     await page.waitForURL(`${BASE}/employees/hire/`);
     await page.getByRole('button', { name: 'Parent support' }).click();
     assert.ok((await page.locator('[name=brief]').inputValue()).startsWith('Answer parents who call'));
@@ -101,27 +104,42 @@ async function noSidewaysScroll(page, label) {
     await page.locator('#questions .row-item').first().getByRole('button', { name: 'Remove detail' }).click();
     await page.locator('[name=strictness][value="4"]').check({ force: true });
     await page.locator('#f-name').fill('Lakshmi');
+    await page.locator('#f-limits').fill('ఫీజు గురించి   హామీ ఇవ్వవద్దు.\n  Never quote fees. ');
+    // The rest of the job: success, a situation, hand-over, results, facts.
+    await page.locator('#f-success').fill('The parent knows the next step.');
+    await page.locator('#add-situation').click();
+    const situation = page.locator('#situations .row-item').last();
+    await situation.locator('[name=situation_when]').fill('they ask about   fees');
+    await situation.locator('[name=situation_then]').fill('say the accounts team will call back');
+    await page.locator('#f-escalation').fill('They ask twice for a staff member.');
+    assert.equal(await page.locator('#outcomes .row-item').count(), 3, 'the draft suggested results');
+    await page.locator('#add-outcome').click();
+    await page.locator('#outcomes .row-item').last().locator('input').fill('Wants a fee call');
+    await page.locator('#f-information').fill('Office: 9 to 5, Monday to Saturday.');
     await page.getByRole('button', { name: 'Save draft' }).click();
     await page.getByText('Draft saved.').waitFor();
+    assert.equal(await page.locator('[name=situation_when]').first().inputValue(), 'they ask about fees');
+    assert.equal(await page.locator('#outcomes .row-item').count(), 4);
+    assert.equal(await page.locator('#f-information').inputValue(), 'Office: 9 to 5, Monday to Saturday.');
     assert.equal(await page.locator('h1').textContent(), 'Lakshmi');
+    // The live meter counts exactly what the server measures for the saved
+    // draft: Telugu, collapsed spaces, steps, details and the strictness line.
+    const size = async (selector) => Number((await page.locator(selector).textContent()).replace(/\D/g, ''));
+    assert.equal(await size('#instruction-budget [data-budget-value]'), await size('#prompt-size'));
     const names = await page.locator('#steps [name=step_name]').evaluateAll(all => all.map(input => input.value));
     assert.deepEqual(names, ['Greet warmly', 'Confirm parent', 'Ask class', 'Offer visit']);
     assert.equal(await page.locator('#questions .row-item').count(), 1);
     assert.equal(await page.locator('[name=strictness]:checked').inputValue(), '4');
 
-    // Unsaved typing blocks trying and publishing until the draft is saved.
+    // Unsaved typing blocks publishing until the draft is saved.
     assert.ok(await page.locator('#publish-button').isEnabled());
     await page.locator('#f-purpose').pressSequentially(' ');
     assert.ok(await page.locator('#unsaved-note').isVisible());
     assert.ok(await page.locator('#publish-button').isDisabled());
     await page.reload();
 
-    // Try the saved draft in the voice studio: the note names the employee.
-    await page.getByRole('link', { name: 'Try the draft' }).click();
-    await page.waitForURL(/\/\?employee=[0-9a-f-]{36}&source=draft$/);
-    assert.ok((await page.locator('#trial-note').textContent()).includes('Lakshmi'));
-    assert.ok((await page.locator('#voice-app').getAttribute('data-token-url')).includes('source=draft'));
-    await page.getByRole('link', { name: 'Back to Lakshmi' }).click();
+    // The Voice studio is gone: nothing offers to try the draft in the browser.
+    assert.equal(await page.getByRole('link', { name: 'Try the draft' }).count(), 0);
 
     // Publish version 1; with nothing changed, Publish is then disabled.
     await page.locator('#publish-button').click();
@@ -155,14 +173,20 @@ async function noSidewaysScroll(page, label) {
     await page.getByRole('button', { name: 'Switch on' }).click();
     await page.getByText('Lakshmi is taking calls.').waitFor();
 
-    // Phone test with the published version, on a simulated line with a fake
-    // number: placed, followed while it rings and is answered, then ended.
-    assert.ok((await page.locator('#test-call').textContent()).includes('+91********01'));
-    page.once('dialog', dialog => dialog.dismiss());
-    await page.getByRole('button', { name: 'Call the test number' }).click();
-    assert.equal(page.url(), editorUrl, 'declining the question must not place a call');
-    page.once('dialog', dialog => dialog.accept());
-    await page.getByRole('button', { name: 'Call the test number' }).click();
+    // To hear it: Make calls with this employee already chosen, to the
+    // approved (fake) number on a simulated line. Placed, followed while it
+    // rings and is answered, then ended from the call page.
+    await page.locator('#test-call').getByRole('link', { name: 'Make calls' }).click();
+    await page.waitForURL(/\/make-calls\/\?speaker=[0-9a-f-]{36}$/);
+    assert.ok((await page.locator('[name=speaker] option:checked').textContent()).includes('Lakshmi'));
+    await page.locator('[name=numbers]').fill('9000000001');
+    await page.getByRole('button', { name: 'Check numbers' }).click();
+    await page.waitForURL(/\/make-calls\/[0-9a-f-]{36}\/$/);
+    await page.locator('#consent').check();
+    await page.locator('#start-calling').click();
+    const row = page.locator('#entries tbody tr').first();
+    await row.locator('[data-result] a').waitFor({ timeout: 15000 });
+    await row.locator('[data-result] a').click();
     await page.waitForURL(/\/conversations\/[0-9a-f-]{36}\/$/);
     assert.ok((await page.locator('main').textContent()).includes('Lakshmi, version 2'));
     await page.locator('#live-call').waitFor();
@@ -175,10 +199,14 @@ async function noSidewaysScroll(page, label) {
     assert.ok(!(await page.content()).includes('9000000001'), 'the full test number leaked');
     await page.goto(editorUrl);
 
-    // The step limit disables "Add a step".
-    await page.locator('#add-step').click();
-    await page.locator('#add-step').click();
+    // The step limit (data-max, config.MAX_STEPS) disables "Add a step".
+    const maxSteps = Number(await page.locator('#steps').getAttribute('data-max'));
+    assert.ok(maxSteps > 0);
+    for (let i = 0; i < maxSteps && !(await page.locator('#add-step').isDisabled()); i += 1) {
+      await page.locator('#add-step').click();
+    }
     assert.ok(await page.locator('#add-step').isDisabled());
+    assert.equal(await page.locator('#steps > li').count(), maxSteps);
 
     // The list and Home now show the employee.
     await page.goto(`${BASE}/employees/`);
@@ -212,7 +240,7 @@ async function noSidewaysScroll(page, label) {
     await phone.screenshot({ path: 'browser-artifacts/dashboard-mobile-menu.png' });
     await phone.keyboard.press('Escape');
     assert.equal(await phone.locator('#menu-button').getAttribute('aria-expanded'), 'false');
-    for (const path of ['/employees/hire/', editorUrl.replace(BASE, ''), '/employees/', '/leads/', '/', '/calls/', '/agent/']) {
+    for (const path of ['/employees/hire/', editorUrl.replace(BASE, ''), '/employees/', '/leads/', '/make-calls/', '/settings/']) {
       await phone.goto(BASE + path);
       await noSidewaysScroll(phone, `${path} on a phone`);
     }
@@ -227,11 +255,12 @@ async function noSidewaysScroll(page, label) {
     await page.getByText('Meera was deleted.').waitFor();
     await page.getByText('No employees yet').waitFor();
 
-    // Someone who is not staff gets the voice studio only.
+    // Someone in no organisation is told how to get in, and sees nothing else.
     const other = await browser.newPage();
     await login(other, 'plain-review', 'local-disposable-plain-check');
-    await other.waitForURL(`${BASE}/`);
-    assert.deepEqual(await other.locator('.side-nav a').allTextContents(), ['Voice studio']);
+    await other.waitForURL(`${BASE}/home/`);
+    await other.locator('#no-organisation').waitFor();
+    assert.equal(await other.locator('.side-nav a').count(), 0);
     assert.equal((await other.goto(`${BASE}/employees/`)).status(), 403);
     assert.equal((await other.goto(`${BASE}/employees/hire/`)).status(), 403);
     await other.close();

@@ -15,6 +15,14 @@ const LIST = [
   'Lata Devi,09876500003,',
 ].join('\n');
 
+// Sidebar links: the everyday ones are always shown; the rest are folded
+// under "More", which is opened first when needed.
+async function sideLink(page, name) {
+  const link = page.locator('.side-nav').getByRole('link', { name, exact: true });
+  if (!(await link.isVisible())) await page.locator('.side-more summary').click();
+  await link.click();
+}
+
 async function login(page, username, password) {
   await page.goto(`${BASE}/accounts/login/`);
   await page.locator('[name=username]').fill(username);
@@ -52,7 +60,7 @@ async function noSidewaysScroll(page, label) {
     assert.ok(startingCalls >= 3, 'the three seeded calls are missing');
 
     // Campuses and staff: add a campus, then a campus-staff member for it.
-    await page.locator('.side-nav').getByRole('link', { name: 'Campuses & staff' }).click();
+    await sideLink(page, 'Campuses & staff');
     assert.equal(await page.locator('#campus-table tbody tr').count(), 2);
     await page.locator('[name=campus-name]').fill('East Campus');
     await page.locator('[name=campus-city]').fill('Vizag');
@@ -144,20 +152,20 @@ async function noSidewaysScroll(page, label) {
     await noFullNumbers(page, 'the contact page');
     await page.screenshot({ path: 'browser-artifacts/crm-contact.png', fullPage: true });
 
-    // Privacy & settings: the list, a new number, the retention policy, the log.
-    await page.locator('.side-nav').getByRole('link', { name: 'Privacy & settings' }).click();
+    // Settings: the list, a new number, the retention policy, the log.
+    await sideLink(page, 'Settings');
     assert.equal(await page.locator('#optout-table tbody tr').count(), 1);
     await page.locator('[name=dnc-phone]').fill('98765 00004');
     await page.locator('[name=dnc-reason]').fill('Rang to ask');
     await page.getByRole('button', { name: 'Add to the list' }).click();
     await page.getByText('+91********04 is on the do-not-call list.').waitFor();
     await page.locator('[name=keep-contact_days]').fill('365');
-    await page.getByRole('button', { name: 'Save policy' }).click();
+    await page.getByRole('button', { name: 'Save retention' }).click();
     await page.getByText('Retention policy saved.').waitFor();
     assert.ok((await page.locator('#retention-preview').textContent()).includes('erase 0 contacts'));
     await noFullNumbers(page, 'the settings page');
     await page.screenshot({ path: 'browser-artifacts/crm-settings.png', fullPage: true });
-    await page.getByRole('link', { name: 'Access log' }).click();
+    await page.getByRole('link', { name: 'Access log', exact: true }).click();
     const log = await page.locator('#audit-table').textContent();
     for (const action of ['contact.created', 'contacts.imported', 'contact.viewed', 'contact.opted_out', 'optout.added']) {
       assert.ok(log.includes(action), `the access log lacks ${action}`);
@@ -165,7 +173,7 @@ async function noSidewaysScroll(page, label) {
     await noFullNumbers(page, 'the access log');
 
     // Conversations: totals, a filter, and one call's details with notes.
-    await page.locator('.side-nav').getByRole('link', { name: 'Conversations' }).click();
+    await sideLink(page, 'Call results');
     assert.equal(await page.locator('#call-total').textContent(), String(startingCalls));
     await page.locator('[name=status]').selectOption('no_answer');
     await page.getByRole('button', { name: 'Filter' }).click();
@@ -181,7 +189,7 @@ async function noSidewaysScroll(page, label) {
     await page.screenshot({ path: 'browser-artifacts/crm-conversation.png', fullPage: true });
 
     // Performance: the numbers match what was just done.
-    await page.locator('.side-nav').getByRole('link', { name: 'Performance' }).click();
+    await sideLink(page, 'Performance');
     assert.equal(await page.locator('#perf-calls').textContent(), String(startingCalls));
     assert.equal(await page.locator('#perf-leads').textContent(), '3');
     const report = await page.locator('#campus-report').textContent();
@@ -198,8 +206,9 @@ async function noSidewaysScroll(page, label) {
     staff.on('pageerror', error => errors.push(error.message));
     await login(staff, 'north-review', 'local-disposable-north-check');
     const links = await staff.locator('.side-nav a').allTextContents();
-    for (const hidden of ['Hire an employee', 'Phone calls', 'Agent profile']) assert.ok(!links.includes(hidden), hidden);
-    assert.equal(await staff.locator('.pagebar a:not(#bell)').count(), 0);
+    for (const hidden of ['Test line', 'Agent profile']) assert.ok(!links.includes(hidden), hidden);
+    // Campus staff may place calls, so the one button they get is Make calls.
+    assert.deepEqual(await staff.locator('.pagebar a:not(#bell)').evaluateAll(all => all.map(a => a.id)), ['make-calls-button']);
     await staff.goto(`${BASE}/leads/`);
     assert.equal(await staff.locator('#lead-table tbody tr').count(), 1);
     assert.ok((await staff.locator('#lead-table').textContent()).includes('Wants a call back'));

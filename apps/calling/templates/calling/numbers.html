@@ -17,7 +17,7 @@
       <div class="panel-head"><h2>Business lines</h2></div>
       {% if rows %}
       <div class="table-scroll"><table class="data" id="number-table">
-        <thead><tr><th>Number</th><th>Campus</th><th>Answered by</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Number</th><th>Campus</th><th>Answered by</th><th>Inbound</th><th></th></tr></thead>
         <tbody>
           {% for row in rows %}
           <tr>
@@ -35,13 +35,13 @@
       {% endif %}
     </section>
     <section class="panel">
-      <div class="panel-head"><h2>Outbound test line</h2></div>
+      <div class="panel-head"><h2>Outbound calling</h2><a href="{% url 'make-calls' %}">Make calls</a></div>
       {% if outbound.ready %}
-      <p class="status-line"><span class="tag good">Ready</span> Calls go only to the approved test number {{ outbound.number }}, from {{ outbound.caller_id }}.</p>
+      <p class="status-line"><span class="tag good">Ready</span> Calls go out from {{ outbound.caller_id }}.</p>
       {% else %}
-      <p class="status-line"><span class="tag draft">Not ready</span> {{ outbound.reason|default:"The outbound test line is not set up." }}</p>
+      <p class="status-line"><span class="tag draft">Not ready</span> {{ outbound.reason|default:"The outbound line is not set up." }}</p>
       {% endif %}
-      <p class="help">Calls to stored contacts are switched off on this installation. Campaigns and instant leads run as dry runs.</p>
+      <p class="help">Make calls rings only people who agreed to be called, one at a time, between 9 AM and 9 PM.</p>
     </section>
   </div>
   <div class="stack">

@@ -1,8 +1,7 @@
-"""Milestone E dashboard pages: integrations and actions, lead actions, webhooks
-for lead events, WhatsApp permission, campus hours and holidays, missed
-callers, voice previews, employee actions and the operations, usage and
-notification pages. No test reaches the network: the integrations transport
-is replaced."""
+"""Milestone E dashboard pages: WhatsApp permission, campus hours and
+holidays, missed callers, voice previews, employee actions and the operations,
+usage and notification pages. No test reaches the network: the outside-request
+transport is replaced."""
 
 import base64
 import json
@@ -14,14 +13,8 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.calling.models import CallResult, MissedCall
-from apps.crm.models import Contact, Lead
-from apps.integrations import transport, webhooks
-from apps.integrations.models import (
-    ActionRun,
-    ApprovedAction,
-    Integration,
-    WebhookDelivery,
-)
+from apps.crm.models import Contact
+from apps.integrations import transport
 from apps.operations.models import Notification
 from apps.telephony.models import CallRecord
 from apps.tenancy import hours
@@ -29,12 +22,9 @@ from apps.tenancy.models import AuditEvent, Holiday, OpeningHours
 from apps.workforce import publishing
 
 from .test_calling import employee_for
-from .test_integrations import FakeTransport, action, integration
-from .test_tenancy_crm import RAVI, World, assert_no_full_number, body
+from .test_tenancy_crm import World, body
 
 pytestmark = pytest.mark.django_db
-
-Kind = ApprovedAction.Kind
 
 
 @pytest.fixture
@@ -43,190 +33,27 @@ def world():
     return World()
 
 
-@pytest.fixture
-def no_network(monkeypatch):
-    def refuse(*args, **kwargs):
-        raise AssertionError("a test tried to reach the network")
+class FakeTransport:
+    """Records every request; answers from a queue of (status, body)."""
 
-    monkeypatch.setattr(transport, "send", refuse)
+    def __init__(self, monkeypatch, *answers):
+        self.sent = []
+        self.answers = list(answers)
+        monkeypatch.setattr(transport, "send", self)
 
-
-def webhook(world, events, organisation=None):
-    return integration(
-        world,
-        Integration.Kind.WEBHOOK,
-        organisation=organisation,
-        config={"url": "https://hooks.example.com/in", "events": events},
-        secret={"signing_secret": "whsec_test"},
-    )
+    def __call__(
+        self, method, url, *, headers=None, body=None, timeout=8.0, max_bytes=None
+    ):
+        self.sent.append(
+            {"method": method, "url": url, "headers": headers or {}, "body": body}
+        )
+        status, data = self.answers.pop(0) if self.answers else (200, {})
+        payload = data if isinstance(data, bytes) else json.dumps(data).encode()
+        return transport.Response(status, payload)
 
 
 def lead_page(client, lead) -> str:
     return body(client.get(reverse("lead-detail", args=[lead.pk])))
-
-
-# --- integrations & actions ---------------------------------------------------------
-
-
-def test_integration_pages_are_for_admins_and_stay_in_the_organisation(
-    world, no_network
-):
-    staff, admin = world.client(world.staff_north), world.client(world.admin_a)
-    assert staff.get(reverse("integrations")).status_code == 200
-    assert staff.get(reverse("integration-new")).status_code == 403
-    assert world.client(world.outsider).get(reverse("integrations")).status_code in (
-        302,
-        403,
-    )
-
-    refused = admin.post(
-        reverse("integration-new"),
-        {
-            "kind": "webhook",
-            "name": "Plain HTTP",
-            "is_active": "on",
-            "config_url": "http://hooks.example.com/in",
-            "events": ["lead.created"],
-        },
-    )
-    assert refused.status_code == 200 and not Integration.objects.exists()
-
-    response = admin.post(
-        reverse("integration-new"),
-        {
-            "kind": "webhook",
-            "name": "CRM receiver",
-            "is_active": "on",
-            "config_url": "https://hooks.example.com/in",
-            "events": ["lead.created", "lead.stage_changed"],
-        },
-    )
-    found = Integration.objects.get()
-    assert response.url == reverse("integration-detail", args=[found.pk])
-    first = body(admin.get(response.url))
-    secret = found.secret_hint
-    assert "whsec_" in first, "the signing secret is shown once"
-    assert "whsec_" not in body(admin.get(response.url)).replace(secret, "")
-    assert "whsec_" not in json.dumps(
-        Integration.objects.filter(pk=found.pk).values().get(), default=str
-    )
-    assert AuditEvent.objects.filter(action="integration.created").exists()
-
-    other = world.client(world.admin_b)
-    assert other.get(reverse("integration-detail", args=[found.pk])).status_code == 404
-    assert "CRM receiver" not in body(other.get(reverse("integrations")))
-
-
-def test_an_admin_adds_an_action_and_test_runs_it(world, no_network):
-    admin = world.client(world.admin_a)
-    lead = world.lead(world.admin_a, world.north)
-    response = admin.post(
-        reverse("action-new"),
-        {
-            "label": "Call-back task",
-            "key": "call-back",
-            "kind": Kind.CREATE_FOLLOW_UP,
-            "is_enabled": "on",
-        },
-    )
-    found = ApprovedAction.objects.get()
-    assert response.url == reverse("action-detail", args=[found.pk])
-    assert found.employee_key == "custom:call-back"
-
-    admin.post(
-        reverse("action-detail", args=[found.pk]),
-        {
-            "form": "test",
-            "lead": str(lead.pk),
-            "run-call-back-title": "Ring about fees",
-        },
-    )
-    run = ActionRun.objects.get()
-    assert (run.trigger, run.status, run.lead_id) == ("test", "succeeded", lead.pk)
-    assert lead.follow_ups.get().title == "Ring about fees"
-    page = body(admin.get(reverse("action-runs")))
-    assert "Call-back task" in page
-
-    # A lead of another organisation cannot be used for a test run.
-    other_lead = world.lead(world.admin_b, world.west, number=RAVI)
-    response = admin.post(
-        reverse("action-detail", args=[found.pk]),
-        {"form": "test", "lead": str(other_lead.pk), "run-call-back-title": "x"},
-    )
-    assert response.status_code == 404
-    assert ActionRun.objects.count() == 1
-
-
-def test_staff_run_actions_for_leads_of_their_own_campus(world, no_network):
-    staff = world.client(world.staff_north)
-    follow_up = action(world, Kind.CREATE_FOLLOW_UP, "task")
-    off = action(world, Kind.ESCALATE, "escalate", is_enabled=False)
-    north_lead = world.lead(world.admin_a, world.north)
-    south_lead = world.lead(world.admin_a, world.south, number=RAVI)
-
-    page = body(staff.get(reverse("lead-detail", args=[north_lead.pk])))
-    assert 'id="lead-actions"' in page and "Run" in page
-
-    url = reverse("lead-action", args=[north_lead.pk, follow_up.pk])
-    response = staff.post(url, {"run-task-title": "Send the fee sheet"}, follow=True)
-    assert "Send the fee sheet" in lead_page(staff, north_lead) and "Done" in body(
-        response
-    )
-    run = ActionRun.objects.get()
-    assert (run.actor, run.trigger) == (world.staff_north, "staff")
-    assert 'id="lead-runs"' in body(response)
-
-    missing = staff.post(url, {"run-task-title": ""}, follow=True)
-    assert ActionRun.objects.count() == 1 and "title" in body(missing)
-
-    blocked = (
-        reverse("lead-action", args=[south_lead.pk, follow_up.pk]),
-        reverse("lead-action", args=[north_lead.pk, off.pk]),
-    )
-    for target in blocked:
-        assert staff.post(target, {"run-task-title": "x"}).status_code == 404
-    other = world.client(world.admin_b)
-    assert other.post(url, {"run-task-title": "x"}).status_code == 404
-    assert ActionRun.objects.count() == 1
-
-
-# --- webhooks for lead events ---------------------------------------------------------
-
-
-def test_lead_events_are_queued_for_subscribed_webhooks_without_personal_details(
-    world, no_network
-):
-    receiver = webhook(world, ["lead.created", "lead.stage_changed"])
-    webhook(world, ["call.analysed"])
-    webhook(world, ["lead.created"], organisation=world.org_b)
-    lead = world.lead(world.admin_a, world.north)
-
-    webhooks.lead_created(lead, "staff")
-    created = WebhookDelivery.objects.get(event="lead.created")
-    assert created.integration == receiver
-    data = created.payload["data"]
-    assert data["source"] == "staff" and data["number"].startswith("+91")
-    assert "Asha" not in json.dumps(created.payload)
-    assert_no_full_number(json.dumps(created.payload))
-
-    admin = world.client(world.admin_a)
-    admin.post(
-        reverse("lead-detail", args=[lead.pk]),
-        {"action": "update", "stage": Lead.Stage.INTERESTED},
-    )
-    changed = WebhookDelivery.objects.get(event="lead.stage_changed")
-    assert changed.payload["data"] == {
-        "lead": str(lead.pk),
-        "from": Lead.Stage.NEW,
-        "to": Lead.Stage.INTERESTED,
-    }
-    # Saving without a stage change sends nothing more.
-    admin.post(
-        reverse("lead-detail", args=[lead.pk]),
-        {"action": "update", "stage": Lead.Stage.INTERESTED},
-    )
-    assert WebhookDelivery.objects.filter(event="lead.stage_changed").count() == 1
-    assert WebhookDelivery.objects.count() == 2
 
 
 # --- WhatsApp permission ----------------------------------------------------------------
@@ -482,19 +309,15 @@ def test_voice_preview_explains_why_it_cannot_play(world, monkeypatch, settings)
 # --- employee actions and where it works ------------------------------------------------
 
 
-def test_employees_tick_only_their_organisations_approved_actions(world, no_network):
-    booking = action(world, Kind.CREATE_FOLLOW_UP, "visit-task", label="Visit task")
-    action(
-        world, Kind.CREATE_FOLLOW_UP, "b-only", organisation=world.org_b, label="B only"
-    )
+def test_employees_keep_only_built_in_actions(world):
     employee = employee_for(world, publish=False)
     admin = world.client(world.admin_a)
     url = reverse("employee-detail", args=[employee.pk])
 
     page = body(admin.get(url))
-    assert "Visit task" in page and "B only" not in page
     assert 'id="where-it-works"' in page and 'id="activity"' in page
     assert 'id="voice-preview"' in page
+    assert "approved-actions" not in page
 
     data = {
         "name": "Meera",
@@ -508,21 +331,14 @@ def test_employees_tick_only_their_organisations_approved_actions(world, no_netw
         "strictness": "3",
         "step_name": ["Ask"],
         "step_guidance": ["Ask what they need."],
-        "action": ["create_follow_up", booking.employee_key, "custom:b-only"],
+        # An old organisation action key is dropped, not kept.
+        "action": ["create_follow_up", "custom:visit-task"],
     }
-    response = admin.post(url, data, follow=True)
-    assert "Left out actions that do not exist: b-only" in body(response)
+    admin.post(url, data)
     employee.refresh_from_db()
-    assert employee.draft["actions"] == ["create_follow_up", "custom:visit-task"]
-
+    assert employee.draft["actions"] == ["create_follow_up"]
     version = publishing.publish(employee, world.admin_a)
-    assert "custom:visit-task" in version.config["actions"]
-
-    booking.delete()
-    with pytest.raises(publishing.PublishError) as refused:
-        publishing.publish(employee, world.admin_a)
-    assert "visit-task" in str(refused.value)
-    assert "No longer exist: visit-task" in body(admin.get(url))
+    assert version.config["actions"] == ["create_follow_up"]
 
 
 # --- operations, usage, notifications and readiness -------------------------------------
@@ -598,28 +414,6 @@ def test_readiness_reports_booleans_only(world, monkeypatch, client):
     assert client.get(reverse("readiness")).json()["ready"] is True
 
 
-def test_call_page_lists_approved_action_runs(world, no_network):
-    task = action(world, Kind.CREATE_FOLLOW_UP, "task", label="Make a task")
-    lead = world.lead(world.admin_a, world.north)
-    call = world.call(world.org_a, world.north, lead=lead)
-    ActionRun.objects.create(
-        organisation=world.org_a,
-        action=task,
-        action_key=task.key,
-        action_label=task.label,
-        kind=task.kind,
-        trigger=ActionRun.Trigger.CALL,
-        call=call,
-        lead=lead,
-        status=ActionRun.Status.SUCCEEDED,
-        message="Follow-up added.",
-    )
-    page = body(
-        world.client(world.admin_a).get(reverse("conversation-detail", args=[call.pk]))
-    )
-    assert 'id="call-runs"' in page and "Make a task" in page
-
-
 def test_after_hours_line_uses_the_campus_message(world):
     from apps.calling.inbound import after_hours_notice
 
@@ -690,22 +484,3 @@ def test_production_settings_pass_the_deploy_check():
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-
-
-def test_a_test_event_is_signed_and_sent_when_live(world, monkeypatch, settings):
-    settings.INTEGRATIONS_LIVE_ENABLED = True
-    receiver = webhook(world, ["lead.created"])
-    fake = FakeTransport(monkeypatch, (204, b""))
-    response = world.client(world.admin_a).post(
-        reverse("integration-detail", args=[receiver.pk]),
-        {"action": "test_webhook"},
-        follow=True,
-    )
-    assert "Test event: Delivered." in body(response)
-    sent = fake.sent[0]
-    assert sent["headers"]["X-Webhook-Event"] == "test"
-    assert sent["headers"]["X-Webhook-Id"] == json.loads(sent["body"])["id"]
-    timestamp = sent["headers"]["X-Webhook-Timestamp"]
-    assert sent["headers"]["X-Webhook-Signature"] == webhooks.sign(
-        "whsec_test", timestamp, sent["body"]
-    )

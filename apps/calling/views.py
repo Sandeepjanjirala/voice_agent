@@ -1,26 +1,18 @@
-"""Numbers, incoming calls, campaigns, instant leads and knowledge pages, and
-the intake API that lead sources post to.
+"""Numbers, incoming calls and knowledge pages.
 
 Every queryset comes from the request's scope (apps/tenancy/access.py). No view
-here dials anyone: campaigns and instant leads run as dry runs only.
+here dials anyone.
 """
 
-import json
 import logging
 import os
 
 from django.conf import settings
 from django.contrib import messages
-from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db.models import Count
-from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.views.decorators.cache import never_cache
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
 
 from apps.crm import crypto
 from apps.telephony import calls as telephony_calls
@@ -30,47 +22,17 @@ from apps.tenancy.access import scoped
 from apps.workforce import knowledge
 from apps.workforce.models import KnowledgeItem
 
-from . import inbound, intake, queue
-from .forms import (
-    AddContactsForm,
-    CampaignForm,
-    ConsentAttestForm,
-    KnowledgeForm,
-    LeadSourceForm,
-    PhoneNumberForm,
-)
-from .models import (
-    Campaign,
-    IntakeEvent,
-    LeadSource,
-    MissedCall,
-    PhoneNumber,
-    QueuedCall,
-)
+from . import inbound
+from .forms import KnowledgeForm, PhoneNumberForm
+from .models import MissedCall, PhoneNumber
 
 logger = logging.getLogger(__name__)
-
-INTAKE_RATE_PER_MINUTE = 60
-INTAKE_MAX_BYTES = 16_384
-SECRET_SESSION_KEY = "lead_source_secret"
 
 
 def _numbers(scope):
     return scope.limit_shared(
         PhoneNumber.objects.select_related("campus", "employee__live_version"),
         campuses_field="campus",
-    )
-
-
-def _campaigns(scope):
-    return scope.limit(
-        Campaign.objects.select_related("campus", "employee__live_version")
-    )
-
-
-def _sources(scope):
-    return scope.limit(
-        LeadSource.objects.select_related("campus", "employee__live_version")
     )
 
 
@@ -158,7 +120,7 @@ def telephony_calls_readiness() -> dict:
     return {
         "ready": plan.ready,
         "reason": " ".join(b.message for b in plan.blockers),
-        "number": mask_phone(outbound.allowed_number),
+        "number": mask_phone(outbound.rehearsal_number),
         "caller_id": mask_phone(outbound.caller_id),
     }
 
@@ -233,305 +195,6 @@ def incoming(request):
             "handled": missed.filter(handled_at__gte=week_ago)[:10],
             "can_handle": can_handle,
         },
-    )
-
-
-# --- campaigns ---------------------------------------------------------------------
-
-
-@scoped("campaigns.view")
-def campaigns(request):
-    scope = request.scope
-    found = _campaigns(scope).annotate(size=Count("queue"))
-    return render(
-        request,
-        "calling/campaigns.html",
-        {"campaigns": found, "manage": scope.can("campaigns.manage")},
-    )
-
-
-@scoped("campaigns.manage")
-def campaign_new(request):
-    scope = request.scope
-    form = CampaignForm(request.POST or None, scope=scope)
-    if request.method == "POST" and form.is_valid():
-        campaign = form.save(commit=False)
-        campaign.created_by = scope.user
-        campaign.save()
-        audit.record(scope, "campaign.created", campaign, name=campaign.name)
-        messages.success(request, "Campaign created. Add contacts next.")
-        return redirect("campaign-detail", pk=campaign.pk)
-    return render(
-        request, "calling/campaign_form.html", {"form": form, "campaign": None}
-    )
-
-
-@scoped("campaigns.view")
-def campaign_detail(request, pk):
-    scope = request.scope
-    campaign = scope.get(_campaigns(scope), pk=pk)
-    manage = scope.can("campaigns.manage")
-    add_form = AddContactsForm(campaign=campaign, prefix="add")
-    consent_form = ConsentAttestForm(prefix="consent")
-    edit_form = CampaignForm(instance=campaign, scope=scope, prefix="edit")
-    if request.method == "POST":
-        if not manage:
-            raise PermissionDenied
-        action = request.POST.get("action")
-        if action == "edit":
-            edit_form = CampaignForm(
-                request.POST, instance=campaign, scope=scope, prefix="edit"
-            )
-            if edit_form.is_valid():
-                edit_form.save()
-                messages.success(request, "Campaign saved.")
-                return redirect("campaign-detail", pk=campaign.pk)
-        elif action == "add":
-            add_form = AddContactsForm(request.POST, campaign=campaign, prefix="add")
-            if add_form.is_valid():
-                data = add_form.cleaned_data
-                if data["source"] == "import":
-                    found = data["batch"].contact_set.all()
-                else:
-                    found = queue.eligible_contacts(campaign.campus)
-                added, existing = queue.add_contacts(campaign, found)
-                audit.record(scope, "campaign.contacts_added", campaign, added=added)
-                messages.success(
-                    request,
-                    f"{added} contacts added; {existing} were already in the campaign.",
-                )
-                return redirect("campaign-detail", pk=campaign.pk)
-        elif action == "attest":
-            consent_form = ConsentAttestForm(request.POST, prefix="consent")
-            if consent_form.is_valid():
-                campaign.consent_attested = True
-                campaign.consent_note = consent_form.cleaned_data["note"]
-                campaign.consent_by = scope.user
-                campaign.consent_at = timezone.now()
-                campaign.status = Campaign.Status.READY
-                campaign.save()
-                audit.record(scope, "campaign.consent_attested", campaign)
-                messages.success(
-                    request, "Recorded. The campaign is ready for a dry run."
-                )
-                return redirect("campaign-detail", pk=campaign.pk)
-        elif action == "dry_run":
-            if not campaign.consent_attested:
-                messages.error(
-                    request, "Record that these people agreed to be called first."
-                )
-            else:
-                run = queue.dry_run(
-                    campaign.queue.all(),
-                    queue.Rules.for_campaign(campaign),
-                    campaign.employee,
-                    user=scope.user,
-                    campaign=campaign,
-                )
-                audit.record(
-                    scope,
-                    "campaign.dry_run",
-                    campaign,
-                    **{key: run.summary[key] for key in ("would_call", "skipped")},
-                )
-                messages.success(
-                    request,
-                    f"Dry run done: {run.summary['would_call']} would be called, "
-                    f"{run.summary['skipped']} skipped. Nobody was called.",
-                )
-            return redirect("campaign-detail", pk=campaign.pk)
-        elif action == "archive":
-            campaign.status = Campaign.Status.ARCHIVED
-            campaign.save(update_fields=["status"])
-            messages.success(request, "Campaign archived.")
-            return redirect("campaigns")
-        elif action == "remove":
-            entry = scope.get(campaign.queue.all(), pk=request.POST.get("entry"))
-            entry.delete()
-            messages.success(request, "Removed from the campaign.")
-            return redirect("campaign-detail", pk=campaign.pk)
-    entries = campaign.queue.select_related("contact").order_by(
-        "status", "due_at", "id"
-    )
-    counts = dict(campaign.queue.values_list("status").annotate(n=Count("id")))
-    return render(
-        request,
-        "calling/campaign.html",
-        {
-            "campaign": campaign,
-            "manage": manage,
-            "entries": entries[:200],
-            "counts": {
-                label: counts.get(value, 0)
-                for value, label in QueuedCall.Status.choices
-            },
-            "total": sum(counts.values()),
-            "last_run": campaign.runs.first(),
-            "employee_problem": queue.employee_problem(campaign.employee),
-            "add_form": add_form,
-            "consent_form": consent_form,
-            "edit_form": edit_form,
-            "dialling_enabled": settings.CONTACT_DIALING_ENABLED,
-        },
-    )
-
-
-# --- instant leads -------------------------------------------------------------------
-
-
-@scoped("sources.view")
-def instant(request):
-    scope = request.scope
-    sources = _sources(scope).annotate(lead_count=Count("events"))
-    waiting = scope.limit(
-        QueuedCall.objects.filter(source__isnull=False).select_related(
-            "contact", "source", "lead"
-        )
-    )
-    return render(
-        request,
-        "calling/instant.html",
-        {
-            "sources": sources,
-            "queue": waiting.order_by("-created_at")[:50],
-            "events": IntakeEvent.objects.filter(source__in=sources).select_related(
-                "source", "lead"
-            )[:20],
-            "manage": scope.can("sources.manage"),
-        },
-    )
-
-
-@scoped("sources.manage")
-def source_new(request):
-    scope = request.scope
-    form = LeadSourceForm(request.POST or None, scope=scope)
-    if request.method == "POST" and form.is_valid():
-        source = form.save(commit=False)
-        secret, source.secret_hash, source.secret_hint = intake.new_secret()
-        source.created_by = scope.user
-        source.save()
-        audit.record(scope, "source.created", source, name=source.name)
-        # Shown once on the next page, then gone.
-        request.session[SECRET_SESSION_KEY] = {
-            "source": str(source.pk),
-            "secret": secret,
-        }
-        return redirect("source-detail", pk=source.pk)
-    return render(request, "calling/source_form.html", {"form": form})
-
-
-@scoped("sources.view")
-def source_detail(request, pk):
-    scope = request.scope
-    source = scope.get(_sources(scope), pk=pk)
-    manage = scope.can("sources.manage")
-    form = LeadSourceForm(instance=source, scope=scope)
-    if request.method == "POST":
-        if not manage:
-            raise PermissionDenied
-        action = request.POST.get("action")
-        if action == "edit":
-            form = LeadSourceForm(request.POST, instance=source, scope=scope)
-            if form.is_valid():
-                form.save()
-                messages.success(request, "Lead source saved.")
-                return redirect("source-detail", pk=source.pk)
-        elif action == "new_secret":
-            secret, source.secret_hash, source.secret_hint = intake.new_secret()
-            source.save(update_fields=["secret_hash", "secret_hint"])
-            audit.record(scope, "source.secret_replaced", source)
-            request.session[SECRET_SESSION_KEY] = {
-                "source": str(source.pk),
-                "secret": secret,
-            }
-            messages.success(
-                request, "A new secret was made. The old one no longer works."
-            )
-            return redirect("source-detail", pk=source.pk)
-        elif action == "test":
-            event, _ = intake.receive(
-                source, {"phone": "+919000000000", "name": "Test lead", "dry_run": True}
-            )
-            messages.success(
-                request, f"Test delivery: {event.get_result_display()}. {event.detail}"
-            )
-            return redirect("source-detail", pk=source.pk)
-        elif action == "dry_run":
-            run = queue.dry_run(
-                source.queue.all(),
-                queue.Rules.for_source(source),
-                source.employee,
-                user=scope.user,
-                source=source,
-            )
-            messages.success(
-                request,
-                f"Dry run done: {run.summary['would_call']} would be called, "
-                f"{run.summary['skipped']} skipped. Nobody was called.",
-            )
-            return redirect("source-detail", pk=source.pk)
-    shown = request.session.get(SECRET_SESSION_KEY)
-    secret = ""
-    if shown and shown.get("source") == str(source.pk):
-        secret = shown["secret"]
-        del request.session[SECRET_SESSION_KEY]
-    return render(
-        request,
-        "calling/source.html",
-        {
-            "source": source,
-            "form": form,
-            "manage": manage,
-            "secret": secret,
-            "endpoint": request.build_absolute_uri(
-                reverse("lead-intake", args=[source.pk])
-            ),
-            "events": source.events.select_related("lead")[:30],
-            "queue": source.queue.select_related("contact", "lead").order_by(
-                "-created_at"
-            )[:30],
-            "last_run": source.runs.first(),
-            "employee_problem": queue.employee_problem(source.employee),
-        },
-    )
-
-
-@csrf_exempt  # Called by other systems; authenticated by the source's secret.
-@never_cache
-@require_POST
-def lead_intake(request, pk):
-    """Receive one new enquiry. JSON in, JSON out. See the source page for the format."""
-    if len(request.body) > INTAKE_MAX_BYTES:
-        return JsonResponse({"error": "Too large."}, status=413)
-    key = f"lead-intake:{pk}:{timezone.now():%Y%m%d%H%M}"
-    cache.add(key, 0, timeout=70)
-    if cache.incr(key) > INTAKE_RATE_PER_MINUTE:
-        return JsonResponse(
-            {"error": "Too many requests. Try again shortly."}, status=429
-        )
-    source = (
-        LeadSource.objects.select_related("organisation", "campus", "employee")
-        .filter(pk=pk)
-        .first()
-    )
-    try:
-        intake.authenticate(source, request.META.get(intake.SECRET_HEADER, ""))
-        data = json.loads(request.body or b"null")
-        event, lead = intake.receive(source, data)
-    except ValueError:
-        return JsonResponse({"error": "Send a JSON object."}, status=400)
-    except intake.IntakeRefusedError as error:
-        return JsonResponse({"error": str(error)}, status=error.status)
-    logger.info("lead intake", extra={"source": str(source.pk), "result": event.result})
-    status = 201 if event.result == IntakeEvent.Result.ACCEPTED else 200
-    return JsonResponse(
-        {
-            "result": event.result,
-            "detail": event.detail,
-            "lead": str(lead.pk) if lead else None,
-        },
-        status=status,
     )
 
 
