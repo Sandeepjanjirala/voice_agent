@@ -5,7 +5,7 @@ This repository is a Telugu AI calling agent made of **two separate processes**:
 - `voice_agent/` is a LiveKit Agents worker (Python SDK for voice AI agents). It owns the real-time STT, LLM and TTS loop and is designed to run on LiveKit Cloud.
 - `config/` and `apps/` are a Django + Django REST Framework backend. It owns business APIs, persistence, auth and the dashboard.
 
-See @README.md for setup and run commands, `docs/adr/0001-two-process-boundary.md` for the boundary, and `docs/AUDIT.md` for what was verified against the installed SDKs.
+See @README.md for setup and run commands, `docs/adr/0001-two-process-boundary.md` for the boundary, and `docs/history/AUDIT.md` for what was verified against the installed SDKs.
 
 ## Rules for this project
 

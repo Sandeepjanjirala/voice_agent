@@ -7,7 +7,7 @@ Updated 14 November 2026.
 
 | Phase | Scope | Current status |
 | :--- | :--- | :--- |
-| 1 | Independent Telugu voice worker | Core acceptance PASS: owner confirms Telugu/mixed speech and interruption; extended speech-quality checks INCOMPLETE (PHASE1_VERIFICATION.md) |
+| 1 | Independent Telugu voice worker | Core acceptance PASS: owner confirms Telugu/mixed speech and interruption; extended speech-quality checks INCOMPLETE (history/PHASE1_VERIFICATION.md) |
 | 1.5 | Own Django browser voice studio | Local functional PASS: owner checklist, browser regressions fixed, live synthetic-microphone smoke pass; extended/production checks INCOMPLETE |
 | 2 | Real incoming Indian phone calls | Integration BUILT and tested against a fake LiveKit: plan, status, apply, teardown, caller detection, optional hang-up. NO REAL INBOUND CALL YET: blocked on secure trunk authentication (see below) |
 | 3 | Real outgoing Indian phone calls triggered through Django | **Website-triggered outbound calling PASS (16 Nov 2026):** staff page, live status, call records and worker reports verified on two real calls. Limited to the owner's allow-listed number; consent handling and calls to anyone else not started |
