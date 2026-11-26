@@ -23,26 +23,55 @@ jobs:
       SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
 
     steps:
+    # Simulations need a LiveKit Cloud project and a Sarvam key. Without them, a run after a merge
+    # is skipped with a warning (it did not happen, so it is not reported as passed); a run started
+    # by hand fails, so a missing secret is never mistaken for a pass. With them, scenario failures
+    # fail the job.
+    - name: Check the secrets
+      id: secrets
+      run: |
+        missing=""
+        for name in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET SARVAM_API_KEY; do
+          [ -n "${!name}" ] || missing="$missing $name"
+        done
+        if [ -z "$missing" ]; then
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+        elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "::error::Simulations need these repository secrets:$missing"
+          exit 1
+        else
+          echo "::warning::Simulations did not run: these repository secrets are not set:$missing"
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+        fi
+
     - uses: actions/checkout@v6
+      if: steps.secrets.outputs.ready == 'true'
 
     - name: Install uv
+      if: steps.secrets.outputs.ready == 'true'
       uses: astral-sh/setup-uv@v1
       with:
         version: "latest"
 
     - name: Set up Python
+      if: steps.secrets.outputs.ready == 'true'
       uses: actions/setup-python@v4
       with:
         python-version: "3.12"
 
     - name: Install dependencies
+      if: steps.secrets.outputs.ready == 'true'
       run: UV_GIT_LFS=1 uv sync
 
+    # The installed plugins' model files, as the Dockerfile does; it needs no API keys.
     - name: Download model files
-      run: uv run python voice_agent/agent.py download-files
+      if: steps.secrets.outputs.ready == 'true'
+      run: uv run --module livekit.agents download-files
 
     - name: Install LiveKit CLI
+      if: steps.secrets.outputs.ready == 'true'
       run: curl -sSL https://get.livekit.io/cli | bash
 
     - name: Run simulations
+      if: steps.secrets.outputs.ready == 'true'
       run: lk agent simulate text --scenarios scenarios.yaml --concurrency 1 voice_agent/agent.py

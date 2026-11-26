@@ -1,7 +1,7 @@
 # Dashboard build: progress
 
 Building our own AI-employee calling dashboard on the existing Django project.
-See [FEATURE_MATRIX.md](FEATURE_MATRIX.md) for the comparison that drives it.
+See [FEATURE_MATRIX.md](../FEATURE_MATRIX.md) for the comparison that drives it.
 
 | Milestone | Scope | State |
 | :--- | :--- | :--- |
@@ -277,8 +277,8 @@ before, and the existing worker tests are unchanged)
 - Calling stored contacts (`CONTACT_DIALING_ENABLED = False`). Campaigns and
   instant leads run as dry runs; real calls go only to the approved test number.
 - Inbound SIP: routes are ready, but the trunk is not created until it can be
-  authenticated (see [INBOUND.md](INBOUND.md)).
-- Transfer to a person: designed in [INBOUND.md](INBOUND.md), not built.
+  authenticated (see [INBOUND.md](../INBOUND.md)).
+- Transfer to a person: designed in [INBOUND.md](../INBOUND.md), not built.
 - Recordings: not available (needs LiveKit egress and storage).
 
 **Changed behaviour to know about**
@@ -362,7 +362,7 @@ before, and the existing worker tests are unchanged)
      the organisation turns on "Let LiveKit Cloud keep call recordings…".
    - If turned on, LiveKit is also asked to redact personal details.
    - What LiveKit keeps, where and for how long:
-     [DEPLOYMENT.md](DEPLOYMENT.md#privacy-what-livekit-cloud-keeps).
+     [DEPLOYMENT.md](../DEPLOYMENT.md#privacy-what-livekit-cloud-keeps).
 2. **LiveKit dependency.** `livekit-protocol` moved from 1.1.31 (withdrawn) to
    1.1.32. That is the only change in the lock. `livekit-agents` stays
    1.8.10. The worker tests pass, including a real `AgentSession` started
@@ -383,7 +383,7 @@ before, and the existing worker tests are unchanged)
    real customers stays off.
 
 **Inbound.** LiveKit's reply of 16 November (community topic 2530) is recorded
-in [INBOUND.md](INBOUND.md):
+in [INBOUND.md](../INBOUND.md):
 
 - The India regional endpoint works on Build, with no approval needed.
 - They recommend deploying the worker to `ap-south`.
@@ -404,8 +404,8 @@ callers and escalation are built. Live transfer still waits for the trunk.
 - With DEBUG off, the settings give HTTPS only, secure cookies, HSTS,
   `X-Frame-Options: DENY`, 12-hour sessions, and a readiness check hidden
   from the public.
-- See [DEPLOYMENT.md](DEPLOYMENT.md) and
-  [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md).
+- See [DEPLOYMENT.md](../DEPLOYMENT.md) and
+  [DISASTER_RECOVERY.md](../DISASTER_RECOVERY.md).
 
 **What runs where**
 
@@ -429,7 +429,7 @@ callers and escalation are built. Live transfer still waits for the trunk.
 | `manage.py check`, `makemigrations --check` | Clean |
 | `manage.py check --deploy` | Clean with production settings (run inside the test suite) |
 | Celery, Redis and Beat | Real worker and Beat against Redis: Beat sent `deliver-webhooks` and the worker ran it, recorded as a job run |
-| Production stack | Built and started locally on loopback only, then removed. All services healthy, HTTP redirects to HTTPS, secure headers and cookies, static files served, backup and restore drill passed (see [DEPLOYMENT.md](DEPLOYMENT.md)) |
+| Production stack | Built and started locally on loopback only, then removed. All services healthy, HTTP redirects to HTTPS, secure headers and cookies, static files served, backup and restore drill passed (see [DEPLOYMENT.md](../DEPLOYMENT.md)) |
 | Chromium | `platform.cjs` (new) covers everything above at desktop and 390 px. It includes a booking, a double-booking refusal, signed webhooks checked at a loopback receiver, a missed caller, a voice preview, staff limits and phone widths. `dashboard.cjs`, `crm.cjs`, `calling.cjs` and `calls.cjs` still pass. No server errors |
 | `uv.lock` | Three isolated changes, additions only otherwise: `livekit-protocol` 1.1.31 → 1.1.32; `celery[redis]` (celery 5.7.0, redis 8.1.0 and their dependencies); `gunicorn` 23.0.0. `uv lock --check` passes |
 
