@@ -82,6 +82,9 @@ class CallRecorder:
         self._recorder: Any = None
         self._directory: Path | None = None
         self._recording_from: float | None = None
+        # Recording events go to Django in the background, one after another,
+        # so the caller never waits in silence while Django is slow.
+        self._last_report: asyncio.Task | None = None
         self.state = "waiting"
 
     @property
@@ -110,7 +113,7 @@ class CallRecorder:
         if not agreed and self.state in ("waiting", "recording"):
             await self._discard()
             self.state = "declined"
-            await self._reporter.send("recording", state="declined")
+            self._report(state="declined")
             return "Nothing is recorded. Continue the call."
         return "Already noted. Continue the call."
 
@@ -135,8 +138,7 @@ class CallRecorder:
         self._recorder = recorder
         self._recording_from = time.time()
         self.state = "recording"
-        await self._reporter.send(
-            "recording",
+        self._report(
             state="started",
             offset=round(max(self._recording_from - self._started_at, 0.0), 2),
         )
@@ -145,7 +147,23 @@ class CallRecorder:
         logger.warning("call not recorded", extra={"reason": reason})
         self._remove_files()
         self.state = "failed"
-        await self._reporter.send("recording", state="failed", reason=reason)
+        self._report(state="failed", reason=reason)
+
+    def _report(self, **fields: Any) -> None:
+        """Send a recording event without waiting for it, after the one before."""
+        previous = self._last_report
+
+        async def send() -> None:
+            if previous is not None:
+                await asyncio.gather(previous, return_exceptions=True)
+            await self._reporter.send("recording", **fields)
+
+        self._last_report = asyncio.create_task(send())
+
+    async def flush(self) -> None:
+        """Wait for the recording events still on their way."""
+        if self._last_report is not None:
+            await asyncio.gather(self._last_report, return_exceptions=True)
 
     async def _close(self) -> Path | None:
         recorder, self._recorder = self._recorder, None
@@ -172,6 +190,7 @@ class CallRecorder:
     async def finish(self) -> bool:
         """At the end of the call: close the file and upload it. Returns True
         when Django has the recording."""
+        await self.flush()
         if self.state != "recording":
             return False
         path = await self._close()

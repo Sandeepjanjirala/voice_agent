@@ -946,6 +946,61 @@ the WhatsApp message cost and "calls at the same time".
 - Django check, `makemigrations --check` and `uv lock --check` are clean; no
   migration was needed.
 
+## Review and fixes after the owner's commit (25 November 2026)
+
+On top of `330954a` ("Modified the project"), not committed. A code review of
+that commit, each finding checked against the code before fixing.
+
+**Fixed**
+
+- **Make calls**:
+  - **A stuck call record no longer blocks a list for ever.** Before calling
+    the next person, a list now closes records older than any call could last
+    and checks the remaining active ones with LiveKit, as starting a call
+    does. Before, with the Test line page gone, nothing cleared a record left
+    "active" by a worker that stopped.
+  - **Two steps at once** (two open tabs, or a tab and the Celery scheduler)
+    could mark a call being placed as "Failed" while the phone rang. Each
+    list step now holds a lock, and an entry waiting for its call record has
+    two minutes before it is given up.
+  - **Pausing or cancelling during a call** left that row "Calling" for ever.
+    The page and the scheduler now keep settling the last call after a list
+    stops.
+  - **A file over 500 rows** was cut short without a word (the rest of the
+    people were dropped). It is now refused with "split the file". Blank
+    rows Excel keeps at the end do not count.
+- **Recordings**:
+  - **The worker had 10 seconds after a call**: LiveKit's default
+    `shutdown_process_timeout`, checked in the installed SDK. The final
+    report, the room deletion and a recording upload can take longer, and the
+    process was killed mid-upload. It is now 240 seconds.
+  - **The caller heard silence while Django was slow**: the consent tool
+    waited for the "recording started" report and its retries. The reports
+    now go in the background, in order, and are sent before the upload.
+  - **A lost "started" report lost a consented recording**: the signed upload
+    was refused. The upload is now accepted unless the person declined, and
+    an upload that is not audio leaves no record behind.
+- **Staff calls API**:
+  - A malformed employee ID gave a server error; it is now a 400.
+  - An employee named without an organisation is refused instead of dropped.
+  - Campus-limited staff can see the calls they placed themselves.
+- **Wording left over from deleted pages**: the WhatsApp permission panel (it
+  is now marked as kept on record only, since nothing is sent; the consent
+  record itself is kept), the notifications page and the access log heading.
+
+**Checked and not a problem**: the claimed false "waited 8 seconds" warning.
+In the installed SDK a reply's time is when the AI starts speaking
+(`agent_activity.py`, `created_at=started_speaking_at`).
+
+**How it was checked**
+
+- Python: SQLite 821 passed; PostgreSQL 17, 821 passed. There are 8 new tests
+  for the fixes above.
+- Browser suites: dashboard, crm, calling, make_calls, screens and platform
+  pass.
+- The worker started in `lk agent debugger` with the new shutdown setting and
+  answered a turn.
+
 ## Run the browser check
 
 ```powershell

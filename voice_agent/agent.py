@@ -48,7 +48,11 @@ except ConfigError as e:
 
 configure_logging(settings)
 
-server = AgentServer()
+# After a call the job reports the end (retried, about 17 s at worst), deletes
+# the room and uploads any recording (3 tries of up to 60 s). LiveKit kills a
+# job process that takes longer than this to shut down (default 10 s).
+SHUTDOWN_SECONDS = 240.0
+server = AgentServer(shutdown_process_timeout=SHUTDOWN_SECONDS)
 
 
 @server.rtc_session(agent_name=settings.agent_name)

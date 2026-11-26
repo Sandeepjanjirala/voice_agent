@@ -55,7 +55,7 @@
     </section>
     <section class="panel" id="whatsapp">
       <div class="panel-head"><h2>WhatsApp messages</h2></div>
-      <p class="help" style="margin-top:0">Separate from permission to call. Only approved templates are sent, and only with this permission.{% if contact.whatsapp_consent_at %} Recorded {{ contact.whatsapp_consent_at|date:"j M Y" }}.{% endif %}</p>
+      <p class="help" style="margin-top:0">Separate from permission to call. Kept on record only: this platform sends no WhatsApp messages.{% if contact.whatsapp_consent_at %} Recorded {{ contact.whatsapp_consent_at|date:"j M Y" }}.{% endif %}</p>
       {% if can_edit %}
       <form method="post">{% csrf_token %}<input type="hidden" name="action" value="whatsapp">
         <div class="field"><label class="check-label"><input type="checkbox" name="whatsapp_consent"{% if contact.whatsapp_consent %} checked{% endif %}> <span>Agreed to receive WhatsApp messages from us</span></label></div>

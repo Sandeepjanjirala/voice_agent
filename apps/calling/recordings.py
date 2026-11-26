@@ -134,21 +134,31 @@ def receive(record, data: bytes, *, duration, offset) -> CallRecording:
     if record.organisation is None or not _allowed(record):
         raise RecordingError("This call may not be recorded.", 403)
     recording = CallRecording.objects.filter(call=record).first()
-    if recording is None or recording.consented_at is None:
-        raise RecordingError("No consent was recorded for this call.", 409)
-    if recording.status == Status.DELETED:
-        raise RecordingError("This recording was deleted.", 410)
     digest = hashlib.sha256(data).hexdigest()
-    if recording.status == Status.AVAILABLE:
-        if recording.sha256 == digest:
-            return recording  # the worker retried a delivered upload
-        raise RecordingError("This call already has a recording.", 409)
+    if recording is not None:
+        if recording.consented_at is None and recording.status == Status.NOT_RECORDED:
+            raise RecordingError("The person did not agree to be recorded.", 409)
+        if recording.status == Status.DELETED:
+            raise RecordingError("This recording was deleted.", 410)
+        if recording.status == Status.AVAILABLE:
+            if recording.sha256 == digest:
+                return recording  # the worker retried a delivered upload
+            raise RecordingError("This call already has a recording.", 409)
     if not data.startswith(OGG_MAGIC):
         raise RecordingError("The upload is not an Ogg audio file.", 400)
     if len(data) > MAX_BYTES:
         raise RecordingError("The recording is too large.", 413)
+    if recording is None:
+        recording = CallRecording.objects.create(
+            call=record, organisation=record.organisation, status=Status.RECORDING
+        )
+    if recording.consented_at is None:
+        # The worker records, and signs an upload, only after the person
+        # agreed; the "started" event that says so may have been lost.
+        recording.consented_at = timezone.now()
+        recording.reason = ""
     recording.status = Status.PROCESSING
-    recording.save(update_fields=["status", "updated_at"])
+    recording.save(update_fields=["consented_at", "reason", "status", "updated_at"])
     try:
         key = store(recording, data)
     except RecordingError as error:

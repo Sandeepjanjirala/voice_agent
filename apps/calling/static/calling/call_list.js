@@ -1,6 +1,7 @@
 // A running call list: every few seconds, ask the server to take the next
 // step (settle the call in progress, or call the next person) and show the
-// progress. When the list stops (finished, paused, cancelled) the page reloads.
+// progress. When the list has stopped (finished, paused, cancelled) and no
+// call is still on the line, the page reloads.
 (() => {
   const root = document.getElementById('call-list');
   if (!root) return;
@@ -46,7 +47,7 @@
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       show(data);
-      if (data.status !== 'running') {
+      if (data.status !== 'running' && !data.tally.calling) {
         window.location.reload();
         return;
       }

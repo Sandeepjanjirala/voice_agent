@@ -376,15 +376,12 @@ def _mark_recording(
         # No profile: nothing on the call could ask the person, so no recording.
         snapshot["recording"] = {
             "allowed": False,
-            "reason": "This call had no AI employee or agent profile to ask the "
-            "person for consent.",
+            "reason": "This call had no AI employee to ask the person for consent.",
         }
     else:
         recordings.mark_call(
             payload, snapshot, record.organisation, test_number=test_number
         )
-    if "profile" in snapshot:
-        snapshot["profile"] = payload
     record.context_snapshot = snapshot
     CallRecord.objects.filter(pk=record.pk).update(context_snapshot=snapshot)
 

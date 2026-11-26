@@ -113,6 +113,7 @@ async def test_both_sides_are_in_the_real_recording_and_a_cut_off_reply_stops():
     )
     FakeSession.status, FakeSession.error, FakeSession.sent = 201, None, []
     assert "Recording has started" in await recorder.consent(True)
+    await recorder.flush()
     assert sent[0][0] == "recording" and sent[0][1]["state"] == "started"
     assert 2.9 <= sent[0][1]["offset"] <= 4.0
 
@@ -228,6 +229,7 @@ async def test_no_or_no_answer_records_nothing():
     sent = []
     recorder, started = make_recorder(sent)
     assert "Nothing is recorded" in await recorder.consent(False)
+    await recorder.flush()
     assert started == [] and sent == [("recording", {"state": "declined"})]
     assert await recorder.finish() is False
     # No answer at all: the call ends and nothing was started or sent.
@@ -242,6 +244,7 @@ async def test_a_change_of_mind_deletes_what_was_recorded():
     path = started[0]
     assert path.exists()
     await recorder.consent(False)
+    await recorder.flush()
     assert not path.exists() and not path.parent.exists()
     assert sent[-1] == ("recording", {"state": "declined"})
     FakeSession.sent = []
@@ -255,12 +258,14 @@ async def test_recording_cannot_start_without_audio_or_an_upload_address():
     )
     recorder, _ = make_recorder(sent, session=silent)
     assert "could not start" in await recorder.consent(True)
+    await recorder.flush()
     assert sent == [
         ("recording", {"state": "failed", "reason": "the call has no audio to record"})
     ]
     sent.clear()
     nowhere, _ = make_recorder(sent, upload_url=None)
     await nowhere.consent(True)
+    await nowhere.flush()
     assert sent[0][1]["state"] == "failed"
 
 
@@ -342,3 +347,23 @@ def test_the_question_is_asked_only_when_django_allows_recording():
 async def test_the_sdk_recorder_is_the_one_used():
     recorder, _ = make_recorder([], recorder_factory=None)
     assert isinstance(recorder._recorder_factory(SimpleNamespace()), RecorderIO)
+
+
+async def test_the_caller_never_waits_for_django_to_hear_about_consent():
+    gate = asyncio.Event()
+    sent = []
+
+    class SlowReporter:
+        async def send(self, event, **fields):
+            await gate.wait()
+            sent.append((event, fields))
+
+    recorder, _ = make_recorder(sent)
+    recorder._reporter = SlowReporter()
+    reply = await asyncio.wait_for(recorder.consent(True), timeout=1)
+    assert "Recording has started" in reply and sent == []
+    await recorder.consent(False)
+    gate.set()
+    await recorder.flush()
+    # Sent in the order they happened, even though both were held up.
+    assert [fields["state"] for _, fields in sent] == ["started", "declined"]

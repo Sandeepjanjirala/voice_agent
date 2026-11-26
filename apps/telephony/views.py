@@ -4,9 +4,11 @@ import hmac
 import json
 import logging
 import time
+import uuid
 
 from django.conf import settings as django_settings
 from django.core.cache import cache
+from django.db.models import Q
 from django.http import HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
@@ -47,7 +49,9 @@ def _visible_calls(request):
     if scope is not None and scope.organisation is not None:
         found = found.filter(organisation=scope.organisation)
         if not scope.all_campuses:
-            found = found.filter(campus__in=scope.campus_ids)
+            found = found.filter(
+                Q(campus__in=scope.campus_ids) | Q(placed_by=request.user)
+            )
     elif not request.user.is_staff:
         found = found.none()
     return found
@@ -90,12 +94,15 @@ class CallListView(APIView):
 
         scope = scope_for(request)
         employee = None
-        if request.data.get("employee") and scope and scope.organisation:
-            employee = (
-                scope.limit_shared(Employee.objects.all())
-                .filter(pk=str(request.data["employee"]))
-                .first()
-            )
+        if request.data.get("employee"):
+            try:
+                wanted = uuid.UUID(str(request.data["employee"]))
+            except ValueError:
+                wanted = None
+            if wanted is not None and scope and scope.organisation:
+                employee = (
+                    scope.limit_shared(Employee.objects.all()).filter(pk=wanted).first()
+                )
             if employee is None:
                 return Response(
                     {"error": "Choose one of your published employees.", "details": []},

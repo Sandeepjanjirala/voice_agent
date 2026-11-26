@@ -233,7 +233,6 @@ def test_after_a_yes_the_audio_is_stored_encrypted_and_belongs_to_the_call(
 
 def test_uploads_without_consent_or_permission_or_signature_are_refused(world, ogg):
     record = place_test_call(world)
-    assert upload(record, ogg).status_code == 409, "no consent recorded"
     assert worker_event(record, state="declined").status_code == 204
     assert CallRecording.objects.get(call=record).status == "not_recorded"
     assert upload(record, ogg).status_code == 409
@@ -249,6 +248,19 @@ def test_uploads_without_consent_or_permission_or_signature_are_refused(world, o
     assert upload(fresh, ogg, timestamp=str(int(time.time()) - 900)).status_code == 403
     assert upload(fresh, b"not audio at all").status_code == 400
     assert CallRecording.objects.get(call=fresh).status == "recording"
+
+
+def test_a_lost_started_event_does_not_lose_the_recording(world, ogg):
+    """The worker uploads only after the person agreed, and the upload is
+    signed; if the "started" event never arrived, the recording is kept."""
+    record = place_test_call(world)
+    assert upload(record, ogg).status_code == 201
+    recording = CallRecording.objects.get(call=record)
+    assert recording.status == "available" and recording.consented_at is not None
+    # Nothing is kept from an upload that is not audio.
+    other = place_test_call(world)
+    assert upload(other, b"not audio at all").status_code == 400
+    assert not CallRecording.objects.filter(call=other).exists()
 
 
 def _unrecordable_call(world):
