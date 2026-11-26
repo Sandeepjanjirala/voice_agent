@@ -5,7 +5,7 @@ Updated 14 November 2026.
 **Status: the inbound integration is built and tested against a fake LiveKit. It has
 not carried a real call.** No number has been bought, no trunk or dispatch rule exists
 in LiveKit, and nothing is deployed. Going live waits on the items in
-[VOBIZ_SETUP.md](VOBIZ_SETUP.md), which need the owner's accounts.
+[VOBIZ_SETUP.md](../VOBIZ_SETUP.md), which need the owner's accounts.
 
 ## What exists
 

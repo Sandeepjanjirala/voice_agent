@@ -11,23 +11,21 @@ secure trunk authentication. Nothing is deployed. See [docs/ROADMAP.md](docs/ROA
 
 | Document | What it covers |
 | :--- | :--- |
-| [docs/PROGRESS.md](docs/PROGRESS.md) | Dashboard build: what each milestone delivered and how it was checked |
+| [docs/DASHBOARD.md](docs/DASHBOARD.md) | The staff dashboard: AI employees, making calls, call records and how the worker reports them |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production setup (not deployed): services, HTTPS, secrets, monitoring, what LiveKit Cloud keeps |
 | [docs/DISASTER_RECOVERY.md](docs/DISASTER_RECOVERY.md) | Backups, restore drill and recovery runbooks |
-| [docs/RECORDINGS.md](docs/RECORDINGS.md) | Call recordings: how they work, consent, storage in India, costs, and the steps for a first recorded test call |
-| [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) | Feature-by-feature comparison with the reference product, and what is still missing |
-| [docs/CONTACT_KEYS.md](docs/CONTACT_KEYS.md) | Backing up, recovering and rotating the keys that protect stored phone numbers |
 | [docs/INBOUND.md](docs/INBOUND.md) | Inbound routing, call lifecycle, and the transfer design |
 | [docs/OUTBOUND_TEST.md](docs/OUTBOUND_TEST.md) | The first real call: one outbound test call to your own mobile |
 | [docs/VOBIZ_SETUP.md](docs/VOBIZ_SETUP.md) | Step-by-step account, number and trunk setup for the first real inbound call |
-| [docs/PHASE2_IMPLEMENTATION.md](docs/PHASE2_IMPLEMENTATION.md) | Inbound telephony integration: what was built, verified, and what is not yet proven |
-| [docs/PHASE2_READINESS.md](docs/PHASE2_READINESS.md) | Provider comparison, costs, regulation and the Phase 2 plan |
+| [docs/RECORDINGS.md](docs/RECORDINGS.md) | Call recordings: how they work, consent, storage in India, costs, and the steps for a first recorded test call |
+| [docs/CONTACT_KEYS.md](docs/CONTACT_KEYS.md) | Backing up, recovering and rotating the keys that protect stored phone numbers |
 | [docs/CALL_TERMINATION_DESIGN.md](docs/CALL_TERMINATION_DESIGN.md) | Goodbye and hang-up behaviour, off unless `AGENT_CAN_END_CALL=true` |
-| [docs/PHASE1_5_VERIFICATION.md](docs/PHASE1_5_VERIFICATION.md) | History: the browser voice studio (since removed) and its verification |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | Full incoming/outgoing calling roadmap, Phases 1?5 |
-| [docs/AUDIT.md](docs/AUDIT.md) | What the implementation brief got right and wrong against current SDKs |
-| [docs/PHASE1_VERIFICATION.md](docs/PHASE1_VERIFICATION.md) | What was tested, what was not, and the microphone tests you need to run |
+| [docs/VOICE_TUNING.md](docs/VOICE_TUNING.md) | Voice responsiveness checkpoint: turn-taking and interruption settings |
+| [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) | Feature-by-feature comparison with the reference product, and what is still missing |
+| [docs/PILOT_READINESS.md](docs/PILOT_READINESS.md) | Acceptance and pilot readiness for an education organisation |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Full incoming/outgoing calling roadmap, Phases 1–5 |
 | [docs/adr/0001-two-process-boundary.md](docs/adr/0001-two-process-boundary.md) | Why the voice worker and Django are separate processes |
+| [docs/history/](docs/history/) | Records of finished phases: the Phase 0 audit, Phase 1 and 1.5 verification, the Phase 2 plan and implementation, and the dashboard build log |
 
 ## How it is put together
 
@@ -194,145 +192,12 @@ Who can be called follows `OUTBOUND_DIALING_MODE`:
 - `allowlist`: only `OUTBOUND_ALLOWLIST_NUMBERS`; other rows show
   "Could not call" with the reason.
 
-## Dashboard and AI employees (staff only)
+## Dashboard and call records
 
-Signing in as a staff user opens <http://127.0.0.1:8000/home/>: your AI employees,
-this week's calls and a setup checklist. **Hire an employee** takes a job described
-in plain language and drafts an editable employee for that job, whatever it is:
-fee questions, feedback, reminders, checking details, reception, support. The
-draft has:
-
-- a name and opening line
-- why it is calling and what a successful call achieves
-- steps and details to collect
-- situations and what to do in each
-- limits, when to hand over to a person, and how to end
-- the possible results of a call (your own labels)
-- information it may give
-
-Nothing about any one kind of call is built in: the employee does what its form
-says. Edit it, then **Publish**. Each publish is a numbered version; older
-versions can be copied back into the draft. **Make calls** on a published
-employee opens Make calls with that employee chosen, to call your own number
-and hear it.
-
-Drafting uses the same `LLM_*` settings as the voice worker, so it needs no extra
-key. If the LLM cannot be reached, the draft starts from a plain template and says so.
-
-### Organisations, campuses and roles
-
-| Role | Sees and does |
-| :--- | :--- |
-| Platform superuser (Django superuser) | Creates organisations; works in one at a time, chosen in the sidebar |
-| Organisation admin | Everything in their organisation: campuses, staff, employees, leads, reports, access log, retention |
-| Campus staff | Leads, contacts, calls and reports of the campuses ticked for them |
-
-On first sign-in the superuser is asked to set up an organisation; existing
-employees and call records move into it. Add staff under **Campuses & staff**.
-A record in another organisation or campus is a 404, whatever ID is typed.
-
-### Contacts and phone numbers
-
-Contact numbers are encrypted before they reach the database, matched through a
-keyed hash, and shown masked. Create the two keys once and add them to `.env.local`:
-
-```powershell
-.\.venv\Scripts\python.exe manage.py contactkeys generate   # prints the two lines
-.\.venv\Scripts\python.exe manage.py contactkeys status
-.\.venv\Scripts\python.exe manage.py contactkeys rotate     # after putting a new key first
-.\.venv\Scripts\python.exe manage.py retention              # preview; add --apply to carry out
-```
-
-Keep the keys out of Git and out of database backups; in production use a secrets
-manager. Calling stored contacts is switched off (`CONTACT_DIALING_ENABLED=false`).
-Use made-up contacts until real data is authorised.
-
-### Who can be dialled
-
-One dialing policy, read by Django and the voice worker alike:
-
-| Setting | Meaning |
-| :--- | :--- |
-| `OUTBOUND_DIALING_MODE=allowlist` (default) | Only numbers in `OUTBOUND_ALLOWLIST_NUMBERS` (comma-separated, +91…). Anything else is refused with a message, before LiveKit is touched |
-| `OUTBOUND_DIALING_MODE=live` | Any valid number, between 09:00 and 21:00 and, for a campus, in its opening hours. Not to be used until real outbound calling is approved |
-| `CONTACT_DIALING_ENABLED=true` | A lead's **Call** button may dial a stored contact who agreed to be called; the policy above still applies. Off (the default): nobody is dialled from a lead. Make calls does not use this switch: it has its own consent tick |
-
-Make calls applies its own checks to every number on a list: the do-not-call
-list, 09:00 to 21:00 and the campus's opening hours, one call at a time, the
-monthly minutes budget (under **Settings**), and the dialing policy above.
-
-Every call goes out from the outbound caller ID set in `.env.local`. Restart
-Django and the worker after changing these settings.
-
-### Numbers, knowledge and results
-
-- **Numbers & channels**: business lines, each with a campus and the published
-  employee that answers it. Inbound calls stay off until the SIP trunk can be
-  authenticated; see [docs/INBOUND.md](docs/INBOUND.md).
-- **Knowledge**: facts and rules per campus, given to each call.
-- After a call, the conversation is analysed against that employee's own job
-  by a background job, which then carries out the employee's permitted
-  actions (a follow-up task, a lead's stage). Each call page (**Call results**)
-  shows:
-  - why the call happened and a summary
-  - the result (one of the employee's own results) and whether it was resolved
-  - what was collected, and what the AI told the person
-  - what is still open, the next step, and whether staff must follow up
-  - whether the AI followed its instructions
-  - problems: those measured from the call (cut-offs, long waits, repeats,
-    unclear speech, failed tools), and those read from the conversation,
-    which are shown only with a quote that is really in it
-  - the conversation itself as a chat with times, marked as what speech
-    recognition heard, and how the call ended
-
-  What is kept follows the organisation's setting under Settings:
-  - Off: nothing.
-  - Summary, then delete (the default): the conversation goes once the summary
-    is written, and the page says when.
-  - Keep: the conversation is also kept for the retention days.
-
-  Opening a conversation is written to the access log. Conversations can be
-  filtered to calls that need follow-up or have issues. **Analyse again**
-  reruns the analysis by hand.
-
-### Call recordings
-
-Off until an admin chooses it under Settings: never (the default),
-approved test calls only, or any call. Even then a call is recorded only after
-the person says yes to the question added to the opening line; on no or no
-clear answer nothing is captured.
-
-- **What is recorded:** both sides of the real call audio, with the person on
-  the left channel and the AI on the right.
-- **Storage:** encrypted with `RECORDING_ENCRYPTION_KEYS`, in a private folder
-  or a private S3 bucket in India.
-- **Playback:** on the call page, with play, seek, the transcript linked to the
-  audio, and download for admins. Every access is logged.
-- **Retention:** recordings are deleted on their own schedule, separate from
-  transcripts.
-
-Setup and the steps for a first test call are in
-[docs/RECORDINGS.md](docs/RECORDINGS.md); `manage.py recordings key|status|check`
-helps.
-
-### Campuses and operations
-
-- **Campuses**: opening hours, holidays, the closed message and who takes
-  escalations. **Incoming calls** lists missed callers.
-- **Operations**, **Usage & costs** and the notification bell show jobs,
-  failures and monthly usage.
-
-For call lists to keep going with the page closed, and for jobs on a schedule,
-run Redis and Celery in two more windows:
-
-```powershell
-# REDIS_URL=redis://127.0.0.1:6379/0 in .env.local, with Redis running
-.\.venv\Scripts\python.exe -m celery -A config worker --loglevel INFO --pool solo
-.\.venv\Scripts\python.exe -m celery -A config beat --loglevel INFO
-```
-
-Without `REDIS_URL`, jobs run inside Django (the request that queues them, or
-the open Make calls page), so call results and call lists work with no Redis.
+Staff sign in at <http://127.0.0.1:8000/home/> to hire and publish AI employees,
+place calls and read call results. Every call is stored with a masked number, timings, SIP status
+and latency. The full guide, including how the worker reports calls back to Django, is in
+[docs/DASHBOARD.md](docs/DASHBOARD.md).
 
 ## Inbound telephony
 
@@ -351,42 +216,6 @@ list them in `TELEPHONY_CONFIRMED`. `apply` creates the LiveKit trunk and dispat
 only when the plan has no blockers; `teardown` removes them. Settings are under
 "Inbound telephony" in [.env.example](.env.example). Follow
 [docs/VOBIZ_SETUP.md](docs/VOBIZ_SETUP.md) for the first real call.
-
-## Call records and the worker
-
-Every call, including `manage.py telephony call`, is stored as a record with a
-masked number, timestamps, talk time, SIP status and latency, and appears under
-**Call results**.
-
-Make your account staff once (or use a superuser):
-
-```powershell
-.\.venv\Scripts\python.exe manage.py shell -c "from django.contrib.auth import get_user_model as U; U().objects.filter(username='YOUR_USERNAME').update(is_staff=True)"
-```
-
-`CALL_EVENTS_URL` and `CALL_EVENTS_SECRET` in `.env.local` let the worker report each
-call's outcome, SIP status and latency to Django (signed; no numbers or transcripts).
-Without them calls still work and outcomes are inferred from LiveKit, with less detail.
-
-With `CALL_EVENTS_URL` set, a call no longer carries the employee's instructions
-in its LiveKit metadata. It carries a signed reference that expires after five
-minutes, and the worker fetches the call's fixed instructions from
-`/api/telephony/call-profile/` with the same secret. If the worker cannot fetch
-them, it does not dial. `CALL_PROFILE_BY_REFERENCE=false` turns this off.
-
-### PostgreSQL
-
-SQLite remains the zero-setup default. To use PostgreSQL locally with Docker Desktop:
-
-```powershell
-# In .env.local: POSTGRES_PASSWORD=<a strong password>
-docker compose --env-file .env.local up -d
-# In .env.local: DATABASE_URL=postgres://telugu_agent:<that password>@127.0.0.1:5432/telugu_agent
-.\.venv\Scripts\python.exe manage.py migrate
-.\.venv\Scripts\python.exe manage.py createsuperuser
-```
-
-Accounts do not move between databases, so create your user again after switching.
 
 ## Change the voice, model or language
 
@@ -526,3 +355,7 @@ The worker scaffolding (project layout conventions, `Dockerfile`, CI workflows,
 `AGENTS.md`) is adapted from
 [livekit-examples/agent-starter-python](https://github.com/livekit-examples/agent-starter-python)
 (MIT, Copyright LiveKit, Inc.).
+
+## License
+
+[MIT](LICENSE).

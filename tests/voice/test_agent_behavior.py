@@ -2,7 +2,7 @@
 
 These check our wiring (greeting, prompt, error fallback). They say nothing
 about speech quality, real model replies or latency: those need live providers
-and a microphone, as described in docs/PHASE1_VERIFICATION.md.
+and a microphone, as described in docs/history/PHASE1_VERIFICATION.md.
 """
 
 import asyncio

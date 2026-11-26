@@ -3,7 +3,7 @@
 Nothing here is a default that lets a call through. A capability a plan depends
 on stays a blocker until the owner records a confirmation for it in
 TELEPHONY_CONFIRMED. The notes say what the vendor documents and what is still
-unproven; see docs/PHASE2_READINESS.md for sources.
+unproven; see docs/history/PHASE2_READINESS.md for sources.
 """
 
 from dataclasses import dataclass, field

@@ -32,7 +32,7 @@ The test-number fixture is synthetic too; it is not the owner's live number.
 | Deployment/recovery | Production Django checks; E report records local compose/backup/restore drill | Real domain, host, load, off-device recovery or existing-data migration |
 
 Fresh verification results are recorded below; historical E browser/compose
-results remain in PROGRESS.md and DEPLOYMENT.md and are not described as fresh runs.
+results remain in history/PROGRESS.md and DEPLOYMENT.md and are not described as fresh runs.
 
 Fresh results: **722 passed on SQLite and 722 passed on disposable PostgreSQL
 17**, including the new admission journey. Django system checks and migration
