@@ -39,6 +39,23 @@ Two processes that are started and deployed separately:
 The worker never imports Django and Django never imports the voice stack. A test
 enforces this.
 
+```mermaid
+flowchart LR
+    phone["Caller's phone (+91)"] <-- "PSTN" --> trunk["SIP trunk<br/>(Vobiz)"]
+    trunk <-- "SIP" --> lk["LiveKit Cloud<br/>SIP + rooms"]
+    lk <-- "audio" --> worker["Voice worker (voice_agent/)<br/>Sarvam STT → LLM → Sarvam TTS"]
+    staff["Staff browser"] --> django["Django + DRF (config/, apps/)<br/>dashboard, AI employees, call records"]
+    django -- "dispatch an outbound call<br/>(LiveKit API)" --> lk
+    worker -- "fetch the call's employee profile,<br/>report call events (signed HTTP)" --> django
+    django --> db[("PostgreSQL")]
+```
+
+| Home: calls in four steps | Call results |
+|---|---|
+| ![Dashboard home](docs/screenshots/home.png) | ![Call results](docs/screenshots/call-results.png) |
+
+Screenshots from the disposable QA server (`python -m tests.browser.dashboard_server`): made-up organisation, campuses and masked numbers.
+
 ## Setup on Windows
 
 Run these in PowerShell from the repository folder.
@@ -264,7 +281,12 @@ lk agent simulate text --scenarios scenarios.yaml --concurrency 1 voice_agent/ag
 ```
 
 `--concurrency 1` is needed on the Windows development machine, where parallel local
-sessions failed to connect in time. To compare LLMs on the agent's prompt:
+sessions failed to connect in time.
+
+In CI, `.github/workflows/simulations.yml` runs them after each merge to `main` when the repository
+has the `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` and `SARVAM_API_KEY` secrets. Without
+them the run is skipped with a warning (a run started by hand fails instead), so a skipped run is
+never reported as a pass. To compare LLMs on the agent's prompt:
 
 ```powershell
 uv run python scripts/llm_bakeoff.py google/gemma-4-31b-it openai/gpt-5.4-mini
