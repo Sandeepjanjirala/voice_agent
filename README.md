@@ -174,7 +174,7 @@ After signing in, the sidebar shows the four steps first:
    own number.
 2. **Make calls:** type numbers (one per line, with a name if you like) or
    upload an Excel/CSV list with a Phone (or Mobile) column and an optional
-   Name column.
+   Name column. A list holds up to 500 people; split a bigger file.
    - Click **Check numbers**. Rows that are not Indian mobile numbers are
      listed with the reason, and repeated numbers are kept once.
    - Tick that everyone agreed to be called, then **Start calling**.

@@ -21,9 +21,11 @@ import io
 import logging
 import re
 from dataclasses import dataclass, field
+from datetime import timedelta
 
+from django.core.cache import cache
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from apps.crm import contacts, crypto
@@ -52,6 +54,12 @@ PHONE_HEADERS = (
 NAME_HEADERS = ("name", "parent", "parent name", "student", "student name", "guardian")
 PHONE_TOKEN = re.compile(r"\+?\d[\d\s\-()]{8,}\d")
 CONSENT_TEXT = "Everyone on this list agreed to be called by {organisation} about this."
+# A step holds this lock, so two steps (the open page and the scheduler, or
+# two open pages) never work on the same list at once.
+STEP_LOCK_SECONDS = 120
+# How long an entry may be "calling" with no call record yet: the other
+# step may still be placing it.
+DIAL_GRACE = timedelta(minutes=2)
 
 
 class ListError(Exception):
@@ -179,11 +187,9 @@ def _xlsx_rows(upload) -> list[list[str]]:
             "The Excel file could not be read. Save it as .xlsx and try again."
         ) from None
     sheet = book.worksheets[0]
-    rows = []
-    for row in sheet.iter_rows(values_only=True):
-        if len(rows) > MAX_ROWS + 1:
-            break
-        rows.append([_cell(value) for value in row])
+    rows = _within_limit(
+        [_cell(value) for value in row] for row in sheet.iter_rows(values_only=True)
+    )
     book.close()
     return rows
 
@@ -200,12 +206,25 @@ def _csv_rows(upload) -> list[list[str]]:
         raise ListError(
             "The CSV file could not be read. Save it as UTF-8 and try again."
         )
-    return [
-        row
-        for _, row in zip(
-            range(MAX_ROWS + 2), csv.reader(io.StringIO(text)), strict=False
-        )
-    ]
+    return _within_limit(csv.reader(io.StringIO(text)))
+
+
+def _within_limit(rows) -> list[list[str]]:
+    """The file's rows, refused whole when it holds more people than a list
+    may: cutting it short would leave the rest out without a word. Empty rows
+    (Excel keeps formatted blank ones) do not count."""
+    kept, filled = [], 0
+    for row in rows:
+        if any(str(cell).strip() for cell in row):
+            filled += 1
+            # One more than the limit: the first row may be the column names.
+            if filled > MAX_ROWS + 1:
+                raise ListError(
+                    f"This file has more than {MAX_ROWS} rows. A list holds up to "
+                    f"{MAX_ROWS} people: split the file and make one list per part."
+                )
+        kept.append(row)
+    return kept
 
 
 # --- making a list ---------------------------------------------------------------------
@@ -263,19 +282,29 @@ def start(scope, call_list: CallList) -> None:
 
 def advance(call_list: CallList, *, gateway=None, now=None) -> CallList:
     """One step: settle the call in progress, then call the next person when
-    the line is free and the rules allow."""
-    now = now or timezone.now()
+    the line is free and the rules allow. A step already running for this list
+    (another page or the scheduler) makes this one do nothing."""
+    lock = f"call-list-step:{call_list.pk}"
+    if not cache.add(lock, True, timeout=STEP_LOCK_SECONDS):
+        return call_list
+    try:
+        return _advance(call_list, gateway, now or timezone.now())
+    finally:
+        cache.delete(lock)
+
+
+def _advance(call_list: CallList, gateway, now) -> CallList:
     current = (
         call_list.entries.filter(status=Entry.CALLING).select_related("call").first()
     )
-    if current is not None and not _settle(current, gateway):
+    if current is not None and not _settle(current, gateway, now):
         return call_list  # still on the line
     call_list.refresh_from_db()
     if call_list.status != CallList.Status.RUNNING:
         return call_list
     if not call_list.entries.filter(status=Entry.WAITING).exists():
         return _set(call_list, status=CallList.Status.DONE, waiting="")
-    reason = _wait_reason(call_list, now)
+    reason = _wait_reason(call_list, now, gateway)
     if reason:
         return _set(call_list, waiting=reason)
     with transaction.atomic():
@@ -299,7 +328,7 @@ def _set(call_list: CallList, **fields) -> CallList:
     return call_list
 
 
-def _wait_reason(call_list: CallList, now) -> str:
+def _wait_reason(call_list: CallList, now, gateway=None) -> str:
     opens, closes = calls.LIVE_CALLING_HOURS
     local = timezone.localtime(now)
     if not opens <= local.hour < closes:
@@ -308,9 +337,7 @@ def _wait_reason(call_list: CallList, now) -> str:
         return (
             f"{call_list.campus.name} is closed now. Calling continues when it opens."
         )
-    if CallRecord.objects.filter(
-        direction=CallRecord.Direction.OUTBOUND, status__in=CallRecord.ACTIVE
-    ).exists():
+    if _line_busy(gateway):
         return "Another call is on the line. The next call starts when it ends."
     organisation = call_list.organisation
     if organisation.monthly_call_minutes:
@@ -324,6 +351,22 @@ def _wait_reason(call_list: CallList, now) -> str:
         if used >= organisation.monthly_call_minutes:
             return f"This month's calling budget of {organisation.monthly_call_minutes} minutes is used up."
     return ""
+
+
+def _line_busy(gateway) -> bool:
+    """Whether an outbound call is really on the line. A record left active by a
+    worker that stopped is closed once it is older than any call could last,
+    and the others are checked with LiveKit, so a stale record cannot hold the
+    list back for ever."""
+    active = CallRecord.objects.filter(
+        direction=CallRecord.Direction.OUTBOUND, status__in=CallRecord.ACTIVE
+    )
+    if not active.exists():
+        return False
+    calls.close_stale()
+    for record in active:
+        calls.refresh(record, gateway=gateway)
+    return active.exists()
 
 
 def _dial(call_list: CallList, entry: CallListEntry, gateway) -> CallList:
@@ -377,10 +420,13 @@ def _dial(call_list: CallList, entry: CallListEntry, gateway) -> CallList:
     return _set(call_list, waiting="")
 
 
-def _settle(entry: CallListEntry, gateway) -> bool:
+def _settle(entry: CallListEntry, gateway, now=None) -> bool:
     """Whether the entry's call is over (and the entry finished)."""
     record = entry.call
     if record is None:
+        # Another step may still be placing it; give it time before giving up.
+        if entry.updated_at > (now or timezone.now()) - DIAL_GRACE:
+            return False
         _finish(entry, Entry.FAILED, "The call was not placed.")
         return True
     if record.is_active:
@@ -418,10 +464,23 @@ def counts(call_list: CallList) -> dict[str, int]:
     return found
 
 
+def needs_steps(call_list: CallList) -> bool:
+    """A running list, or a paused or cancelled one whose last call is still
+    on the line and must be settled."""
+    return (
+        call_list.status == CallList.Status.RUNNING
+        or call_list.entries.filter(status=Entry.CALLING).exists()
+    )
+
+
 def advance_running(gateway=None) -> int:
-    """For the scheduler: one step for every list that is calling."""
+    """For the scheduler: one step for every list that is calling, or still
+    has a call on the line after being paused or cancelled."""
     stepped = 0
-    for call_list in CallList.objects.filter(status=CallList.Status.RUNNING):
+    lists = CallList.objects.filter(
+        Q(status=CallList.Status.RUNNING) | Q(entries__status=Entry.CALLING)
+    ).distinct()
+    for call_list in lists:
         try:
             advance(call_list, gateway=gateway)
             stepped += 1

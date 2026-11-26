@@ -4,7 +4,7 @@
 // when saving and publishing.
 //
 // Default: the fields marked data-budget, as Django stores them (trimmed, and
-// a line break in a textarea arrives as two bytes, \r\n). The agent profile.
+// a line break in a textarea arrives as two bytes, \r\n).
 // data-budget-mode="employee": the text apps/workforce/publishing.py's
 // worker_payload builds from the editor (numbered steps, "Find out: ...", the
 // strictness sentence), which prompt_size measures.

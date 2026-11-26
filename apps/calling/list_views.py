@@ -183,7 +183,7 @@ def call_list_step(request, pk):
     """One step of calling, asked for by the open list page; returns progress."""
     scope = request.scope
     found = scope.get(_lists(scope), pk=pk)
-    if found.status == CallList.Status.RUNNING:
+    if calllists.needs_steps(found):
         found = calllists.advance(found)
     entries = [
         {

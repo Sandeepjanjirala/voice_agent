@@ -10,7 +10,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from pathlib import Path
 
 import pytest
@@ -101,6 +101,18 @@ def test_excel_and_csv_with_headers_or_without():
     assert parsed.rejected[0]["row"] == 3 and "valid" in parsed.rejected[0]["reason"]
     with pytest.raises(calllists.ListError, match="Excel"):
         calllists.parse(upload=SimpleUploadedFile("list.pdf", b"%PDF"))
+
+
+def test_a_file_too_big_for_one_list_is_refused_not_cut_short():
+    rows = [("Name", "Mobile")] + [(f"P{i}", f"98765{i:05d}") for i in range(600)]
+    with pytest.raises(calllists.ListError, match="split the file"):
+        calllists.parse(upload=xlsx(rows))
+    big_csv = "phone\n" + "\n".join(f"98765{i:05d}" for i in range(600))
+    with pytest.raises(calllists.ListError, match="split the file"):
+        calllists.parse(upload=SimpleUploadedFile("big.csv", big_csv.encode()))
+    # Blank rows Excel keeps at the end do not count.
+    padded = [("Mobile",), ("9876543210",)] + [(None,)] * 900
+    assert calllists.parse(upload=xlsx(padded)).rows == [("", "+919876543210")]
 
 
 def test_a_list_is_capped():
@@ -330,3 +342,107 @@ def test_without_redis_background_jobs_run_inside_django():
 
 def test_entries_never_show_a_full_number():
     assert CallListEntry._meta.get_field("phone_encrypted").editable is False
+
+
+# --- what real calling throws at a list ---------------------------------------------------
+
+
+def _started(admin, world, numbers="Asha, 9876543210\nRavi, 9876543211"):
+    call_list = make_list(admin, world, numbers=numbers)
+    admin.post(
+        reverse("call-list", args=[call_list.pk]), {"action": "start", "consent": "yes"}
+    )
+    return call_list, reverse("call-list-step", args=[call_list.pk])
+
+
+def test_a_call_left_active_by_a_stopped_worker_does_not_hold_the_list(
+    world, gateway, at_eleven
+):
+    stuck = CallRecord.objects.create(
+        room="stuck-room", masked_number="+91********99", organisation=world.org_a
+    )
+    CallRecord.objects.filter(pk=stuck.pk).update(
+        created_at=at_eleven - timedelta(hours=3)
+    )
+    admin = world.client(world.admin_a)
+    _, step = _started(admin, world)
+    admin.post(step)
+    stuck.refresh_from_db()
+    assert not stuck.is_active and len(gateway.dispatches) == 1
+
+
+def test_cancelling_during_a_call_still_settles_that_call(world, gateway):
+    admin = world.client(world.admin_a)
+    call_list, step = _started(admin, world)
+    admin.post(step)
+    admin.post(reverse("call-list", args=[call_list.pk]), {"action": "cancel"})
+    # The page keeps following the call that is still on the line.
+    assert "calling/call_list.js" in body(
+        admin.get(reverse("call-list", args=[call_list.pk]))
+    )
+    record = CallRecord.objects.get()
+    post_event(Client(), {"room": record.room, "event": "answered"})
+    post_event(
+        Client(),
+        {
+            "room": record.room,
+            "event": "ended",
+            "outcome": "completed",
+            "talk_seconds": 12,
+        },
+    )
+    data = admin.post(step).json()
+    assert data["status"] == "cancelled" and data["tally"]["calling"] == 0
+    assert [e["status"] for e in data["entries"]] == ["answered", "skipped"]
+    assert len(gateway.dispatches) == 1
+
+
+def test_two_steps_at_once_never_work_on_the_same_list(world, gateway, monkeypatch):
+    admin = world.client(world.admin_a)
+    call_list, step = _started(admin, world)
+    lock = f"call-list-step:{call_list.pk}"
+    cache.add(lock, True)
+    admin.post(step)
+    assert gateway.dispatches == [], "another step holds the list"
+    cache.delete(lock)
+    # The other step marked the entry as calling and is still placing it.
+    entry = call_list.entries.order_by("position").first()
+    CallListEntry.objects.filter(pk=entry.pk).update(status="calling")
+    admin.post(step)
+    entry.refresh_from_db()
+    assert entry.status == "calling" and gateway.dispatches == []
+    # Long after, with still no call, it is given up on.
+    later = timezone.now() + calllists.DIAL_GRACE + timedelta(seconds=1)
+    monkeypatch.setattr(timezone, "now", lambda: later)
+    admin.post(step)
+    entry.refresh_from_db()
+    assert entry.status == "failed" and "not placed" in entry.reason
+
+
+def test_campus_staff_see_the_test_calls_they_place(world, gateway):
+    world.staff_north.is_staff = True
+    world.staff_north.save()
+    staff = world.client(world.staff_north)
+    made = staff.post(
+        reverse("telephony:calls"),
+        {"confirm": True, "slot": 0},
+        content_type="application/json",
+    )
+    assert made.status_code == 201, made.content
+    call_id = made.json()["call"]["id"]
+    assert staff.get(reverse("telephony:call", args=[call_id])).status_code == 200
+
+
+def test_the_calls_api_refuses_an_employee_it_cannot_use(world, gateway):
+    world.admin_a.is_staff = True
+    world.admin_a.save()
+    admin = world.client(world.admin_a)
+    for wanted in ("not-a-uuid", "00000000-0000-0000-0000-000000000000"):
+        cache.clear()  # one call start every few seconds per person
+        response = admin.post(
+            reverse("telephony:calls"),
+            {"confirm": True, "slot": 0, "employee": wanted},
+            content_type="application/json",
+        )
+        assert response.status_code == 400, wanted
+    assert gateway.dispatches == []

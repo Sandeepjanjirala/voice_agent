@@ -60,4 +60,4 @@
   </section>
 </div>
 {% endblock %}
-{% block scripts %}{% if call_list.status == 'running' %}<script src="{% static 'calling/call_list.js' %}" defer></script>{% endif %}{% endblock %}
+{% block scripts %}{% if call_list.status == 'running' or tally.calling %}<script src="{% static 'calling/call_list.js' %}" defer></script>{% endif %}{% endblock %}
