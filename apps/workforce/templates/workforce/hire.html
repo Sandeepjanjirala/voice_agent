@@ -5,7 +5,7 @@
   <div>
     <p class="eyebrow">HIRE AN EMPLOYEE</p>
     <h1>Describe the job</h1>
-    <p class="muted">Say it the way you would brief a new member of staff. You get a draft to read and change before anything is used on a call.</p>
+    <p class="muted">Say it the way you would brief a new team member. You get a draft to read and change before anything is used on a call.</p>
   </div>
 </section>
 
@@ -21,7 +21,7 @@
   {% if form.non_field_errors %}<div class="error" role="alert">{{ form.non_field_errors|join:" " }}</div>{% endif %}
   <div class="field">
     <label for="{{ form.brief.id_for_label }}">{{ form.brief.label }}</label>
-    <textarea name="brief" id="{{ form.brief.id_for_label }}" rows="5" maxlength="2000" required placeholder="Call every parent who sends an admission enquiry, find out which class and campus they want, and offer a campus visit.">{{ form.brief.value|default:"" }}</textarea>
+    <textarea name="brief" id="{{ form.brief.id_for_label }}" rows="5" maxlength="2000" required placeholder="Call people who send a sales enquiry, understand which product or service they need, and offer a follow-up with our team.">{{ form.brief.value|default:"" }}</textarea>
     {% if form.brief.errors %}<p class="field-error" role="alert">{{ form.brief.errors|join:" " }}</p>{% endif %}
     <p class="help">Examples to start from (they fill the box; change anything):</p>
     <div class="examples">
@@ -43,7 +43,7 @@
     {% if form.language.errors %}<p class="field-error" role="alert">{{ form.language.errors|join:" " }}</p>{% endif %}
   </div>
   <div class="form-actions">
-    <p class="fine">Drafting takes a few seconds. The draft never invents fees, timings or addresses: it lists the facts it needs from you instead.</p>
+    <p class="fine">Drafting takes a few seconds. The draft never invents prices, opening hours or addresses: it lists the facts it needs from you instead.</p>
     <button class="primary" type="submit" id="draft-button">Draft this employee</button>
   </div>
 </form>

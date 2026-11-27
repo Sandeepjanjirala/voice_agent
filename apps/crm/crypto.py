@@ -12,7 +12,7 @@ CONTACT_LOOKUP_KEY  Key for HMAC-SHA256 of the normalised number. The result
     never needs a decrypted number, and the stored value cannot be reversed or
     recomputed by someone who only has the database.
 
-Decrypting is deliberate and rare: see contacts.number_for_call.
+Decrypting is scoped to permitted calling and authorised dashboard display.
 """
 
 import hashlib

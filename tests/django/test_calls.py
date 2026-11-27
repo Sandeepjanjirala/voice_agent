@@ -22,6 +22,7 @@ from livekit import api
 from apps.telephony import calls, outbound, providers
 from apps.telephony.livekit_gateway import TelephonyGatewayError
 from apps.telephony.models import CallRecord
+from apps.tenancy.models import Campus, Membership, Organisation
 from voice_agent.call_reporting import (
     SIGNATURE_HEADER,
     TIMESTAMP_HEADER,
@@ -363,6 +364,26 @@ def test_worker_failure_outcomes(gateway, outcome, code, status) -> None:
     assert MOBILE not in record.sip_status
 
 
+@pytest.mark.parametrize("code", [401, 403, 407])
+def test_a_provider_refusal_names_the_trunk_settings_to_check(gateway, code) -> None:
+    record = calls.start_call()
+
+    record = calls.apply_worker_event(
+        {
+            "room": record.room,
+            "event": "ended",
+            "outcome": "failed",
+            "sip_status_code": code,
+            "sip_status": "Forbidden",
+        }
+    )
+
+    assert record.status == Status.FAILED
+    assert f"SIP {code}" in record.failure_reason
+    assert "allows all of LiveKit's addresses" in record.failure_reason
+    assert len(record.failure_reason) <= 200
+
+
 def test_worker_report_corrects_an_inferred_status(gateway) -> None:
     record = calls.start_call()
     age(record, 30)
@@ -551,7 +572,9 @@ def test_api_requires_an_explicit_confirmation(gateway, staff_client, body) -> N
     assert gateway.dispatches == []
 
 
-def test_api_start_returns_masked_details_only(gateway, staff_client) -> None:
+def test_api_start_returns_full_number_without_credentials(
+    gateway, staff_client
+) -> None:
     response = staff_client.post(
         reverse("telephony:calls"),
         {"confirm": True, "to": MOBILE},
@@ -563,7 +586,8 @@ def test_api_start_returns_masked_details_only(gateway, staff_client) -> None:
     assert "no-store" in response["Cache-Control"]
     body = response.json()["call"]
     assert body["status"] == "initiating" and body["masked_number"] == "+91********10"
-    for secret in (MOBILE, CALLER_ID, PASSWORD, SECRET, "ST_out"):
+    assert body["number"] == MOBILE
+    for secret in (CALLER_ID, PASSWORD, SECRET, "ST_out"):
         assert secret not in text
 
 
@@ -641,12 +665,70 @@ def test_api_hang_up(gateway, staff_client) -> None:
     assert again.status_code == 409
 
 
+@pytest.mark.parametrize("access", ["foreign_org", "foreign_campus", "unscoped_staff"])
+def test_api_cannot_see_or_hang_up_a_call_outside_its_scope(
+    gateway, staff, staff_client, access
+) -> None:
+    organisation = Organisation.objects.create(name="Tenant A")
+    other = Organisation.objects.create(name="Tenant B")
+    own_campus = Campus.objects.create(organisation=organisation, name="North")
+    other_campus = Campus.objects.create(organisation=organisation, name="South")
+    if access != "unscoped_staff":
+        membership = Membership.objects.create(
+            user=staff,
+            organisation=organisation,
+            role=Membership.Role.CAMPUS_STAFF,
+        )
+        membership.campuses.add(own_campus)
+    record = CallRecord.objects.create(
+        organisation=other if access == "foreign_org" else organisation,
+        campus=other_campus if access == "foreign_campus" else None,
+        room="outcall-hidden",
+        masked_number="x",
+    )
+
+    listing = staff_client.get(reverse("telephony:calls"))
+    detail = staff_client.get(reverse("telephony:call", args=[record.pk]))
+    response = staff_client.post(reverse("telephony:hangup", args=[record.pk]))
+
+    assert listing.json()["calls"] == []
+    assert detail.status_code == response.status_code == 404
+    assert gateway.deleted == []
+    record.refresh_from_db()
+    assert record.is_active
+
+
+@pytest.mark.parametrize("role", Membership.Role.values)
+def test_api_member_can_hang_up_a_call_in_its_scope(
+    gateway, staff, staff_client, role
+) -> None:
+    organisation = Organisation.objects.create(name="Tenant A")
+    campus = Campus.objects.create(organisation=organisation, name="North")
+    membership = Membership.objects.create(
+        user=staff, organisation=organisation, role=role
+    )
+    membership.campuses.add(campus)
+    record = CallRecord.objects.create(
+        organisation=organisation,
+        campus=campus,
+        room="outcall-visible",
+        masked_number="x",
+    )
+
+    response = staff_client.post(reverse("telephony:hangup", args=[record.pk]))
+
+    assert response.status_code == 200
+    assert response.json()["call"]["active"] is False
+    assert gateway.deleted == [record.room]
+
+
 def test_api_lists_recent_calls(gateway, staff_client) -> None:
     calls.start_call()
 
     response = staff_client.get(reverse("telephony:calls"))
 
     assert [c["masked_number"] for c in response.json()["calls"]] == ["+91********10"]
+    assert [c["number"] for c in response.json()["calls"]] == [MOBILE]
 
 
 @pytest.mark.parametrize("method", ["put", "patch", "delete"])

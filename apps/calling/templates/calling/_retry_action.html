@@ -1,0 +1,13 @@
+<div class="retry-action">
+  {% if retry.retry_target_url %}
+    <a class="button small" href="{{ retry.retry_target_url }}">View retry</a>
+  {% elif retry.can_retry %}
+    <form method="post" action="{{ retry.retry_url }}" data-call-retry>{% csrf_token %}
+      <button class="primary small" type="submit">Call again</button>
+    </form>
+  {% elif retry.retry_pending %}
+    <span class="help" role="status">Preparing your retry…</span>
+  {% elif retry.retry_block %}
+    <span class="help retry-reason">{{ retry.retry_block }}</span>
+  {% endif %}
+</div>

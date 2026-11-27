@@ -1,6 +1,8 @@
 # AGENTS.md
 
-This repository is a Telugu AI calling agent made of **two separate processes**:
+This repository is Vaani, a configurable voice-agent workspace for any business,
+made of **two separate processes**. Its current voice stack supports Telugu,
+English and mixed Telugu-English calls.
 
 - `voice_agent/` is a LiveKit Agents worker (Python SDK for voice AI agents). It owns the real-time STT, LLM and TTS loop and is designed to run on LiveKit Cloud.
 - `config/` and `apps/` are a Django + Django REST Framework backend. It owns business APIs, persistence, auth and the dashboard.
@@ -9,6 +11,9 @@ See @README.md for setup and run commands, `docs/adr/0001-two-process-boundary.m
 
 ## Rules for this project
 
+- Keep shared instructions and product defaults industry-neutral. Business names,
+  facts, workflows and restrictions belong in organisation settings, knowledge
+  and the selected AI employee's profile, never in shared school-specific rules.
 - The voice loop never runs inside a Django request or a Celery task, and `voice_agent/` never imports Django or the ORM. Django never imports `livekit.agents` or `voice_agent`. `tests/test_process_boundary.py` enforces both.
 - No FastAPI and no SQLAlchemy. Django ORM and migrations own the schema.
 - Work proceeds one phase at a time (see the implementation brief). Do not buy numbers, place real calls, deploy, or merge without the owner's approval.

@@ -22,13 +22,14 @@ class PhoneNumberForm(forms.ModelForm):
             "transfer_to",
         )
         labels = {  # noqa: RUF012
+            "campus": "Location",
             "employee": "AI employee who answers",
             "routing_enabled": "Answer calls to this number with the employee",
             "transfer_to": "Transfer number for callers who ask for a person",
         }
         help_texts = {  # noqa: RUF012
             "number": "The business line, e.g. +91 40 1234 5678.",
-            "campus": "Calls to this number belong to this campus and use its "
+            "campus": "Calls to this number belong to this location and use its "
             "knowledge.",
             "transfer_to": "Kept for the transfer design. No call is transferred yet.",
         }
@@ -83,7 +84,7 @@ class KnowledgeForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.scope = scope
         self.fields["campus"].queryset = scope.campuses()
-        self.fields["campus"].empty_label = "Every campus"
+        self.fields["campus"].empty_label = "Every location"
 
     def save(self, commit=True):
         self.instance.organisation = self.scope.organisation

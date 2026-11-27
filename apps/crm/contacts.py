@@ -1,14 +1,14 @@
-"""The only code that creates, matches, opts out, decrypts or erases a contact.
+"""Create, match, opt out and erase contacts, keeping storage and logs private.
 
-Full numbers exist in memory here and nowhere else in the dashboard: they are
-never returned to a view for display, written to a log, or put in the audit
-trail.
+Authorised dashboard users may read full numbers through the display helpers.
+Audit events and logs continue to redact numbers.
 """
 
 import uuid
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.telephony.masking import mask_phone
@@ -176,7 +176,19 @@ def number_for_call(contact: Contact, *, actor, purpose: str) -> str:
 def erase(contact: Contact) -> None:
     """Remove the personal details and keep an empty row, so reports and
     call history still add up. An opt-out for the number is kept."""
+    from apps.calling.models import CallListEntry
+    from apps.telephony.models import CallRecord
+
     with transaction.atomic():
+        # Remove duplicated encrypted destinations too; revealing full numbers
+        # must not bring back personal details erased from the contact.
+        CallRecord.objects.filter(organisation=contact.organisation).filter(
+            Q(contact=contact) | Q(remote_lookup=contact.phone_lookup)
+        ).update(remote_encrypted="", remote_lookup="")
+        CallListEntry.objects.filter(
+            call_list__organisation=contact.organisation,
+            phone_lookup=contact.phone_lookup,
+        ).update(phone_encrypted="", phone_masked="", name="")
         contact.name = "Erased contact"
         contact.phone_encrypted = ""
         contact.phone_masked = ""

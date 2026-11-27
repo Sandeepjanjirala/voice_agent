@@ -18,7 +18,7 @@ User = get_user_model()
 class OrganisationSetupForm(forms.Form):
     name = forms.CharField(label="Organisation name", max_length=120)
     campus = forms.CharField(
-        label="First campus or branch",
+        label="First location or branch",
         max_length=120,
         help_text="You can add more afterwards.",
     )
@@ -31,6 +31,28 @@ class OrganisationSetupForm(forms.Form):
 
 
 class OrganisationForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["recording_notice"].required = False
+
+    def clean(self):
+        data = super().clean()
+        if not data.get("recording_notice"):
+            if data.get("recording") in (
+                Organisation.Recording.TEST_CALLS,
+                Organisation.Recording.WITH_CONSENT,
+            ):
+                self.add_error(
+                    "recording_notice", "Write the question to ask before recording."
+                )
+            else:
+                # An unused, hidden question must not block saving off/demo mode.
+                # Retain its wording for a later change to a consent-based mode.
+                data["recording_notice"] = self.instance.recording_notice or (
+                    Organisation._meta.get_field("recording_notice").get_default()
+                )
+        return data
+
     class Meta:
         model = Organisation
         fields = (
@@ -45,27 +67,26 @@ class OrganisationForm(forms.ModelForm):
         )
         labels = {  # noqa: RUF012
             "name": "Organisation name",
-            "transcripts": "The conversation after a call",
+            "transcripts": "Call transcripts",
             "recording": "Call recordings",
-            "recording_notice": "The question asked before recording",
-            "cloud_observability": "Let LiveKit Cloud keep calls for debugging",
+            "recording_notice": "Recording permission question",
+            "cloud_observability": "Keep a separate debugging copy in LiveKit Cloud",
             "monthly_call_minutes": "Monthly calling budget (talk minutes)",
             "cost_per_minute": "Cost per talk minute (₹)",
             "cost_per_analysis": "Cost per call summary (₹)",
         }
         help_texts = {  # noqa: RUF012
-            "transcripts": "Summary, then delete: staff see the summary but not "
-            "the conversation. Keep: staff can also read the conversation, until "
-            "the days set under Data retention. Off: no conversation and no "
-            "summary. Opening a conversation is logged.",
-            "recording": "Both sides of the call, stored encrypted, for the days "
-            "set under Data retention. If the person says no or does not answer "
-            "clearly, nothing is recorded.",
-            "recording_notice": "Asked right after the opening line, in the "
-            "person's language. Keep it a yes-or-no question.",
-            "cloud_observability": "Off is safest: LiveKit keeps nothing. On: "
-            "LiveKit may keep audio, transcripts and logs for 30 days outside "
-            "India, and deleting data here does not delete its copy.",
+            "transcripts": "Choose whether your team sees the full conversation, "
+            "only a summary, or neither after a call.",
+            "recording": "Demo mode records only approved outgoing test calls, "
+            "without a spoken question. It does not record customer or incoming "
+            "calls. Other recording modes ask the person first. Audio is stored "
+            "encrypted for the time set under Data retention.",
+            "recording_notice": "Used only in recording modes that ask permission. "
+            "Keep it a yes-or-no question.",
+            "cloud_observability": "For technical troubleshooting. LiveKit may keep "
+            "its own audio, transcripts and logs for 30 days outside India. "
+            "Deleting a recording here does not delete that separate copy.",
             "monthly_call_minutes": "0 means no limit. Make calls stops dialling once "
             "this month's talk time reaches it.",
         }
@@ -87,7 +108,9 @@ class CampusForm(forms.ModelForm):
         if self.instance.pk:
             clash = clash.exclude(pk=self.instance.pk)
         if clash.exists():
-            raise forms.ValidationError("This organisation has a campus of this name.")
+            raise forms.ValidationError(
+                "This organisation has a location of this name."
+            )
         return name
 
     def save(self, commit=True):
@@ -103,13 +126,13 @@ class CampusCallsForm(forms.ModelForm):
         fields = ("slot_minutes", "after_hours_message", "escalation_user")
         labels = {  # noqa: RUF012
             "slot_minutes": "Length of one appointment (minutes)",
-            "after_hours_message": "What the AI employee says when the campus is closed",
+            "after_hours_message": "What the AI employee says when the location is closed",
             "escalation_user": "Who is told when a caller asks for a person",
         }
         help_texts = {  # noqa: RUF012
             "after_hours_message": "Said before it takes a message. Leave empty "
             "for a plain line with the opening hours.",
-            "escalation_user": "Without one, everyone who works in the campus is told.",
+            "escalation_user": "Without one, everyone who works at the location is told.",
         }
 
     def __init__(self, *args, **kwargs) -> None:
@@ -131,7 +154,7 @@ class CampusCallsForm(forms.ModelForm):
             .distinct()
             .order_by("username")
         )
-        self.fields["escalation_user"].empty_label = "Everyone in the campus"
+        self.fields["escalation_user"].empty_label = "Everyone at the location"
         self.fields["escalation_user"].label_from_instance = lambda user: (
             user.get_full_name() or user.get_username()
         )
@@ -228,7 +251,7 @@ class HoursForm(forms.Form):
 
 class HolidayForm(forms.ModelForm):
     whole_organisation = forms.BooleanField(
-        required=False, label="Closed at every campus"
+        required=False, label="Closed at every location"
     )
 
     class Meta:
@@ -266,10 +289,11 @@ class HolidayForm(forms.ModelForm):
 class _MemberFields(forms.Form):
     role = forms.ChoiceField(choices=Membership.Role.choices)
     campuses = forms.ModelMultipleChoiceField(
+        label="Locations",
         queryset=Campus.objects.none(),
         required=False,
         widget=forms.CheckboxSelectMultiple,
-        help_text="Campus staff see only the campuses ticked here.",
+        help_text="Location team members see only the locations ticked here.",
     )
 
     def __init__(self, *args, organisation, **kwargs) -> None:
@@ -284,7 +308,9 @@ class _MemberFields(forms.Form):
         if data.get("role") == Membership.Role.CAMPUS_STAFF and not data.get(
             "campuses"
         ):
-            self.add_error("campuses", "Choose at least one campus for campus staff.")
+            self.add_error(
+                "campuses", "Choose at least one location for a location team member."
+            )
         return data
 
 

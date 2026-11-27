@@ -16,7 +16,7 @@ USER = settings.AUTH_USER_MODEL
 
 class Integration(models.Model):
     class Kind(models.TextChoices):
-        CAMPUS_CALENDAR = "campus_calendar", "Campus calendar (built in)"
+        CAMPUS_CALENDAR = "campus_calendar", "Location calendar (built in)"
         GOOGLE_CALENDAR = "google_calendar", "Google Calendar"
         WHATSAPP = "whatsapp_cloud", "WhatsApp Business (Cloud API)"
         REST_API = "rest_api", "Approved REST API"
@@ -113,7 +113,7 @@ class ActionRun(models.Model):
         FAILED = "failed", "Failed"
 
     class Trigger(models.TextChoices):
-        STAFF = "staff", "A staff member"
+        STAFF = "staff", "A team member"
         CALL = "call", "After a call"
         TEST = "test", "Test run"
 

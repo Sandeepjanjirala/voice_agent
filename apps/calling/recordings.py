@@ -3,8 +3,8 @@ who may hear it.
 
 - **Which calls.** The organisation decides (Privacy & settings): never, approved
   test calls only, or any call. Django marks each call when it is planned; the
-  voice worker records only a call Django marked, and only after the person
-  agreed on the call. Django refuses audio for any other call.
+  voice worker records only a call Django marked, after verbal consent or the
+  separate demo authorization for an approved test call.
 - **The audio.** The voice worker records both sides (the person on the left
   channel, the AI employee on the right) as an Ogg Opus file and uploads it
   here, signed, when the call ends. Django encrypts it (Fernet, keys in
@@ -56,41 +56,87 @@ class RecordingError(Exception):
 # --- which calls may be recorded ------------------------------------------------------
 
 
-def allowed_for(organisation, *, test_number: bool) -> tuple[bool, str]:
+def allowed_for(
+    organisation, *, test_number: bool, test_call: bool = False
+) -> tuple[bool, str]:
     """Whether this organisation records this call, and if not, why not."""
     from apps.tenancy.models import Organisation
 
     mode = organisation.recording if organisation is not None else "off"
     if mode == Organisation.Recording.OFF:
         return False, "Call recording is switched off for this organisation."
+    if mode == Organisation.Recording.DEMO and not (test_number and test_call):
+        return (
+            False,
+            "Demo recording is only for test calls or rehearsals to approved test numbers.",
+        )
     if mode == Organisation.Recording.TEST_CALLS and not test_number:
         return False, "Only approved test calls are recorded for this organisation."
     return True, ""
 
 
 def mark_call(
-    payload: dict, snapshot: dict, organisation, *, test_number: bool
+    payload: dict,
+    snapshot: dict,
+    organisation,
+    *,
+    test_number: bool,
+    test_call: bool = False,
 ) -> bool:
-    """Tell the worker whether it may ask to record this call. `payload` is the
+    """Tell the worker how recording is authorized for this call. `payload` is the
     profile the worker receives; `snapshot` is kept with the call record."""
-    allowed, reason = allowed_for(organisation, test_number=test_number)
+    allowed, reason = allowed_for(
+        organisation, test_number=test_number, test_call=test_call
+    )
     snapshot["recording"] = {"allowed": allowed, "reason": reason}
     if allowed:
-        payload["recording"] = {"notice": organisation.recording_notice}
+        authorization = (
+            CallRecording.Authorization.DEMO
+            if organisation.recording == "demo"
+            else CallRecording.Authorization.VERBAL
+        )
+        snapshot["recording"].update(
+            authorization=authorization,
+            test_call=test_call,
+            approved_test_destination=test_number,
+        )
+        payload["recording"] = (
+            {"authorization": authorization}
+            if authorization == CallRecording.Authorization.DEMO
+            else {"notice": organisation.recording_notice}
+        )
     else:
         payload.pop("recording", None)
     return allowed
 
 
 def _allowed(record) -> bool:
-    return bool((record.context_snapshot or {}).get("recording", {}).get("allowed"))
+    policy = (record.context_snapshot or {}).get("recording", {})
+    if policy.get("authorization") == CallRecording.Authorization.DEMO:
+        return (
+            policy.get("allowed") is True
+            and policy.get("test_call") is True
+            and policy.get("approved_test_destination") is True
+            and record.direction == "outbound"
+        )
+    return policy.get("allowed") is True
+
+
+def _authorize(recording: CallRecording) -> None:
+    """Trust the stored dispatch decision, never a worker-supplied consent type."""
+    policy = (recording.call.context_snapshot or {}).get("recording", {})
+    authorization = policy.get("authorization", CallRecording.Authorization.VERBAL)
+    recording.authorization = authorization
+    recording.authorized_at = recording.authorized_at or timezone.now()
+    if authorization == CallRecording.Authorization.VERBAL:
+        recording.consented_at = recording.consented_at or recording.authorized_at
 
 
 # --- events from the voice worker ----------------------------------------------------
 
 
 def note_event(record, payload: dict) -> CallRecording | None:
-    """A "recording" event: the person agreed and recording started, they
+    """A "recording" event: authorized recording started, they
     declined, or the worker could not record. Safe to receive twice."""
     state = payload.get("state")
     if state not in ("started", "declined", "failed") or record.organisation is None:
@@ -107,13 +153,19 @@ def note_event(record, payload: dict) -> CallRecording | None:
         if not created and recording.status in (Status.AVAILABLE, Status.DELETED):
             return recording
         if state == "started":
+            if not created and recording.status == Status.NOT_RECORDED:
+                return recording  # a late/retried start cannot undo a stop request
             recording.status = Status.RECORDING
-            recording.consented_at = recording.consented_at or timezone.now()
+            _authorize(recording)
             recording.offset_seconds = offset or 0
             recording.reason = ""
         elif state == "declined":
             recording.status = Status.NOT_RECORDED
-            recording.reason = "The person did not agree to the call being recorded, so nothing was recorded."
+            recording.reason = (
+                "The person asked to stop recording. The recording was discarded."
+                if recording.authorized_at or recording.consented_at
+                else "The person did not agree to the call being recorded, so nothing was recorded."
+            )
         else:
             recording.status = Status.FAILED
             detail = " ".join(str(payload.get("reason") or "").split())[:200]
@@ -129,15 +181,15 @@ def _seconds(value) -> float | None:
 
 
 def receive(record, data: bytes, *, duration, offset) -> CallRecording:
-    """The audio the worker uploaded for a call it was allowed to record and the
-    person agreed to. Raises RecordingError (with an HTTP-like status)."""
+    """Audio uploaded under the call's saved recording authorization.
+    Raises RecordingError (with an HTTP-like status)."""
     if record.organisation is None or not _allowed(record):
         raise RecordingError("This call may not be recorded.", 403)
     recording = CallRecording.objects.filter(call=record).first()
     digest = hashlib.sha256(data).hexdigest()
     if recording is not None:
-        if recording.consented_at is None and recording.status == Status.NOT_RECORDED:
-            raise RecordingError("The person did not agree to be recorded.", 409)
+        if recording.status == Status.NOT_RECORDED:
+            raise RecordingError("Recording was declined or stopped.", 409)
         if recording.status == Status.DELETED:
             raise RecordingError("This recording was deleted.", 410)
         if recording.status == Status.AVAILABLE:
@@ -152,13 +204,22 @@ def receive(record, data: bytes, *, duration, offset) -> CallRecording:
         recording = CallRecording.objects.create(
             call=record, organisation=record.organisation, status=Status.RECORDING
         )
-    if recording.consented_at is None:
-        # The worker records, and signs an upload, only after the person
-        # agreed; the "started" event that says so may have been lost.
-        recording.consented_at = timezone.now()
+    if recording.authorized_at is None:
+        # The signed upload may arrive without its "started" event. Recover
+        # the authorization type from the stored policy; demo is not consent.
+        _authorize(recording)
         recording.reason = ""
     recording.status = Status.PROCESSING
-    recording.save(update_fields=["consented_at", "reason", "status", "updated_at"])
+    recording.save(
+        update_fields=[
+            "authorization",
+            "authorized_at",
+            "consented_at",
+            "reason",
+            "status",
+            "updated_at",
+        ]
+    )
     try:
         key = store(recording, data)
     except RecordingError as error:

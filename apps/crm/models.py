@@ -2,7 +2,7 @@
 them, and the enquiries (leads) and follow-up work that hang off them.
 
 A phone number is stored three ways and never in the clear: encrypted (to dial
-it), as a keyed hash (to match it) and masked (to show it). See crypto.py.
+and display it), as a keyed hash (to match it) and masked (for logs). See crypto.py.
 """
 
 import uuid
@@ -124,6 +124,14 @@ class Contact(models.Model):
     def is_erased(self) -> bool:
         return self.erased_at is not None
 
+    @property
+    def display_phone(self) -> str:
+        from .phone_display import UNAVAILABLE, decrypted_number
+
+        if self.is_erased:
+            return UNAVAILABLE
+        return decrypted_number(self.phone_encrypted) or UNAVAILABLE
+
 
 class OptOut(models.Model):
     """A number the organisation must not call, whichever campus asks.
@@ -131,7 +139,7 @@ class OptOut(models.Model):
 
     class Source(models.TextChoices):
         CALLER = "caller", "Asked during a call"
-        STAFF = "staff", "Added by staff"
+        STAFF = "staff", "Added by team"
         IMPORT = "import", "Imported"
 
     organisation = models.ForeignKey(
@@ -160,6 +168,12 @@ class OptOut(models.Model):
 
     def __str__(self) -> str:
         return f"Do not call {self.phone_masked}"
+
+    @property
+    def display_phone(self) -> str:
+        from .phone_display import UNAVAILABLE, decrypted_number
+
+        return decrypted_number(self.phone_encrypted) or UNAVAILABLE
 
 
 class Lead(models.Model):

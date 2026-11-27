@@ -9,7 +9,7 @@
   </div>
 </section>
 {% include 'calling/_tabs.html' with tab='inbound' %}
-<p class="notice" role="note">Inbound calling is switched off until the SIP trunk can be authenticated securely. {{ routed }} of {{ rows|length }} number{{ rows|length|pluralize }} ready to be answered when it is.</p>
+{% include 'calling/_inbound_setup.html' %}
 <section class="panel" id="missed" style="margin-bottom:20px">
   <div class="panel-head"><h2>Missed callers to call back{% if missed %} <span class="badge">{{ missed|length }}</span>{% endif %}</h2></div>
   <p class="help" style="margin-top:0">Callers who rang when no AI employee was ready, or after hours (a message was taken). Calling stored contacts from here stays off until it is authorised; call them from your phone, then mark them done.</p>
@@ -18,14 +18,14 @@
     <thead><tr><th>When</th><th>Caller</th><th>Why</th><th>What they said</th><th></th></tr></thead>
     <tbody>{% for item in missed %}<tr>
       <td><a href="{% url 'conversation-detail' item.call.pk %}">{{ item.created_at|date:"D j M, H:i" }}</a>{% if item.call.campus %}<small>{{ item.call.campus.name }}</small>{% endif %}</td>
-      <td>{% if item.call.contact %}<a href="{% url 'contact-detail' item.call.contact.pk %}">{{ item.call.contact.name }}</a>{% else %}Unknown caller{% endif %}<small>{{ item.call.masked_number }}</small></td>
+      <td>{% if item.call.contact %}<a href="{% url 'contact-detail' item.call.contact.pk %}">{{ item.call.contact.name }}</a>{% else %}Unknown caller{% endif %}<small>{{ item.call.display_number }}</small></td>
       <td>{{ item.get_reason_display }}</td>
       <td class="wrap">{% if item.call.result.summary %}{{ item.call.result.summary|truncatechars:160 }}{% else %}{{ item.detail|default:"–" }}{% endif %}</td>
       <td>{% if can_handle %}<form method="post">{% csrf_token %}<input type="hidden" name="missed" value="{{ item.pk }}"><button class="small" type="submit">Called back</button></form>{% endif %}</td>
     </tr>{% endfor %}</tbody>
   </table></div>
   {% else %}<p class="help" id="missed-none">Nobody is waiting for a call back.</p>{% endif %}
-  {% if handled %}<p class="help">Called back this week: {% for item in handled %}{% if item.call.contact %}{{ item.call.contact.name }}{% else %}{{ item.call.masked_number }}{% endif %} ({{ item.handled_by.get_username|default:"someone" }}, {{ item.handled_at|date:"D H:i" }}){% if not forloop.last %}, {% endif %}{% endfor %}.</p>{% endif %}
+  {% if handled %}<p class="help">Called back this week: {% for item in handled %}{% if item.call.contact %}{{ item.call.contact.name }} · {% endif %}{{ item.call.display_number }} ({{ item.handled_by.get_username|default:"someone" }}, {{ item.handled_at|date:"D H:i" }}){% if not forloop.last %}, {% endif %}{% endfor %}.</p>{% endif %}
 </section>
 <div class="grid-2">
   <section class="panel">
@@ -35,25 +35,24 @@
       <thead><tr><th>Started</th><th>Caller</th><th>Answered by</th><th>Result</th></tr></thead>
       <tbody>
         {% for call in calls %}
-        <tr><td><a href="{% url 'conversation-detail' call.pk %}">{{ call.created_at|date:"j M, H:i" }}</a></td><td>{% if call.contact %}{{ call.contact.name }}{% else %}Unknown caller{% endif %}<small>{{ call.masked_number }}</small></td><td>{% if call.employee_version %}{{ call.employee_version.employee.name }} v{{ call.employee_version.number }}{% else %}–{% endif %}</td><td>{{ call.get_status_display }}</td></tr>
+        <tr><td><a href="{% url 'conversation-detail' call.pk %}">{{ call.created_at|date:"j M, H:i" }}</a></td><td>{% if call.contact %}{{ call.contact.name }}{% else %}Unknown caller{% endif %}<small>{{ call.display_number }}</small></td><td>{% if call.employee_version %}{{ call.employee_version.employee.name }} v{{ call.employee_version.number }}{% else %}–{% endif %}</td><td>{{ call.get_status_display }}</td></tr>
         {% endfor %}
       </tbody>
     </table></div>
     {% else %}
-    <div class="empty-state"><strong>No incoming calls yet</strong>They appear here once inbound calling is switched on.</div>
+    <div class="empty-state"><strong>No incoming calls yet</strong>Complete the setup above, then make an incoming test call to your business number.</div>
     {% endif %}
   </section>
   <div class="stack">
     <section class="panel">
-      <div class="panel-head"><h2>Which number rings whom</h2><a href="{% url 'numbers' %}">Manage</a></div>
+      <div class="panel-head"><h2>Which number rings whom</h2><a href="{% url 'numbers' %}">{% if incoming_setup.manage %}Manage{% else %}View numbers{% endif %}</a></div>
       {% if rows %}
-      <ul class="timeline" id="routes">{% for row in rows %}<li>{{ row.number.number }} → {% if row.number.employee %}{{ row.number.employee.name }}{% else %}nobody{% endif %}{% if row.problems %}<small>{{ row.problems|join:" " }}</small>{% else %}<small>Routed{% if row.number.campus %} for {{ row.number.campus.name }}{% endif %}</small>{% endif %}</li>{% endfor %}</ul>
+      <ul class="timeline" id="routes">{% for row in rows %}<li>{{ row.number.number }} → {% if row.number.employee %}{{ row.number.employee.name }}{% else %}nobody{% endif %}{% if row.problems %}<small>{{ row.problems|join:" " }}</small>{% else %}<small>Routed locally{% if row.number.campus %} for {{ row.number.campus.name }}{% endif %}</small>{% endif %}</li>{% endfor %}</ul>
       {% else %}<p class="help">No numbers yet.</p>{% endif %}
     </section>
     <section class="panel">
-      <div class="panel-head"><h2>Readiness</h2></div>
-      {% include 'calling/_checks.html' %}
-      <p class="help">A live transfer to a person needs the phone line. Until then, a caller who asks for a person becomes a call-back task for the campus's escalation contact (set on the campus page).</p>
+      <div class="panel-head"><h2>When a caller needs a person</h2></div>
+      <p class="help">A live transfer to a person needs the phone line. Until then, a caller who asks for a person becomes a call-back task for the location's escalation contact (set on the location page).</p>
     </section>
   </div>
 </div>

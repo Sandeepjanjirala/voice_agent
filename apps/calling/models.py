@@ -256,7 +256,7 @@ class DryRun(models.Model):
 
 
 class CallTranscript(models.Model):
-    """What was said, when the organisation chooses to keep it. Numbers masked."""
+    """What was said, when the organisation chooses to keep it for its users."""
 
     call = models.OneToOneField(
         "telephony.CallRecord", on_delete=models.CASCADE, related_name="transcript"
@@ -266,8 +266,8 @@ class CallTranscript(models.Model):
 
 
 class CallRecording(models.Model):
-    """The audio of a call, recorded by the voice worker after the person
-    agreed, and kept encrypted in private storage (recordings.py).
+    """Call audio captured under verbal consent or approved demo authorization,
+    kept encrypted in private storage (recordings.py).
 
     The file is never served by URL from storage: Django streams it to people
     who may see the call, through a short-lived link, and logs every access.
@@ -280,6 +280,10 @@ class CallRecording(models.Model):
         FAILED = "failed", "Failed"
         NOT_RECORDED = "not_recorded", "Not recorded"
         DELETED = "deleted", "Deleted"
+
+    class Authorization(models.TextChoices):
+        VERBAL = "verbal", "Verbal consent"
+        DEMO = "demo", "Approved demo test"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     call = models.OneToOneField(
@@ -301,10 +305,14 @@ class CallRecording(models.Model):
     sha256 = models.CharField(max_length=64, blank=True)
     duration_seconds = models.FloatField(null=True, blank=True)
     # Seconds from the start of the conversation to the start of the
-    # recording (the person's consent), to line the audio up with the
+    # recording, to line the audio up with the
     # transcript's times.
     offset_seconds = models.FloatField(default=0)
     consented_at = models.DateTimeField(null=True, blank=True)
+    authorization = models.CharField(
+        max_length=8, choices=Authorization.choices, blank=True
+    )
+    authorized_at = models.DateTimeField(null=True, blank=True)
     stored_at = models.DateTimeField(null=True, blank=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -500,6 +508,20 @@ class CallAttempt(models.Model):
     class Meta:
         ordering = ("-created_at",)
 
+    @property
+    def display_number(self) -> str:
+        from apps.crm.phone_display import UNAVAILABLE
+
+        if self.call_id:
+            return self.call.display_number
+        if (
+            self.mode == self.Mode.BUSINESS
+            and self.contact_id
+            and self.contact.organisation_id == self.organisation_id
+        ):
+            return self.contact.display_phone
+        return UNAVAILABLE
+
 
 class CallList(models.Model):
     """Numbers typed in or uploaded together, called one after another
@@ -562,8 +584,7 @@ class CallList(models.Model):
 
 
 class CallListEntry(models.Model):
-    """One person on a call list. The number is stored encrypted and shown
-    masked; it is decrypted only to dial."""
+    """One person on a call list, encrypted at rest and visible to its users."""
 
     class Status(models.TextChoices):
         WAITING = "waiting", "Waiting"
@@ -596,3 +617,49 @@ class CallListEntry(models.Model):
 
     class Meta:
         ordering = ("position",)
+
+    @property
+    def display_phone(self) -> str:
+        from apps.crm.phone_display import UNAVAILABLE, decrypted_number
+
+        return decrypted_number(self.phone_encrypted) or UNAVAILABLE
+
+
+class CallRetry(models.Model):
+    """One explicit retry per original attempt; repeated POSTs reuse it."""
+
+    source_call = models.OneToOneField(
+        "telephony.CallRecord",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="retry_request",
+    )
+    source_entry = models.OneToOneField(
+        CallListEntry,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="retry_request",
+    )
+    target_call = models.ForeignKey(
+        "telephony.CallRecord",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="retry_sources",
+    )
+    target_list = models.OneToOneField(
+        CallList,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="retry_source",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)

@@ -1,19 +1,54 @@
 {% extends 'dashboard/base.html' %}
+{% load static %}
 {% block title %}Home{% endblock %}
 {% block content %}
-<section class="page-head">
-  <div>
-    <h1>Calls in four steps</h1>
-    <p class="muted">{{ scope.organisation.name }}{% if not scope.all_campuses %}, your campuses{% endif %}. Set up who speaks, give the numbers, let the calls run, then read what happened.</p>
-  </div>
+<section class="page-head overview-heading">
+  <div><p class="eyebrow">YOUR WORKSPACE, CONNECTED</p><h1>Hello, {{ user.get_short_name|default:user.get_username }}<span class="hello-spark" aria-hidden="true">✦</span></h1><p class="muted">Let's make your next conversation a great one.</p></div>
+  <div class="refresh-tools"><span id="refresh-status" role="status">Updates every 30 seconds</span><button type="button" id="refresh-home" class="small">Refresh</button></div>
 </section>
+<section class="workspace-banner cosmic-hero" aria-label="Your AI voice team">
+  <div class="cosmic-stars" aria-hidden="true"></div><div class="cosmic-orbit" aria-hidden="true"></div>
+  <div class="hero-copy"><span class="hero-badge">A LITTLE AI. A MORE HUMAN CONNECTION.</span><h2>Better conversations.<br><span>Brighter possibilities.</span></h2><p>Your AI voice team, ready to listen, respond and follow through.<br class="desktop-break"> One clear next step, every time.</p><div class="hero-actions"><a class="button primary" href="#home-next-title">Find my next step</a><button type="button" data-open-assist>Ask Vaani Assist <span aria-hidden="true">✦</span></button></div></div>
+  <div class="hero-visual" aria-hidden="true"><div class="voice-core"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="orbit-caption">Every conversation matters</span></div>
+  <button type="button" class="motion-toggle" id="motion-toggle" aria-pressed="false">Pause motion</button>
+</section>
+<div id="home-live">
+<section class="next-action" aria-labelledby="home-next-title">
+  <div><p class="eyebrow">YOUR NEXT STEP</p>
+  {% if active_list %}
+    <h2 id="home-next-title">Check your current call list</h2><p>{{ active_list.name }}: {{ active_tally.finished }} of {{ active_tally.total }} finished. {% if active_list.status == 'paused' %}Open the list to review why it paused and resume when ready.{% else %}Keep the call list open while calls are running.{% endif %}</p></div>
+    <a class="button primary" href="{% url 'call-list' active_list.pk %}">View call progress</a>
+  {% elif not stats.employees %}
+    <h2 id="home-next-title">Set up your first AI employee</h2><p>Describe the job and choose a language. You can review and edit the script before publishing it.</p></div>
+    {% if scope.role != 'campus_staff' %}<a class="button primary" href="{% url 'employee-hire' %}">Create AI employee</a>{% else %}<p>Ask your workspace administrator to create and publish an employee.</p>{% endif %}
+  {% elif not stats.published %}
+    <h2 id="home-next-title">Finish setting up an employee</h2><p>Open an employee, review its call script, then publish it so it can make calls.</p></div>
+    <a class="button primary" href="{% url 'employees' %}">Review AI employees</a>
+  {% elif follow_ups %}
+    <h2 id="home-next-title">Review calls that need follow-up</h2><p>{{ follow_ups }} call{{ follow_ups|pluralize }} need attention. Open a result to read the summary and decide the next action.</p></div>
+    <a class="button primary" href="{% url 'conversations' %}?attention=follow_up">Review follow-ups</a>
+  {% elif can_call %}
+    <h2 id="home-next-title">Prepare your next call</h2><p>Choose a published employee and add numbers. You will review the list before starting any calls.</p></div>
+    <a class="button primary" href="{% url 'make-calls' %}">Add numbers</a>
+  {% else %}
+    <h2 id="home-next-title">Review your team's conversations</h2><p>See what happened on each call and what needs attention.</p></div>
+    <a class="button primary" href="{% url 'conversations' %}">Review call results</a>
+  {% endif %}
+</section>
+<div class="overview-metrics">
+  <section class="metric"><span>Calls this week</span><strong>{{ stats.week_total }}</strong><small>{{ stats.calls_today }} today</small></section>
+  <section class="metric"><span>Answer rate</span><strong>{% if stats.answer_rate is not None %}{{ stats.answer_rate }}<em>%</em>{% else %}&mdash;{% endif %}</strong><small>Over the last 7 days</small></section>
+  <section class="metric"><span>Ready to call</span><strong>{{ stats.published }}<em> / {{ stats.employees }}</em></strong><small>Published AI employees</small></section>
+  <a class="metric metric-attention" href="{% url 'conversations' %}?attention=follow_up"><span>Needs follow-up</span><strong>{{ follow_ups }}</strong><small>Review conversations</small></a>
+</div>
 
+<div class="section-heading"><h2>Calls in four steps</h2><span>From first hello to follow-through</span></div>
 <div class="home-steps" id="home-steps">
   <section class="home-step">
     <span class="number">1</span>
     <h2>AI employee</h2>
     <p><b id="stat-employees">{{ stats.employees }}</b> set up, {{ stats.published }} ready to call. It is who speaks on your calls: what it says, asks and collects.</p>
-    {% if stats.published %}<a class="button small" href="{% url 'employees' %}">See AI employees</a>{% else %}<a class="button primary small" href="{% url 'employee-hire' %}">Set one up</a>{% endif %}
+    {% if stats.published or scope.role == 'campus_staff' %}<a class="button small" href="{% url 'employees' %}">See AI employees</a>{% else %}<a class="button small" href="{% url 'employee-hire' %}">Set one up</a>{% endif %}
   </section>
   <section class="home-step">
     <span class="number">2</span>
@@ -26,7 +61,7 @@
     <h2>Calls</h2>
     {% if active_list %}
     <p><b>{{ active_list.name }}</b>: {{ active_tally.finished }} of {{ active_tally.total }} done{% if active_list.status == 'paused' %}, paused{% endif %}.</p>
-    <a class="button primary small" href="{% url 'call-list' active_list.pk %}">Open</a>
+    <a class="button small" href="{% url 'call-list' active_list.pk %}">View progress</a>
     {% else %}
     <p>Nothing calling right now. Calls run one after another, 9 AM to 9 PM.</p>
     {% endif %}
@@ -42,12 +77,14 @@
 <div class="grid-2">
   <section class="panel">
     <div class="panel-head"><h2>Latest calls</h2><a href="{% url 'conversations' %}">All results</a></div>
+    <label class="call-search">Search recent calls<input type="search" id="call-search" placeholder="Number or result" autocomplete="off"></label>
+    <p id="no-call-matches" class="muted" hidden>No matching recent calls.</p>
     {% if recent %}
       <div class="table-scroll"><table class="data">
         <thead><tr><th>Number</th><th>Result</th><th>Talk time</th><th>Started</th></tr></thead>
-        <tbody>
+        <tbody id="recent-call-rows">
           {% for call in recent %}
-          <tr><td><a href="{% url 'conversation-detail' call.id %}">{{ call.masked_number }}</a></td><td><span class="tag{% if call.status == 'completed' or call.status == 'answered' %} good{% elif call.active %}{% else %} bad{% endif %}">{{ call.status_label }}</span></td><td>{% if call.duration_seconds is None %}–{% else %}{{ call.duration_seconds|floatformat:0 }} s{% endif %}</td><td><time datetime="{{ call.created_at }}" data-local-time>{{ call.created_at|slice:":16" }}</time></td></tr>
+          <tr><td><a href="{% url 'conversation-detail' call.id %}">{{ call.number }}</a></td><td><span class="tag{% if call.status == 'completed' or call.status == 'answered' %} good{% elif call.active %}{% else %} bad{% endif %}">{{ call.status_label }}</span></td><td>{% if call.duration_seconds is None %}–{% else %}{{ call.duration_seconds|floatformat:0 }} s{% endif %}</td><td><time datetime="{{ call.created_at }}" data-local-time>{{ call.created_at|slice:":16" }}</time></td></tr>
           {% endfor %}
         </tbody>
       </table></div>
@@ -56,14 +93,17 @@
     {% endif %}
   </section>
   {% if setup_done != setup|length %}
-  <section class="panel">
-    <div class="panel-head"><h2>Still to set up</h2><span class="tag">{{ setup_done }} of {{ setup|length }}</span></div>
+  <details class="panel setup-panel" id="setup-checklist" open>
+    <summary><span>Workspace setup</span><span class="tag">{{ setup_done }} of {{ setup|length }}</span></summary>
+    <progress max="{{ setup|length }}" value="{{ setup_done }}" aria-label="Workspace setup progress"></progress>
     <ul class="plain-list checklist">
       {% for item in setup %}
       <li><span class="check{% if item.done %} done{% endif %}" aria-hidden="true"></span><span>{{ item.label }}<span class="visually-hidden"> ({% if item.done %}done{% else %}not done{% endif %})</span>{% if not item.done %}<small>{% if item.url_name %}<a href="{% url item.url_name %}">{{ item.help }}</a>{% else %}{{ item.help }}{% endif %}</small>{% endif %}</span></li>
       {% endfor %}
     </ul>
-  </section>
+  </details>
   {% endif %}
 </div>
+</div>
 {% endblock %}
+{% block scripts %}<script src="{% static 'dashboard/home.js' %}" defer></script>{% endblock %}

@@ -5,7 +5,7 @@
   <div>
     <p class="eyebrow"><a href="{% url 'leads' %}">LEADS &amp; CONTACTS</a> · {{ lead.campus.name }}</p>
     <h1>{{ lead.subject }}</h1>
-    <p class="muted">{{ contact.name }} · {{ contact.phone_masked|default:"erased" }} · added {{ lead.created_at|date:"j M Y" }}</p>
+    <p class="muted">{{ contact.name }} · {{ contact.display_phone|default:"erased" }} · added {{ lead.created_at|date:"j M Y" }}</p>
   </div>
   <span class="tag{% if lead.stage == 'won' %} good{% elif lead.stage == 'lost' %}{% else %} draft{% endif %}" id="lead-stage">{{ lead.get_stage_display }}</span>
 </section>
@@ -58,13 +58,13 @@
       {% else %}<p class="help">No call is linked to this lead yet.</p>{% endif %}
       {% if rehearsal_employees %}
       {% if contact_dialing %}
-      <form method="post" action="{% url 'lead-call' lead.pk %}" class="inline-form" id="lead-call" data-ask="Call {{ contact.name }} on {{ contact.phone_masked }} now? It is a real call, charged by the provider, checked against the dialing policy, permission to call and the campus's hours.">{% csrf_token %}
+      <form method="post" action="{% url 'lead-call' lead.pk %}" class="inline-form" id="lead-call" data-ask="Call {{ contact.name }} on {{ contact.display_phone }} now? It is a real call, charged by the provider, checked against the dialing policy, permission to call and the location's hours.">{% csrf_token %}
         <div class="field"><label for="followup-employee">Call this lead</label><select id="followup-employee" name="employee">{% for item in rehearsal_employees %}<option value="{{ item.pk }}"{% if item.pk == lead.employee_id %} selected{% endif %}>{{ item.name }}, version {{ item.live_version.number }}</option>{% endfor %}</select></div>
-        <button class="small" type="submit"{% if call_block %} disabled{% endif %}>Call {{ contact.phone_masked }}</button>
+        <button class="small" type="submit"{% if call_block %} disabled{% endif %}>Call {{ contact.display_phone }}</button>
       </form>
       {% else %}<p class="help" id="lead-call-off">Calling this lead directly is switched off on this installation (CONTACT_DIALING_ENABLED).</p>{% endif %}
-      <form method="post" action="{% url 'lead-rehearse' lead.pk %}" class="inline-form" id="rehearse" style="margin-top:14px;border-top:1px solid #edf0eb;padding-top:14px" data-ask="Ring the approved test number {{ test_number }} now, as if calling {{ contact.name }}? It is a real call, charged by the provider.">{% csrf_token %}
-        <div class="field"><label for="rehearse-employee">Rehearse this call on the test number</label><select id="rehearse-employee" name="employee">{% for item in rehearsal_employees %}<option value="{{ item.pk }}"{% if item.pk == lead.employee_id %} selected{% endif %}>{{ item.name }}, version {{ item.live_version.number }}</option>{% endfor %}</select></div>
+      <form method="post" action="{% url 'lead-rehearse' lead.pk %}" class="inline-form" id="rehearse" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px" data-ask="Ring the approved test number {{ test_number }} now, as if calling {{ contact.name }}? It is a real call, charged by the provider.">{% csrf_token %}
+        <div class="field"><label for="rehearse-employee">Demo call on the approved test number</label><select id="rehearse-employee" name="employee">{% for item in rehearsal_employees %}<option value="{{ item.pk }}"{% if item.pk == lead.employee_id %} selected{% endif %}>{{ item.name }}, version {{ item.live_version.number }}</option>{% endfor %}</select></div>
         <button class="small" type="submit"{% if not test_number %} disabled{% endif %}>Call the test number</button>
       </form>
       <p class="help">{% if test_number %}Rings {{ test_number }} with this lead's context; {{ contact.name }} is not called.{% else %}The outbound test line is not ready.{% endif %}</p>
@@ -84,7 +84,7 @@
       <div class="panel-head"><h2>Contact</h2><a href="{% url 'contact-detail' contact.pk %}">Open contact</a></div>
       <dl class="facts-grid">
         <dt>Name</dt><dd>{{ contact.name }}</dd>
-        <dt>Number</dt><dd>{{ contact.phone_masked|default:"erased" }}</dd>
+        <dt>Number</dt><dd>{{ contact.display_phone|default:"erased" }}</dd>
         <dt>Permission to call</dt><dd>{{ contact.get_consent_display }}</dd>
         <dt>WhatsApp</dt><dd>{% if contact.whatsapp_consent %}Agreed{% else %}Not agreed{% endif %}</dd>
         <dt>May be called</dt><dd id="call-block">{% if call_block %}<span class="tag bad">No</span> {{ call_block }}{% else %}<span class="tag good">Yes</span>{% endif %}</dd>

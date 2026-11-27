@@ -166,7 +166,7 @@ def campus_edit(request, pk):
             request,
             f"Opening hours saved: {hours.describe(campus)}."
             if days
-            else "Opening hours cleared: the campus counts as always open.",
+            else "Opening hours cleared: the location counts as always open.",
         )
         return here
     if action == "holiday" and holiday_form.is_valid():

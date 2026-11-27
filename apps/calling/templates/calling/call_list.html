@@ -12,6 +12,15 @@
 </section>
 
 <div id="call-list" data-step-url="{{ step_url }}" data-status="{{ call_list.status }}">
+  <section class="next-action" aria-labelledby="list-next-title">
+    <div><p class="eyebrow">YOUR NEXT STEP</p>
+    {% if call_list.status == 'ready' %}<h2 id="list-next-title">Check the people below, then confirm</h2><p>Review the numbers and any rejected rows. When the list is correct, confirm that everyone agreed to be called and choose Start calling.</p>
+    {% elif call_list.status == 'running' %}<h2 id="list-next-title">Keep this page open while calls run</h2><p>Progress updates automatically. You can pause the list below or open a result to review a completed call.</p>
+    {% elif call_list.status == 'paused' %}<h2 id="list-next-title">Review the pause reason before resuming</h2><p>Check the message below. Resume continues the remaining list; Cancel the rest stops any calls that have not started.</p>
+    {% else %}<h2 id="list-next-title">Review the outcome for each person</h2><p>Choose View result to see what happened. If a call failed or went unanswered, choose Call again to retry that person using the same call details.</p>
+    {% endif %}</div>
+    {% if call_list.status == 'done' or call_list.status == 'cancelled' %}<a class="button" href="{% url 'conversations' %}">All call results</a>{% endif %}
+  </section>
   {% if call_list.status == 'ready' %}
   <form method="post" class="panel start-panel" id="start-form">{% csrf_token %}
     <input type="hidden" name="action" value="start">
@@ -48,13 +57,13 @@
   <section class="panel">
     <div class="panel-head"><h2>People</h2>{% if call_list.status == 'ready' %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="cancel"><button class="small" type="submit">Discard this list</button></form>{% endif %}</div>
     <div class="table-scroll"><table class="data" id="entries">
-      <thead><tr><th>#</th><th>Name</th><th>Number</th><th>Status</th><th>Result</th></tr></thead>
+      <thead><tr><th>#</th><th>Name</th><th>Number</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody>{% for entry in entries %}<tr data-entry="{{ entry.pk }}">
         <td>{{ entry.position }}</td>
         <td>{{ entry.name|default:"–" }}</td>
-        <td>{{ entry.phone_masked }}</td>
+        <td class="phone-number">{{ entry.display_phone }}</td>
         <td><span class="tag{% if entry.status == 'answered' %} good{% elif entry.status == 'calling' %} draft{% elif entry.status == 'failed' or entry.status == 'no_answer' %} bad{% endif %}" data-status>{{ entry.get_status_display }}</span><small data-reason>{{ entry.reason }}</small></td>
-        <td data-result>{% if entry.call_id %}<a href="{% url 'conversation-detail' entry.call_id %}">Open</a>{% else %}–{% endif %}</td>
+        <td><div class="call-row-actions"><span data-result>{% if entry.call_id %}<a href="{% url 'conversation-detail' entry.call_id %}">View result</a>{% endif %}</span><span data-retry>{% include 'calling/_retry_action.html' with retry=entry.retry %}</span></div></td>
       </tr>{% endfor %}</tbody>
     </table></div>
   </section>

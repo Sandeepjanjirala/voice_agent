@@ -49,12 +49,12 @@ class _ConsentMixin:
 
 
 class LeadNewForm(_ConsentMixin, _PhoneMixin, forms.Form):
-    campus = forms.ModelChoiceField(queryset=None, empty_label=None)
+    campus = forms.ModelChoiceField(label="Location", queryset=None, empty_label=None)
     name = forms.CharField(label="Contact name", max_length=120)
     phone = forms.CharField(
         label="Phone number",
         max_length=24,
-        help_text="Stored encrypted. Only a masked form is shown afterwards.",
+        help_text="Stored encrypted and visible only to your authorised team.",
     )
     subject = forms.CharField(
         label="What it is about",
@@ -66,13 +66,18 @@ class LeadNewForm(_ConsentMixin, _PhoneMixin, forms.Form):
     )
     origin = forms.ChoiceField(
         label="Where the number came from",
-        choices=[c for c in Contact.Origin.choices if c[0] != Contact.Origin.IMPORT],
+        required=False,
+        choices=[("", "Not specified")]
+        + [c for c in Contact.Origin.choices if c[0] != Contact.Origin.IMPORT],
     )
     calling_purpose = forms.CharField(
         label="What we may call about", max_length=200, required=False
     )
     consent = forms.ChoiceField(
-        label="Permission to call", choices=Contact.Consent.choices[:3]
+        label="Permission to call",
+        choices=Contact.Consent.choices[:3],
+        initial=Contact.Consent.UNKNOWN,
+        required=False,
     )
     consent_evidence = forms.CharField(
         label="How and when they agreed",
@@ -81,10 +86,13 @@ class LeadNewForm(_ConsentMixin, _PhoneMixin, forms.Form):
         widget=forms.Textarea(attrs={"rows": 2}),
     )
     assigned_to = forms.ModelChoiceField(
-        queryset=None, required=False, empty_label="Nobody yet"
+        label="Team member for follow-up",
+        queryset=None,
+        required=False,
+        empty_label="Assign later",
     )
     employee = forms.ModelChoiceField(
-        label="AI employee", queryset=None, required=False, empty_label="None"
+        label="AI employee", queryset=None, required=False, empty_label="Choose later"
     )
 
     def __init__(self, *args, scope, **kwargs) -> None:
@@ -92,6 +100,28 @@ class LeadNewForm(_ConsentMixin, _PhoneMixin, forms.Form):
         self.fields["campus"].queryset = scope.campuses().filter(is_active=True)
         self.fields["assigned_to"].queryset = assignees(scope)
         self.fields["employee"].queryset = scope.limit_shared(Employee.objects.all())
+
+    def clean_origin(self):
+        return self.cleaned_data["origin"] or Contact.Origin.OTHER
+
+    def clean_consent(self):
+        return self.cleaned_data["consent"] or Contact.Consent.UNKNOWN
+
+    @property
+    def permission_open(self):
+        return bool(
+            {"consent", "consent_evidence"}.intersection(self.errors)
+            or self["consent"].value()
+            in (Contact.Consent.GRANTED, Contact.Consent.DENIED)
+            or self["consent_evidence"].value()
+        )
+
+    @property
+    def details_open(self):
+        fields = ("details", "origin", "calling_purpose", "assigned_to", "employee")
+        return bool(set(fields).intersection(self.errors)) or (
+            self.is_bound and any(self[field].value() for field in fields)
+        )
 
 
 class ContactForm(forms.ModelForm):
@@ -126,7 +156,7 @@ class ConsentForm(_ConsentMixin, forms.Form):
 
 
 class ImportForm(forms.Form):
-    campus = forms.ModelChoiceField(queryset=None, empty_label=None)
+    campus = forms.ModelChoiceField(label="Location", queryset=None, empty_label=None)
     origin = forms.ChoiceField(
         label="Where these numbers came from", choices=Contact.Origin.choices
     )

@@ -5,14 +5,14 @@
   <div>
     <p class="eyebrow">OUTCOMES</p>
     <h1>Performance</h1>
-    <p class="muted">Calls and leads of the last {{ days }} days{% if campus %} at {{ campus.name }}{% elif not scope.all_campuses %} in your campuses{% endif %}.</p>
+    <p class="muted">Calls and leads of the last {{ days }} days{% if campus %} at {{ campus.name }}{% elif not scope.all_campuses %} in your locations{% endif %}.</p>
   </div>
   <a class="button small" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}format=csv">Export CSV</a>
 </section>
 
 <form class="filters" method="get">
   <select name="days" aria-label="Period" data-autosubmit>{% for value in ranges %}<option value="{{ value }}"{% if value == days %} selected{% endif %}>Last {{ value }} days</option>{% endfor %}</select>
-  <select name="campus" aria-label="Campus" data-autosubmit><option value="">Every campus</option>{% for item in campuses %}<option value="{{ item.pk }}"{% if campus and item.pk == campus.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
+  <select name="campus" aria-label="Location" data-autosubmit><option value="">Every location</option>{% for item in campuses %}<option value="{{ item.pk }}"{% if campus and item.pk == campus.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
   <noscript><button class="small" type="submit">Show</button></noscript>
 </form>
 
@@ -43,10 +43,10 @@
 </section>
 
 <section class="panel" style="margin-top:20px">
-  <div class="panel-head"><h2>By campus</h2></div>
+  <div class="panel-head"><h2>By location</h2></div>
   <div class="table-scroll"><table class="data" id="campus-report">
-    <thead><tr><th>Campus</th><th class="num">Leads</th><th class="num">Open</th><th class="num">Converted</th><th class="num">Calls</th><th class="num">Answered</th><th class="num">Talk min</th></tr></thead>
-    <tbody>{% for row in campus_rows %}<tr><td>{{ row.name }}</td><td class="num">{{ row.leads }}</td><td class="num">{{ row.open }}</td><td class="num">{{ row.won }}</td><td class="num">{{ row.total }}</td><td class="num">{% if row.answer_rate is None %}–{% else %}{{ row.answer_rate }}%{% endif %}</td><td class="num">{{ row.talk_minutes }}</td></tr>{% empty %}<tr><td colspan="7">No campus yet.</td></tr>{% endfor %}</tbody>
+    <thead><tr><th>Location</th><th class="num">Leads</th><th class="num">Open</th><th class="num">Converted</th><th class="num">Calls</th><th class="num">Answered</th><th class="num">Talk min</th></tr></thead>
+    <tbody>{% for row in campus_rows %}<tr><td>{{ row.name }}</td><td class="num">{{ row.leads }}</td><td class="num">{{ row.open }}</td><td class="num">{{ row.won }}</td><td class="num">{{ row.total }}</td><td class="num">{% if row.answer_rate is None %}–{% else %}{{ row.answer_rate }}%{% endif %}</td><td class="num">{{ row.talk_minutes }}</td></tr>{% empty %}<tr><td colspan="7">No location yet.</td></tr>{% endfor %}</tbody>
   </table></div>
 </section>
 

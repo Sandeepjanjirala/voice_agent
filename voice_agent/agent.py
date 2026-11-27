@@ -7,12 +7,14 @@ This is a standalone process, separate from Django:
     uv run voice_agent/agent.py start          # production mode
 
 Inbound phone callers arrive as SIP participants through a LiveKit dispatch
-rule (Phase 2, see apps/telephony). With INBOUND_CONTEXT_URL set, the worker
-asks Django which published AI employee answers the dialled number (see
-voice_agent/inbound.py). A job whose metadata carries a dial request places
+rule (Phase 2, see apps/telephony). The worker asks Django through
+INBOUND_CONTEXT_URL which published AI employee answers the dialled number
+(see voice_agent/inbound.py); an unconfigured route is declined. A job whose
+metadata carries a dial request places
 one outbound test call instead (see voice_agent/outbound.py).
 """
 
+import json
 import logging
 import os
 
@@ -33,6 +35,7 @@ from voice_agent.profile import (
     recording_options,
     voice_for,
 )
+from voice_agent.simulation import grade_recording, recording_fixture
 from voice_agent.telephony import log_callers
 
 logger = logging.getLogger("voice_agent")
@@ -55,14 +58,17 @@ SHUTDOWN_SECONDS = 240.0
 server = AgentServer(shutdown_process_timeout=SHUTDOWN_SECONDS)
 
 
-@server.rtc_session(agent_name=settings.agent_name)
+@server.rtc_session(agent_name=settings.agent_name, on_simulation_end=grade_recording)
 async def entrypoint(ctx: JobContext) -> None:
     ctx.log_context_fields = {"room": ctx.room.name}
     logger.info("starting voice session", extra=settings.describe())
 
     # A job dispatched by `manage.py telephony call` places one phone call.
-    profile = parse_profile(ctx.job.metadata)
-    dial = parse_dial_request(ctx.job.metadata)
+    simulation = ctx.simulation_context()
+    profile = parse_profile(
+        json.dumps(simulation.userdata()) if simulation else ctx.job.metadata
+    )
+    dial = None if simulation else parse_dial_request(ctx.job.metadata)
     if dial is not None:
         # A call planned by Django carries a reference to its snapshot. If the
         # snapshot cannot be fetched, the call is not placed: it would
@@ -82,17 +88,27 @@ async def entrypoint(ctx: JobContext) -> None:
     # a file. A dispatched job (a real room) never reads it.
     if profile is None and ctx.is_fake_job() and settings.console_profile_file:
         profile = load_profile_file(settings.console_profile_file)
-    # Phone calls into a routed number take their employee from Django.
-    if settings.inbound_context_url:
+    # Inspect every real room's participant. SIP calls must resolve an employee
+    # through Django, including when the routing URL is missing (fail closed).
+    # Browser participants still use the profile supplied with their job.
+    if not simulation and not ctx.is_fake_job():
         await run_inbound_call(ctx, settings, profile)
         return
 
     voice = voice_for(settings, profile)
     session = build_session(voice)
     attach_session_observers(session, voice, session_id=ctx.room.name)
+    recorder = (
+        recording_fixture(session, profile) if simulation or ctx.is_fake_job() else None
+    )
+    if recorder is not None:
+        session.userdata = {"recording": recorder}
+        ctx.add_shutdown_callback(recorder.flush)
 
     await session.start(
-        agent=TeluguAssistant(voice, profile),
+        agent=TeluguAssistant(
+            voice, profile, extra_tools=recorder.tools() if recorder else None
+        ),
         room=ctx.room,
         room_options=room_io.RoomOptions(audio_input=build_audio_input(settings)),
         **recording_options(profile),
@@ -101,6 +117,8 @@ async def entrypoint(ctx: JobContext) -> None:
     log_callers(ctx.room)
 
     # Speak first, but only once the room is connected (see greet()).
+    if recorder is not None:
+        await recorder.start_demo()
     greet(session, voice, profile=profile)
 
 

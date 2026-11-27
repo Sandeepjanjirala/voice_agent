@@ -5,11 +5,11 @@
   <div>
     <p class="eyebrow">SETUP</p>
     <h1>Numbers &amp; channels</h1>
-    <p class="muted">Your business lines, the campus each belongs to, and which published AI employee answers it.</p>
+    <p class="muted">Your business lines, the location each belongs to, and which published AI employee answers it.</p>
   </div>
 </section>
 {% include 'calling/_tabs.html' with tab='numbers' %}
-<p class="notice" role="note">Inbound calls stay switched off until the phone line (SIP trunk) can be authenticated securely. Routes set up here are used from the moment it is, with no further change.</p>
+{% include 'calling/_inbound_setup.html' %}
 
 <div class="grid-2">
   <div class="stack">
@@ -17,14 +17,14 @@
       <div class="panel-head"><h2>Business lines</h2></div>
       {% if rows %}
       <div class="table-scroll"><table class="data" id="number-table">
-        <thead><tr><th>Number</th><th>Campus</th><th>Answered by</th><th>Inbound</th><th></th></tr></thead>
+        <thead><tr><th>Number</th><th>Location</th><th>Answered by</th><th>Inbound</th><th></th></tr></thead>
         <tbody>
           {% for row in rows %}
           <tr>
             <td>{{ row.number.number }}{% if row.number.label %}<small>{{ row.number.label }}</small>{% endif %}</td>
             <td>{{ row.number.campus.name|default:"Whole organisation" }}</td>
             <td>{% if row.number.employee %}{{ row.number.employee.name }}{% if row.number.employee.live_version %} v{{ row.number.employee.live_version.number }}{% endif %}{% else %}–{% endif %}</td>
-            <td class="wrap">{% if row.problems %}<span class="tag draft">Not routed</span><small>{{ row.problems|join:" " }}</small>{% else %}<span class="tag good">Routed</span>{% endif %}</td>
+            <td class="wrap">{% if row.problems %}<span class="tag draft">Not routed</span><small>{{ row.problems|join:" " }}</small>{% else %}<span class="tag good">Routed locally</span>{% endif %}</td>
             <td>{% if manage %}<a href="{% url 'number-edit' row.number.pk %}">Edit</a>{% endif %}</td>
           </tr>
           {% endfor %}
@@ -45,14 +45,10 @@
     </section>
   </div>
   <div class="stack">
-    <section class="panel">
-      <div class="panel-head"><h2>Inbound readiness</h2></div>
-      {% include 'calling/_checks.html' %}
-      <p class="help">Checked from configuration only; nothing was sent to LiveKit or the provider.</p>
-    </section>
     {% if manage %}
-    <form method="post" class="panel" novalidate>{% csrf_token %}
+    <form method="post" class="panel" id="add-number" novalidate>{% csrf_token %}
       <div class="panel-head"><h2>Add a number</h2></div>
+      <p class="help" style="margin:0 0 18px">Enter an incoming number already provisioned by your phone provider. Adding it here saves its routing; it does not buy or activate a number.</p>
       {% include 'dashboard/_fields.html' %}
       <button class="primary small" type="submit">Add number</button>
     </form>

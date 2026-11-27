@@ -196,6 +196,7 @@ def employees(request):
         "workforce/employees.html",
         {
             "employees": found,
+            "can_manage": request.scope.can("employees.manage"),
             "total": _employees(request.scope).count(),
             "query": query,
             "channel": channel,

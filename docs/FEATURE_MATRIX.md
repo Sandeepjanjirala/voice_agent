@@ -87,7 +87,7 @@ observed on the live screen. `Assumed` = our inference; treat as a guess.
 | :--- | :--- | :--- | :--- | :--- |
 | One row per person | All calls to a number roll up into one lead | Docs | Done (C), split in two: a contact per number per organisation, with any number of leads | – |
 | Views | Pipeline, list, cards, priority | Docs, Seen | Partial (C): list with stage counters | Board view later |
-| Filters and export | Channel, employee, source, date, outcome, hot; CSV export | Seen | Done (C): stage, campus, owner, search by name, subject or full number; contact export with masked numbers, admins only, logged | Lead export (E) |
+| Filters and export | Channel, employee, source, date, outcome, hot; CSV export | Seen | Done (C): stage, location, owner, search by name, subject or full number; contact export with masked numbers, admins only, logged | Lead export (E) |
 | Lead detail | Call history, everything learned, notes, Call now | Docs | Done (C): stage, owner, AI employee, notes, follow-up tasks, linked calls | Call now, once stored contacts may be dialled; rehearsal on the test number works (D) |
 | Counters | Total, qualified, pending call-back, hot | Seen | Done (C): a counter per stage, follow-ups due | – |
 
@@ -95,8 +95,8 @@ observed on the live screen. `Assumed` = our inference; treat as a guess.
 
 | Feature | Reference behaviour | Evidence | Our status | Missing work |
 | :--- | :--- | :--- | :--- | :--- |
-| Call log | Contact, employee, channel, outcome, talk time, cost, summary | Docs, Seen | Done (C, D): masked number, result, talk time, campus, employee version, who placed it | AI summary and outcome (E) |
-| Filters | Date, direction, recording, how it ended, talk time, channel, outcome, employee, source; remembered | Docs, Seen | Done (C, D): period, result, direction, campus, AI employee, outcome | Remembered filters |
+| Call log | Contact, employee, channel, outcome, talk time, cost, summary | Docs, Seen | Done (C, D): masked number, result, talk time, location, employee version, who placed it | AI summary and outcome (E) |
+| Filters | Date, direction, recording, how it ended, talk time, channel, outcome, employee, source; remembered | Docs, Seen | Done (C, D): period, result, direction, location, AI employee, outcome | Remembered filters |
 | Call detail | Recording, summary, sentiment, transcript, extracted details, notes, share | Docs | Done (D, 24 Nov): reason, summary, the employee's own result, resolution, collected details, what the AI said, open items, next step, follow-up, instruction-following, measured and quoted issues, the conversation as a timed chat (if kept), how it ended, actions, notes | Sentiment. Recording: done (24 Nov), after consent, encrypted, with a player; awaiting the first real recorded call |
 | Export CSV | From the filtered view | Docs, Seen | Done (C): masked numbers, admins only, logged | – |
 
@@ -106,8 +106,8 @@ observed on the live screen. `Assumed` = our inference; treat as a guess.
 | :--- | :--- | :--- | :--- | :--- |
 | Headline numbers | Calls, connect rate, conversion, average length, success rate, spend, vs. previous period | Seen | Done (C): calls, answer rate, talk time, response time, new leads, converted | Comparison with the previous period |
 | Charts | Calls over time, funnel, outcomes, by channel, busiest hours | Docs, Seen | Partial (C): calls per day, how calls ended, leads by stage | Busiest hours, by channel (E) |
-| Leaderboard | Per employee, exportable | Docs, Seen | Done (C): per campus and per AI employee, CSV export | – |
-| Filters | 7/30/90 days, custom, employee, channel, issues only, minimum duration | Docs, Seen | Partial (C): 7/30/90 days, campus | Custom range, employee |
+| Leaderboard | Per employee, exportable | Docs, Seen | Done (C): per location and per AI employee, CSV export | – |
+| Filters | 7/30/90 days, custom, employee, channel, issues only, minimum duration | Docs, Seen | Partial (C): 7/30/90 days, location | Custom range, employee |
 | Latency reporting | – (not in the reference) | – | Done (C): per call, and as a median on Performance and Conversations | – |
 
 ## 8. Campaigns
@@ -117,8 +117,8 @@ calling for real:
 
 | Feature | Reference behaviour | Evidence | Our status | Missing work |
 | :--- | :--- | :--- | :--- | :--- |
-| Create | Name, employee, contacts (manual, paste, CSV), column mapping, reusable lists | Docs | Done (25 Nov): typed numbers or an Excel/CSV upload, a published employee, what the calls are about, an optional campus | Column-to-variable mapping; reusable lists |
-| Rules | Window, days, holidays, concurrency 1–20, retries 1–9, schedule or repeat | Docs | Partial: 09:00–21:00, the campus's opening hours and holidays, one call at a time | Retries, schedule and repeat |
+| Create | Name, employee, contacts (manual, paste, CSV), column mapping, reusable lists | Docs | Done (25 Nov): typed numbers or an Excel/CSV upload, a published employee, what the calls are about, an optional location | Column-to-variable mapping; reusable lists |
+| Rules | Window, days, holidays, concurrency 1–20, retries 1–9, schedule or repeat | Docs | Partial: 09:00–21:00, the location's opening hours and holidays, one call at a time | Retries, schedule and repeat |
 | Run | Pause, resume, retry, cancel, export; live panel | Docs | Done (25 Nov): live list page, pause, resume, cancel | Retry and export |
 | Limits | 10 live campaigns; one per number, the next queues | Docs | Partial: one outbound call at a time across the installation, enforced by the database; the monthly minutes budget | Simultaneous calls |
 | Do-not-call | Account list plus per-campaign suppression, checked before each call | Docs | Done: checked when the list is made and again before each call | Per-list suppression |
@@ -136,7 +136,7 @@ or imported under Leads & contacts.
 | Receptionist employee | Answers every call to its number | Docs | Done (D), switched off: routed number, published employee, caller recognised from contacts | Secure trunk authentication is the blocker |
 | Setup checklist | Number, receptionist, attach | Seen | Done (D): readiness checks on Numbers and Incoming calls | – |
 | Sections | Overview, Calls, Messages, Missed callers | Seen | Done (D, E): overview, calls and missed callers with "Called back" | Messages, once inbound is live |
-| Recording notice, opening hours, call back missed callers | Described | Docs | Done (E): opening hours and holidays per campus; after hours the employee takes a message; missed callers listed and notified | Recording notice, if recordings are ever kept |
+| Recording notice, opening hours, call back missed callers | Described | Docs | Done (E): opening hours and holidays per location; after hours the employee takes a message; missed callers listed and notified | Recording notice, if recordings are ever kept |
 | Leads calling back | The outbound employee answers its own call-backs | Docs | None | (E) |
 
 Inbound SIP routing stays off until it can be authenticated securely.
@@ -146,7 +146,7 @@ Inbound SIP routing stays off until it can be authenticated securely.
 | Feature | Reference behaviour | Evidence | Our status | Missing work |
 | :--- | :--- | :--- | :--- | :--- |
 | Buy a number | Search, pay, KYC, auto-activate | Docs, Seen | Not planned: numbers are bought from the provider (Vobiz) by the owner | – |
-| Assign a number | One number per employee | Docs | Done (D, platform improvements): a number has a campus and an employee; an employee may answer several; every routed number joins the one secure inbound trunk; a verified number can be a campus's caller ID on business calls | – |
+| Assign a number | One number per employee | Docs | Done (D, platform improvements): a number has a location and an employee; an employee may answer several; every routed number joins the one secure inbound trunk; a verified number can be a location's caller ID on business calls | – |
 | Concurrent calls | "Channels" per number | Docs, Seen | Partial: one outbound call at a time across the installation (a database rule). Each organisation can already store a calls-at-once limit (1 to 20, under Privacy & settings) for when more are authorised | Lifting the one-call rule, with real runs |
 | Calling rules shown | Consent, hours, do-not-call, responsibility | Docs, Seen | Done: on Make calls, Numbers & channels and each call list | – |
 | Line status | – | – | Done (D): outbound readiness and inbound readiness on Numbers & channels | – |
@@ -155,7 +155,7 @@ Inbound SIP routing stays off until it can be authenticated securely.
 
 | Feature | Reference behaviour | Evidence | Our status | Missing work |
 | :--- | :--- | :--- | :--- | :--- |
-| Facts and rules | Typed, spoken or photographed; sorted into facts and rules; reviewed before saving | Docs | Done (D): typed facts and rules, per campus or organisation-wide, used from the next call | Spoken or photographed input (E) |
+| Facts and rules | Typed, spoken or photographed; sorted into facts and rules; reviewed before saving | Docs | Done (D): typed facts and rules, per location or organisation-wide, used from the next call | Spoken or photographed input (E) |
 | Documents | Uploaded and consulted only when needed | Docs | None | (E) |
 | Suggestions from real calls | Moments where the employee struggled | Docs | None | Needs transcripts (after E) |
 | Actions | Calendar, Sheets, custom API, WhatsApp; each opt-in per employee | Docs | Partial: built-in follow-up task and lead stage only. Calendar, WhatsApp and REST actions were removed on 25 Nov 2026 at the owner's request (they were simulated) | Real integrations, when authorised |
@@ -166,18 +166,18 @@ Inbound SIP routing stays off until it can be authenticated securely.
 
 | Feature | Reference behaviour | Evidence | Our status | Missing work |
 | :--- | :--- | :--- | :--- | :--- |
-| Prepaid credits | Per-minute billing, top-ups, statements | Docs, Seen | Not planned: this is our own deployment, not a resold service. Done instead (E): Usage & costs, by month, employee and campus, with an estimate from your rates | – |
-| Business settings | Name, default language | Docs, Seen | Done (C): organisation name, campuses, staff and roles | Default language per organisation |
+| Prepaid credits | Per-minute billing, top-ups, statements | Docs, Seen | Not planned: this is our own deployment, not a resold service. Done instead (E): Usage & costs, by month, employee and location, with an estimate from your rates | – |
+| Business settings | Name, default language | Docs, Seen | Done (C): organisation name, locations, staff and roles | Default language per organisation |
 | Caller memory and call-backs | Off by default; remembers callers, books call-backs | Docs, Seen | None | Only with a stated privacy basis (E) |
 | Do-not-call list | Add singly or in bulk; auto-added on request | Docs, Seen | Done (C, D): added automatically when a caller asks during a call, where their number is known | Bulk add |
 | Privacy and data | Export, remembered callers, credentials | Seen | Done (C, E): encrypted numbers, access log, retention policy run daily by the scheduler, erase a contact, masked exports, transcripts analysed then deleted, LiveKit Cloud asked to keep nothing | – |
-| Notification preferences | Bell and pop-up per event type | Seen | Partial (E): bell and list for follow-ups, missed callers, escalations and failures, by campus or person | Per-person preferences |
+| Notification preferences | Bell and pop-up per event type | Seen | Partial (E): bell and list for follow-ups, missed callers, escalations and failures, by location or person | Per-person preferences |
 
 ## Where we differ on purpose
 
-- **Organisations and campuses.** The reference has one business per account. We
-  have organisations, campuses and per-campus staff (done), and will add
-  campus-specific knowledge (E). Nothing in the shared code names a school or a
+- **Organisations and locations.** The reference has one business per account. We
+  have organisations, locations and per-location staff (done), and will add
+  location-specific knowledge (E). Nothing in the shared code names a school or a
   kind of enquiry: lead stages and contact origins are general.
 - **Do-not-call everywhere.** The reference applies its list to bulk campaigns
   only. We will check it before every outbound call.

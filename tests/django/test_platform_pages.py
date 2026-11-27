@@ -137,7 +137,7 @@ def test_admins_set_campus_hours_holidays_and_call_handling(world):
     )
     assert "already a holiday" in body(again)
     south_page = body(admin.get(reverse("campus-edit", args=[world.south.pk])))
-    assert "Founders" in south_page and "Every campus" in south_page
+    assert "Founders" in south_page and "Every location" in south_page
 
     other_org = Holiday.objects.create(
         organisation=world.org_b, date=day, name="Other organisation's day"

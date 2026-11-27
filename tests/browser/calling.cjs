@@ -9,13 +9,15 @@ const fs = require('node:fs');
 
 const BASE = 'http://127.0.0.1:8767';
 const EVENTS_SECRET = 'qa-call-events-secret-not-for-production-0123';
-// Made-up numbers. None may ever appear in a page in full.
-const NUMBERS = ['9876500001', '9876500002', '9000000001'];
 
-// Sidebar links: the everyday ones are always shown; the rest are folded
-// under "More", which is opened first when needed.
+// Daily tools stay in the sidebar; setup and reports are explained in Settings.
 async function sideLink(page, name) {
-  const link = page.locator('.side-nav').getByRole('link', { name, exact: true });
+  const link = page.locator('.side-nav').getByRole('link', { name, exact: true, includeHidden: true });
+  if (!(await link.count())) {
+    await page.locator('.side-nav').getByRole('link', { name: 'Settings', exact: true }).click();
+    await page.locator('#workspace-tools').getByRole('link', { name, exact: true }).click();
+    return;
+  }
   if (!(await link.isVisible())) await page.locator('.side-more summary').click();
   await link.click();
 }
@@ -26,11 +28,6 @@ async function login(page, username, password) {
   await page.locator('[name=password]').fill(password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.waitForURL(`${BASE}/home/`);
-}
-
-async function noFullNumbers(page, label) {
-  const html = await page.content();
-  for (const number of NUMBERS) assert.ok(!html.includes(number), `${label} shows ${number} in full`);
 }
 
 async function noSidewaysScroll(page, label) {
@@ -82,35 +79,39 @@ async function uploadRecording(room, data, duration, offset) {
     // The organisation keeps transcripts, so calls can be summarised.
     await page.goto(`${BASE}/settings/`);
     await page.locator('[name=org-transcripts]').selectOption('keep');
+    await page.locator('[name=org-recording]').selectOption('demo');
+    assert.equal(await page.locator('[name=org-recording_notice]').isVisible(), false);
+    assert.ok(await page.locator('[data-recording-demo]').isVisible());
     // Our own recordings: approved test calls only, after the person agrees.
     await page.locator('[name=org-recording]').selectOption('test');
+    assert.ok(await page.locator('[name=org-recording_notice]').isVisible());
     await page.locator('[name=org-recording_notice]').fill('May I record this call so the team can review it?');
     await page.getByRole('button', { name: 'Save settings' }).click();
     await page.getByText('Settings saved.').waitFor();
 
-    // Knowledge for the North campus, previewed as a call would get it.
+    // Knowledge for the North location, previewed as a call would get it.
     await sideLink(page, 'Knowledge');
     await page.locator('#id_kind').selectOption('fact');
-    await page.locator('#id_campus').selectOption({ label: 'North Campus' });
-    await page.locator('#id_title').fill('Visit hours');
-    await page.locator('#id_text').fill('Campus visits are 10 to 1 on weekdays.');
+    await page.locator('#id_campus').selectOption({ label: 'North Location' });
+    await page.locator('#id_title').fill('Consultation hours');
+    await page.locator('#id_text').fill('Consultations are 10 to 1 on weekdays.');
     await page.getByRole('button', { name: 'Add', exact: true }).click();
     await page.getByText('is added. It is used from the next call.').waitFor();
-    await page.locator('select[aria-label=Campus]').selectOption({ label: 'North Campus' });
+    await page.locator('select[aria-label=Location]').selectOption({ label: 'North Location' });
     await page.waitForURL(/campus=/);
-    assert.ok((await page.locator('#knowledge-preview').textContent()).includes('Visit hours: Campus visits are 10 to 1'));
+    assert.ok((await page.locator('#knowledge-preview').textContent()).includes('Consultation hours: Consultations are 10 to 1'));
     await page.screenshot({ path: 'browser-artifacts/calling-knowledge.png', fullPage: true });
 
     // An employee with its own voice and an approved action, published.
     await page.goto(`${BASE}/employees/hire/`);
-    await page.getByRole('button', { name: 'Admissions enquiry' }).click();
+    await page.getByRole('button', { name: 'New enquiry' }).click();
     await page.getByRole('button', { name: 'Draft this employee' }).click();
     await page.waitForURL(/\/employees\/[0-9a-f-]{36}\/$/);
     const employeeUrl = page.url();
     await page.locator('#f-speaker').selectOption('kavya');
     await page.locator('#f-pace').selectOption('0.9');
     await page.locator('input[name=action][value=create_follow_up]').check();
-    await page.getByLabel('North Campus').check();
+    await page.getByLabel('North Location').check();
     await page.getByRole('button', { name: 'Save draft' }).click();
     await page.getByText('Draft saved.').waitFor();
     assert.equal(await page.locator('#f-speaker').inputValue(), 'kavya');
@@ -123,23 +124,36 @@ async function uploadRecording(room, data, duration, offset) {
     await sideLink(page, 'Numbers & channels');
     await page.locator('[name=number]').fill('+91 40 1234 5678');
     await page.locator('[name=label]').fill('North front desk');
-    await page.locator('[name=campus]').selectOption({ label: 'North Campus' });
+    await page.locator('[name=campus]').selectOption({ label: 'North Location' });
     await page.locator('[name=employee]').selectOption({ index: 1 });
     await page.locator('[name=routing_enabled]').check();
     await page.getByRole('button', { name: 'Add number' }).click();
     await page.getByText('+914012345678 is added.').waitFor();
     assert.ok((await page.locator('#number-table').textContent()).includes('Routed'));
     assert.ok((await page.locator('#diagnostics').textContent()).includes('Inbound SIP trunk'));
+    assert.equal((await page.locator('#inbound-setup-status').textContent()).trim(), 'Setup incomplete');
+    assert.ok((await page.locator('#inbound-setup').textContent()).includes('live call audio have not been verified here'));
     await page.screenshot({ path: 'browser-artifacts/calling-numbers.png', fullPage: true });
     await page.getByRole('link', { name: 'Incoming calls' }).first().click();
     assert.ok((await page.locator('#routes').textContent()).includes('+914012345678 → Meera'));
 
+    // The shared workflow fixture already includes calls needing attention.
+    // Capture its baseline so this rehearsal must add exactly one new result.
+    await page.goto(`${BASE}/conversations/?outcome=callback`);
+    const callbacksBefore = await page.locator('#call-table tbody tr').count();
+    await page.goto(`${BASE}/conversations/`);
+    const followUpsBefore = Number((await page.locator('#tile-follow-up .tile-value').textContent()).trim());
+    await page.locator('#tile-follow-up').click();
+    await page.waitForURL(/attention=follow_up/);
+    assert.equal(await page.locator('#call-table tbody tr').count(), followUpsBefore);
+
     // A lead, rehearsed on the test number with the published employee.
     await page.goto(`${BASE}/leads/new/`);
-    await page.locator('[name=campus]').selectOption({ label: 'North Campus' });
+    await page.locator('[name=campus]').selectOption({ label: 'North Location' });
     await page.locator('[name=name]').fill('Asha Rao');
     await page.locator('[name=phone]').fill('98765 00001');
-    await page.locator('[name=subject]').fill('Campus visit');
+    await page.locator('[name=subject]').fill('Product consultation');
+    await page.locator('#lead-permission > summary').click();
     await page.locator('[name=consent]').selectOption('granted');
     await page.locator('[name=consent_evidence]').fill('Ticked the box on the enquiry form');
     await page.getByRole('button', { name: 'Add lead' }).click();
@@ -167,8 +181,8 @@ async function uploadRecording(room, data, duration, offset) {
       talk_seconds: 42,
       end_reason: 'caller_hung_up',
       transcript: [
-        { role: 'assistant', text: 'Hello, I am Meera. Is this a good time to talk about your visit?', t: 0.4 },
-        { role: 'user', text: 'Yes. My son joins Class 6. Call me back Friday evening on 98765 00001.', t: 6.2, confidence: 0.42 },
+        { role: 'assistant', text: 'Hello, I am Meera. Is this a good time to talk about your consultation?', t: 0.4 },
+        { role: 'user', text: 'Yes. I need a product consultation. Call me back Friday evening on 98765 00001.', t: 6.2, confidence: 0.42 },
         { role: 'assistant', text: 'Thank you, a team member will call', t: 7.1, interrupted: true },
         { role: 'tool', name: 'end_call', ok: true, t: 9.0 },
       ],
@@ -176,7 +190,7 @@ async function uploadRecording(room, data, duration, offset) {
     assert.equal(status, 204);
     await page.goto(callUrl);
     const transcript = await page.locator('#conversation').textContent();
-    assert.ok(transcript.includes('98******01'), 'the number in the transcript is masked');
+    assert.ok(transcript.includes('98765 00001'), 'the number in the transcript is readable');
     // The conversation as a chat: who said what, when, cut-offs and tools.
     assert.equal(await page.locator('#conversation .chat-turn.from-ai').count(), 2);
     assert.equal(await page.locator('#conversation .chat-turn.from-person').count(), 1);
@@ -195,15 +209,15 @@ async function uploadRecording(room, data, duration, offset) {
     assert.ok(await page.getByRole('button', { name: 'Analyse again' }).isVisible());
     assert.equal((await page.locator('#outcome').textContent()).trim(), 'Call back later');
     assert.equal((await page.locator('#resolution').textContent()).trim(), 'Partly resolved');
-    assert.ok((await page.locator('#reason').textContent()).includes('campus visit for their son'));
+    assert.ok((await page.locator('#reason').textContent()).includes('product consultation'));
     assert.ok((await page.locator('#next-step').textContent()).includes('Friday evening'));
-    assert.ok((await page.locator('#pending').textContent()).includes('A day and time for the visit'));
+    assert.ok((await page.locator('#pending').textContent()).includes('A day and time for the consultation'));
     const quality = await page.locator('#quality').textContent();
-    assert.ok(quality.includes('The visit day was not agreed on the call.'));
+    assert.ok(quality.includes('The consultation day was not agreed on the call.'));
     assert.ok(quality.includes('spoke over the AI employee'), 'measured from the call');
     assert.ok(!quality.includes('Invented by the model'), 'a quote not in the conversation is dropped');
     assert.equal((await page.locator('#end-reason').textContent()).trim(), 'The person hung up');
-    assert.ok((await page.locator('#answers').textContent()).includes('Class 6'));
+    assert.ok((await page.locator('#answers').textContent()).includes('Product consultation'));
     assert.ok((await page.locator('#actions').textContent()).includes('Follow-up added: call back Friday evening.'));
     // The recording: its own section, real controls, linked to the conversation.
     assert.equal((await page.locator('#recording-status').textContent()).trim(), 'Available');
@@ -239,22 +253,25 @@ async function uploadRecording(room, data, duration, offset) {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.locator('#snapshot summary').click();
     assert.ok((await page.locator('#snapshot').textContent()).includes('kavya, speed 0.9'));
-    await noFullNumbers(page, 'the call page');
+    assert.ok((await page.locator('main h1').innerText()).includes('+919000000001'), 'the call page shows the full test number');
     await page.screenshot({ path: 'browser-artifacts/calling-call-result.png', fullPage: true });
     await page.goto(leadUrl);
     assert.ok((await page.locator('#tasks').textContent()).includes('Call back Friday evening'));
 
     await page.goto(`${BASE}/conversations/?outcome=callback`);
-    assert.equal(await page.locator('#call-table tbody tr').count(), 1);
+    assert.equal(await page.locator('#call-table tbody tr').count(), callbacksBefore + 1);
+    const callPath = new URL(callUrl).pathname;
+    assert.equal(await page.locator(`#call-table a[href="${callPath}"]`).count(), 1);
     // What needs attention: the tile and the filter agree.
     await page.goto(`${BASE}/conversations/`);
-    assert.equal((await page.locator('#tile-follow-up .tile-value').textContent()).trim(), '1');
+    assert.equal(Number((await page.locator('#tile-follow-up .tile-value').textContent()).trim()), followUpsBefore + 1);
     await page.locator('#tile-follow-up').click();
     await page.waitForURL(/attention=follow_up/);
-    assert.equal(await page.locator('#call-table tbody tr').count(), 1);
+    assert.equal(await page.locator('#call-table tbody tr').count(), followUpsBefore + 1);
+    assert.equal(await page.locator(`#call-table a[href="${callPath}"]`).count(), 1);
     assert.ok((await page.locator('#call-table').textContent()).includes('Call back later'));
 
-    // Campus staff of the North campus may look but not manage.
+    // Location team members of the North location may look but not manage.
     const staff = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     staff.on('pageerror', error => errors.push(error.message));
     await login(staff, 'north-review', 'local-disposable-north-check');

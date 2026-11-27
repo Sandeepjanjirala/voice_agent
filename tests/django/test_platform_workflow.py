@@ -35,7 +35,7 @@ from voice_agent.profile import PROFILE_REF_KEY, parse_profile
 
 from .test_calling import SCRIPT, TRANSCRIPT, canned, consented, inbound_post
 from .test_calls import SECRET, env, gateway, post_event  # noqa: F401
-from .test_tenancy_crm import ASHA, World, assert_no_full_number, body
+from .test_tenancy_crm import ASHA, World, body
 
 pytestmark = pytest.mark.django_db
 
@@ -166,7 +166,7 @@ def test_hire_to_result_through_the_dashboard(env, gateway, monkeypatch, setting
     call_list = CallList.objects.get()
     checked = body(admin.get(reverse("call-list", args=[call_list.pk])))
     assert "Everyone on this list agreed" in checked
-    assert_no_full_number(checked)
+    assert ASHA in checked
     admin.post(
         reverse("call-list", args=[call_list.pk]), {"action": "start", "consent": "yes"}
     )
@@ -209,7 +209,7 @@ def test_hire_to_result_through_the_dashboard(env, gateway, monkeypatch, setting
     assert CallResult.objects.get(call=record).outcome == "callback"
     result_page = body(admin.get(reverse("conversation-detail", args=[record.pk])))
     assert "The parent asked about visiting" in result_page
-    assert_no_full_number(result_page)
+    assert ASHA in result_page
 
     # 8. The same line answers an inbound call with the same published version.
     answer = inbound_post({"room": "call-in-1", "called": LINE, "caller": ASHA})

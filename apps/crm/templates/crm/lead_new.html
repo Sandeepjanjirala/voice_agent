@@ -5,14 +5,42 @@
   <div>
     <p class="eyebrow"><a href="{% url 'leads' %}">LEADS &amp; CONTACTS</a></p>
     <h1>Add a lead</h1>
-    <p class="muted">If the number already belongs to a contact, the lead is added to that contact. Use test data only until real contact data is authorised.</p>
+    <p class="muted">Save an enquiry now. You can add notes, assign follow-up work and record calling permission later.</p>
   </div>
 </section>
 {% if problem %}<p class="notice" role="alert">Contacts cannot be stored yet: {{ problem }} Run <code>python manage.py contactkeys generate</code> and add the two lines to .env.local.</p>{% endif %}
-<form method="post" class="panel" style="max-width:680px" novalidate>{% csrf_token %}
-  {% include 'dashboard/_fields.html' %}
+<form method="post" class="panel lead-create" novalidate>{% csrf_token %}
+  {% if form.non_field_errors %}<div class="error" role="alert">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+  <div class="field-pair">
+    {% include 'dashboard/_field.html' with field=form.name %}
+    {% include 'dashboard/_field.html' with field=form.phone %}
+  </div>
+  {% include 'dashboard/_field.html' with field=form.campus %}
+  {% include 'dashboard/_field.html' with field=form.subject %}
+  <details class="form-disclosure" id="lead-details"{% if form.details_open %} open{% endif %}>
+    <summary>Notes &amp; assignments <span>Optional</span></summary>
+    <div class="disclosure-content">
+      {% include 'dashboard/_field.html' with field=form.details %}
+      <div class="field-pair">
+        {% include 'dashboard/_field.html' with field=form.origin %}
+        {% include 'dashboard/_field.html' with field=form.calling_purpose %}
+      </div>
+      <div class="field-pair">
+        {% include 'dashboard/_field.html' with field=form.assigned_to %}
+        {% include 'dashboard/_field.html' with field=form.employee %}
+      </div>
+    </div>
+  </details>
+  <details class="form-disclosure" id="lead-permission"{% if form.permission_open %} open{% endif %}>
+    <summary>Calling permission <span>Needed before customer calls</span></summary>
+    <div class="disclosure-content">
+      <p class="help">Leave this as Not recorded if you have not checked yet. Saving a lead does not place a call or grant permission.</p>
+      {% include 'dashboard/_field.html' with field=form.consent %}
+      {% include 'dashboard/_field.html' with field=form.consent_evidence %}
+    </div>
+  </details>
   <div class="form-actions">
-    <p class="fine">Recording that someone agreed to be called needs a note of how and when. Without it the contact cannot be called.</p>
+    <p class="fine">An existing phone number is linked to its current contact.</p>
     <button class="primary" type="submit"{% if problem %} disabled{% endif %}>Add lead</button>
   </div>
 </form>

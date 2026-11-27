@@ -26,19 +26,48 @@ SECTIONS = (
             ("settings", "Settings", MEMBER),
         ),
     ),
-    # Everything else, folded away until it is needed.
+    # The three supporting tools used while preparing or following up calls.
     (
-        "More",
+        "Workspace tools",
         (
             ("leads", "Leads & contacts", "leads.view"),
-            ("campuses", "Campuses & staff", "campuses.view"),
-            ("performance", "Performance", "reports.view"),
-            ("inbound", "Incoming calls", "calls.view"),
-            ("numbers", "Numbers & channels", "numbers.view"),
             ("knowledge", "Knowledge", "knowledge.view"),
-            ("usage", "Usage & costs", "usage.view"),
-            ("operations", "Operations", "operations.view"),
+            ("inbound", "Incoming calls", "calls.view"),
         ),
+    ),
+)
+# Setup and reporting are reached through Settings, with their purpose beside
+# each link. Keeping permissions here prevents the hub exposing admin tools.
+SETTINGS_TOOLS = (
+    (
+        "campuses",
+        "Locations & team",
+        "campuses.view",
+        "Manage branches, opening hours and the people who work there.",
+    ),
+    (
+        "numbers",
+        "Numbers & channels",
+        "numbers.view",
+        "Connect phone numbers and choose which AI employee answers each one.",
+    ),
+    (
+        "performance",
+        "Performance",
+        "reports.view",
+        "See call outcomes and follow-up progress across your locations.",
+    ),
+    (
+        "usage",
+        "Usage & costs",
+        "usage.view",
+        "Review talk time, estimated costs and your monthly budget.",
+    ),
+    (
+        "operations",
+        "Operations",
+        "operations.view",
+        "Check service health and investigate calls or background jobs that failed.",
     ),
 )
 # Pages that belong to a sidebar entry without being one.
@@ -84,13 +113,15 @@ def navigation(request) -> dict:
     match = getattr(request, "resolver_match", None)
     current = match.url_name if match else ""
     current = PARENTS.get(current, current)
+    settings_names = {name for name, *_ in SETTINGS_TOOLS}
+    current_section = "settings" if current in settings_names else current
     sections = []
     for title, entries in SECTIONS:
         items = [
             {
                 "label": label,
                 "url": reverse(name),
-                "current": name == current,
+                "current": name == current_section,
                 "soon": name in MODULES,
             }
             for name, label, requirement in entries
@@ -98,9 +129,9 @@ def navigation(request) -> dict:
         ]
         if items:
             sections.append({"title": title, "items": items})
-    # "More" stays folded unless one of its pages is open, or it is all there is.
+    # Supporting tools stay folded unless one is open, or they are all there is.
     for section in sections:
-        section["folded"] = section["title"] == "More"
+        section["folded"] = section["title"] == "Workspace tools"
         section["open"] = len(sections) == 1 or any(
             item["current"] for item in section["items"]
         )
@@ -112,11 +143,21 @@ def navigation(request) -> dict:
         from apps.operations.views import visible_notifications
 
         unread = visible_notifications(scope).filter(read_at__isnull=True).count()
+    settings_tools = [
+        {
+            "label": label,
+            "url": reverse(name),
+            "description": description,
+            "current": name == current,
+        }
+        for name, label, requirement, description in SETTINGS_TOOLS
+        if _visible(requirement, user, scope)
+    ]
     current_label = next(
         (
             item["label"]
-            for section in sections
-            for item in section["items"]
+            for item in settings_tools
+            + [item for section in sections for item in section["items"]]
             if item["current"]
         ),
         "",
@@ -124,6 +165,7 @@ def navigation(request) -> dict:
     return {
         "nav_sections": sections,
         "nav_current_label": current_label,
+        "settings_tools": settings_tools,
         "scope": scope,
         "switch_organisations": organisations,
         "unread_notifications": unread,

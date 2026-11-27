@@ -23,18 +23,18 @@
       <option value="open"{% if stage == 'open' %} selected{% endif %}>All open</option>
       {% for item in stages %}<option value="{{ item.value }}"{% if item.value == stage %} selected{% endif %}>{{ item.label }}</option>{% endfor %}
     </select>
-    <select name="campus" aria-label="Campus"><option value="">Every campus</option>{% for item in campuses %}<option value="{{ item.pk }}"{% if campus and item.pk == campus.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
+    <select name="campus" aria-label="Location"><option value="">Every location</option>{% for item in campuses %}<option value="{{ item.pk }}"{% if campus and item.pk == campus.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
     <select name="assigned" aria-label="Assigned to"><option value="">Anyone</option><option value="me"{% if assigned == 'me' %} selected{% endif %}>Assigned to me</option><option value="none"{% if assigned == 'none' %} selected{% endif %}>Not assigned</option></select>
     <button class="small" type="submit">Filter</button>
   </form>
   {% if page.object_list %}
   <div class="table-scroll"><table class="data" id="lead-table">
-    <thead><tr><th>Lead</th><th>Contact</th><th>Stage</th><th>Campus</th><th>Assigned to</th><th>Added</th></tr></thead>
+    <thead><tr><th>Lead</th><th>Contact</th><th>Stage</th><th>Location</th><th>Assigned to</th><th>Added</th></tr></thead>
     <tbody>
       {% for lead in page %}
       <tr>
         <td class="wrap"><a href="{% url 'lead-detail' lead.pk %}">{{ lead.subject }}</a></td>
-        <td>{{ lead.contact.name }}<small>{{ lead.contact.phone_masked|default:"erased" }}</small></td>
+        <td>{{ lead.contact.name }}<small>{{ lead.contact.display_phone|default:"erased" }}</small></td>
         <td><span class="tag{% if lead.stage == 'won' %} good{% elif lead.stage == 'lost' %}{% else %} draft{% endif %}">{{ lead.get_stage_display }}</span></td>
         <td>{{ lead.campus.name }}</td>
         <td>{% if lead.assigned_to %}{{ lead.assigned_to.get_username }}{% elif lead.employee %}{{ lead.employee.name }} (AI){% else %}–{% endif %}</td>

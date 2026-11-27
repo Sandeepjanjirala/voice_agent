@@ -1,8 +1,10 @@
-"""Records a phone call, both sides, after the person agrees.
+"""Records both sides after verbal consent or explicit demo authorization.
 
-Only for a call whose profile carries a recording question: Django decides
-which calls may be recorded (apps/calling/recordings.py). The question is said
-with the opening line; the agent passes the answer to `recording_consent`.
+Only for a call whose profile carries recording authorization from Django
+(apps/calling/recordings.py). Verbal-consent calls ask with the opening line;
+the agent passes the answer to `recording_consent`. Approved demo tests start
+after session audio is attached and before the greeting, without a question.
+Demo calls expose `stop_recording` to discard their audio on request.
 
 - A clear yes: LiveKit's session recorder is attached to the call's audio. The
   person is on the left channel (as their audio arrived) and the AI employee on
@@ -64,6 +66,7 @@ class CallRecorder:
         upload_url: str | None,
         secret: str | None,
         conversation_started_at: float,
+        authorization: str = "verbal",
         session_factory=aiohttp.ClientSession,
         recorder_factory=None,
     ) -> None:
@@ -73,6 +76,7 @@ class CallRecorder:
         self._upload_url = upload_url
         self._secret = secret
         self._started_at = conversation_started_at
+        self.authorization = authorization
         self._session_factory = session_factory
         self._recorder_factory = recorder_factory or (
             lambda agent_session: RecorderIO(
@@ -95,6 +99,15 @@ class CallRecorder:
         recorder = self
 
         @function_tool
+        async def stop_recording() -> str:
+            """Stop and discard this demo's recording immediately when the
+            tester asks not to be recorded. Continue the conversation."""
+            return await recorder.consent(False)
+
+        if self.authorization == "demo":
+            return [stop_recording]
+
+        @function_tool
         async def recording_consent(agreed: bool) -> str:
             """Call once with the person's answer to the recording question in
             your opening line: agreed=true only for a clear yes, false for no,
@@ -104,7 +117,14 @@ class CallRecorder:
 
         return [recording_consent]
 
+    async def start_demo(self) -> None:
+        """Called after audio is attached and before greeting, only for demo mode."""
+        if self.authorization == "demo" and self.state == "waiting":
+            await self._start()
+
     async def consent(self, agreed: bool) -> str:
+        if agreed and self.authorization == "demo":
+            return "Demo authorization is separate from verbal consent."
         if agreed and self.state == "waiting":
             await self._start()
             if self.state == "recording":
@@ -114,7 +134,9 @@ class CallRecorder:
             await self._discard()
             self.state = "declined"
             self._report(state="declined")
-            return "Nothing is recorded. Continue the call."
+            return (
+                "Nothing is recorded. Any recording was discarded. Continue the call."
+            )
         return "Already noted. Continue the call."
 
     async def _start(self) -> None:
@@ -272,7 +294,9 @@ def recorder_for(
     started_at: float,
 ) -> CallRecorder | None:
     """A recorder for this call if Django allows recording it, else None."""
-    if profile is None or not profile.recording_notice:
+    if profile is None or not (
+        profile.recording_notice or profile.recording_authorization == "demo"
+    ):
         return None
     return CallRecorder(
         session=session,
@@ -281,4 +305,5 @@ def recorder_for(
         upload_url=settings.call_recording_url,
         secret=settings.call_events_secret,
         conversation_started_at=started_at,
+        authorization=profile.recording_authorization or "verbal",
     )

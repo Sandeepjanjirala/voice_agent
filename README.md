@@ -1,13 +1,57 @@
-# Telugu AI Calling Agent
+# Vaani — Universal Voice Agent
 
-A voice agent that converses in Telugu, English and mixed Telugu-English, built for
-inbound and outbound calls on Indian (+91) numbers.
+A configurable voice-agent workspace for businesses: customer support, sales
+enquiries, appointment reminders and other workflows defined by the user.
+Each organisation supplies its own name, locations, knowledge and AI employee
+instructions. No school or institution is built into the shared instructions.
 
-**Status: real outbound calls work; the web calling page is built and awaits its
-first real call.** Two outbound test calls to the owner's mobile succeeded through
-Vobiz. Staff can now place that call from the Django web application, follow it live,
-and see a database record for every call. Inbound calling is built but blocked on
-secure trunk authentication. Nothing is deployed. See [docs/ROADMAP.md](docs/ROADMAP.md).
+The current voice stack supports Telugu, English and mixed Telugu-English,
+with inbound and outbound calling on Indian (+91) numbers.
+
+To adapt the workspace to your business, create your organisation and locations,
+add its approved facts under **Knowledge**, then use **AI employees → Create AI
+employee** to describe the job. Review the greeting, instructions and limits,
+try a preview, and publish when ready. The next-step card on Home guides this flow.
+
+**Status: outbound calling and the dashboard work. Incoming-call routing is
+implemented, but the current Vobiz trial number cannot receive incoming calls.**
+The local setup still needs a purchased incoming number, secure provider routing,
+and a LiveKit inbound trunk and dispatch rule. Follow the
+[incoming-call setup guide](docs/VOBIZ_SETUP.md). Nothing is deployed.
+
+## Start this existing workspace
+
+For everyday local use, open two PowerShell terminals. Run the dashboard in the
+first:
+
+```powershell
+Set-Location -LiteralPath 'C:\Users\Sandeep.J\Documents\agent'
+.\.venv\Scripts\python.exe -X utf8 manage.py runserver 127.0.0.1:8002
+```
+
+Run the voice worker in the second:
+
+```powershell
+Set-Location -LiteralPath 'C:\Users\Sandeep.J\Documents\agent'
+.\.venv\Scripts\python.exe -X utf8 -m voice_agent.agent dev
+```
+
+Keep both terminals open and visit <http://127.0.0.1:8002/home/>. Reuse an existing
+running server or worker instead of starting a duplicate. Stop a process with
+`Ctrl+C` in its terminal when no call is active. Restart both after changing
+`.env.local`; this worker command does not reload code automatically.
+
+Start on Home and follow **Your next step**. For outgoing calls: publish an AI
+employee, check the numbers in **Make calls**, start the list, then review **Call
+results**. A failed or unanswered outgoing call has **Call again**, so its details
+do not need to be entered again. Without Celery running, keep the call-list page
+open while a list is calling. Use **Analyse now** on a completed call if its
+summary is still waiting for a background job.
+
+Incoming calls are optional and can be configured later. Their incomplete setup
+does not prevent a configured outgoing line from working. The installation steps
+below are for a new machine; do not overwrite an existing `.env.local` or create
+another account for each restart.
 
 | Document | What it covers |
 | :--- | :--- |
@@ -22,7 +66,7 @@ secure trunk authentication. Nothing is deployed. See [docs/ROADMAP.md](docs/ROA
 | [docs/CALL_TERMINATION_DESIGN.md](docs/CALL_TERMINATION_DESIGN.md) | Goodbye and hang-up behaviour, off unless `AGENT_CAN_END_CALL=true` |
 | [docs/VOICE_TUNING.md](docs/VOICE_TUNING.md) | Voice responsiveness checkpoint: turn-taking and interruption settings |
 | [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) | Feature-by-feature comparison with the reference product, and what is still missing |
-| [docs/PILOT_READINESS.md](docs/PILOT_READINESS.md) | Acceptance and pilot readiness for an education organisation |
+| [docs/PILOT_READINESS.md](docs/PILOT_READINESS.md) | Acceptance and pilot readiness for a configured organisation |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Full incoming/outgoing calling roadmap, Phases 1–5 |
 | [docs/adr/0001-two-process-boundary.md](docs/adr/0001-two-process-boundary.md) | Why the voice worker and Django are separate processes |
 | [docs/history/](docs/history/) | Records of finished phases: the Phase 0 audit, Phase 1 and 1.5 verification, the Phase 2 plan and implementation, and the dashboard build log |
@@ -54,7 +98,7 @@ flowchart LR
 |---|---|
 | ![Dashboard home](docs/screenshots/home.png) | ![Call results](docs/screenshots/call-results.png) |
 
-Screenshots from the disposable QA server (`python -m tests.browser.dashboard_server`): made-up organisation, campuses and masked numbers.
+Screenshots from the disposable QA server (`python -m tests.browser.dashboard_server`): made-up organisation, locations and phone numbers.
 
 ## Setup on Windows
 
@@ -154,7 +198,7 @@ In PowerShell from this repository:
 ```powershell
 .\.venv\Scripts\python.exe manage.py migrate
 .\.venv\Scripts\python.exe manage.py createsuperuser
-.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
+.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8002
 ```
 
 Skip `createsuperuser` if you already have a Django account. In another window,
@@ -165,7 +209,10 @@ $env:PYTHONUTF8 = "1"
 .\.venv\Scripts\python.exe -m voice_agent.agent dev
 ```
 
-Open <http://127.0.0.1:8000/> and sign in; it opens Home.
+Open <http://127.0.0.1:8002/> and sign in; it opens Home. This workspace's worker
+callbacks in `.env.local` use port 8002. If you choose another port, update
+`CALL_EVENTS_URL`, `CALL_PROFILE_URL`, `CALL_RECORDING_URL` and
+`INBOUND_CONTEXT_URL` together before restarting the worker.
 
 To skip the login page on your own machine, put your username in `.env.local`:
 `DEV_AUTO_LOGIN_USER=YOUR_USERNAME`. Browsers on this computer then open the
@@ -178,7 +225,9 @@ Both processes use the existing `.env.local`. Django needs `LIVEKIT_URL`,
 `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and the same `AGENT_NAME` as the worker.
 API secrets stay on the server.
 
-The health API remains at <http://127.0.0.1:8000/api/health/>.
+The health API is at <http://127.0.0.1:8002/api/health/>. It checks Django and the
+database, not the separate voice worker; check the worker terminal for its
+registered-worker message.
 
 ## Everyday use: calls in four steps
 
@@ -200,9 +249,9 @@ After signing in, the sidebar shows the four steps first:
 4. **Call results:** every call, with its recording (if switched on),
    conversation, summary and next step.
 
-Everything else is under **More** in the sidebar: Leads & contacts,
-Campuses & staff, Performance, Incoming calls, Numbers & channels, Knowledge,
-Usage & costs and Operations.
+**Workspace tools** contains Leads & contacts, Knowledge and Incoming calls.
+**Settings → Setup & reports** contains Locations & team, Numbers & channels,
+Performance, Usage & costs and Operations.
 
 Who can be called follows `OUTBOUND_DIALING_MODE`:
 - `live`: any valid Indian mobile, after the confirmation above.
@@ -211,9 +260,12 @@ Who can be called follows `OUTBOUND_DIALING_MODE`:
 
 ## Dashboard and call records
 
-Staff sign in at <http://127.0.0.1:8000/home/> to hire and publish AI employees,
-place calls and read call results. Every call is stored with a masked number, timings, SIP status
-and latency. The full guide, including how the worker reports calls back to Django, is in
+Staff sign in at <http://127.0.0.1:8002/home/> to hire and publish AI employees,
+place calls and read call results. Phone numbers are displayed in full within the user's
+workspace permissions and stored encrypted. Call results include timings, SIP status
+and latency. Failed or unanswered outbound calls offer **Call again**, reusing the
+original details and preserving the earlier attempt. The full guide, including
+how the worker reports calls back to Django, is in
 [docs/DASHBOARD.md](docs/DASHBOARD.md).
 
 ## Inbound telephony
@@ -358,7 +410,7 @@ config/               Django project (settings, urls, asgi)
 apps/core/            health API, navigation, shared templates and static assets
 apps/telephony/       telephony: trunk planning, outbound calls, call records, worker APIs
 apps/workforce/       AI employees: hire wizard, LLM drafting, draft editor, dashboard home
-apps/tenancy/         organisations, campuses, roles and scope, access log
+apps/tenancy/         organisations, locations, roles and scope, access log
 apps/crm/             encrypted contacts, leads, follow-ups, import, reports, retention
 apps/calling/         Make calls lists, numbers, inbound routing, knowledge, call results, recordings
 apps/integrations/    outside-request safety (transport, safety); old integration tables, kept for their data

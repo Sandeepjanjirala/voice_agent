@@ -8,6 +8,7 @@ gateway and the numbers are made up; no call leaves the test."""
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, time, timedelta
@@ -19,6 +20,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import strip_tags
 
 from apps.calling import calllists
 from apps.calling.models import CallList, CallListEntry
@@ -28,7 +30,7 @@ from apps.tenancy.models import AuditEvent
 
 from .test_calling import employee_for
 from .test_calls import env, gateway, post_event  # noqa: F401
-from .test_tenancy_crm import World, assert_no_full_number, body
+from .test_tenancy_crm import World, body
 
 pytestmark = pytest.mark.django_db
 
@@ -139,7 +141,7 @@ def make_list(client, world, **fields):
 def test_numbers_are_checked_then_confirmed_before_anyone_is_called(world, gateway):
     admin = world.client(world.admin_a)
     page = body(admin.get(reverse("make-calls")))
-    assert "Who speaks" in page and "upload" in page.lower()
+    assert "Choose your AI employee" in page and "upload" in page.lower()
     contacts.opt_out_number(
         world.org_a, "+919876543211", reason="Asked", source="caller"
     )
@@ -153,8 +155,7 @@ def test_numbers_are_checked_then_confirmed_before_anyone_is_called(world, gatew
         "will be called, one after another" in html
         and "Everyone on this list agreed" in html
     )
-    assert_no_full_number(html)
-    assert "98765" not in html
+    assert "+919876543210" in html and "+919876543211" in html
     # Without the tick nothing starts.
     admin.post(reverse("call-list", args=[call_list.pk]), {"action": "start"})
     call_list.refresh_from_db()
@@ -303,10 +304,18 @@ def test_the_sidebar_leads_with_the_everyday_steps(world):
     html = body(world.client(world.admin_a).get(reverse("home")))
     nav = html.split('class="side-nav"')[1].split("</nav>")[0]
     everyday = nav.split('class="side-more"')[0]
+    everyday_labels = {
+        strip_tags(content).strip()
+        for content in re.findall(r"<a\b[^>]*>(.*?)</a>", everyday, re.S)
+    }
+    nav_labels = {
+        strip_tags(content).strip()
+        for content in re.findall(r"<a\b[^>]*>(.*?)</a>", nav, re.S)
+    }
     for label in ("Home", "AI employees", "Make calls", "Call results", "Settings"):
-        assert f">{label}</a>" in everyday, label
-    assert ">Leads &amp; contacts</a>" not in everyday
-    assert ">Leads &amp; contacts</a>" in nav
+        assert label in everyday_labels, label
+    assert "Leads &amp; contacts" not in everyday_labels
+    assert "Leads &amp; contacts" in nav_labels
     assert "Calls in four steps" in html
 
 

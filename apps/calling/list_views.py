@@ -4,28 +4,30 @@ employee calls everyone one after another (calllists.py)."""
 from django import forms
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from apps.telephony import calls
 from apps.tenancy import audit
 from apps.tenancy.access import scoped
 from apps.workforce.models import Employee
 
-from . import calllists
+from . import calllists, retries
 from .models import CallList, CallListEntry
 
 
 class CallListForm(forms.Form):
     speaker = forms.ChoiceField(label="Who speaks")
-    campus = forms.ChoiceField(label="Campus", required=False)
+    campus = forms.ChoiceField(label="Location", required=False)
     purpose = forms.CharField(
         label="What the calls are about",
         max_length=160,
         required=False,
-        widget=forms.TextInput(attrs={"placeholder": "e.g. Fee reminder for Term 2"}),
+        widget=forms.TextInput(attrs={"placeholder": "e.g. Appointment reminder"}),
     )
     numbers = forms.CharField(
         label="Type the numbers",
@@ -65,6 +67,17 @@ class CallListForm(forms.Form):
         data = super().clean()
         if not (data.get("numbers") or "").strip() and not data.get("upload"):
             raise forms.ValidationError("Type at least one number, or upload a list.")
+        employee = self.employees.get(data.get("speaker"))
+        campus = self.campuses.get(data.get("campus"))
+        if (
+            employee is not None
+            and campus is not None
+            and employee.campuses.exists()
+            and not employee.campuses.filter(pk=campus.pk).exists()
+        ):
+            self.add_error(
+                "campus", "This AI employee is not assigned to this location."
+            )
         return data
 
 
@@ -117,7 +130,12 @@ def make_calls(request):
     return render(
         request,
         "calling/make_calls.html",
-        {"form": form, "recent": recent, "max_rows": calllists.MAX_ROWS},
+        {
+            "form": form,
+            "recent": recent,
+            "max_rows": calllists.MAX_ROWS,
+            "can_manage_employees": scope.can("employees.manage"),
+        },
     )
 
 
@@ -127,9 +145,17 @@ def _list_name(data) -> str:
 
 
 @scoped("calls.place")
+@transaction.atomic
 def call_list(request, pk):
     scope = request.scope
-    found = scope.get(_lists(scope).select_related("employee", "campus"), pk=pk)
+    lists = _lists(scope)
+    if request.method == "POST":
+        # Serialize state changes with the queue's next-entry claim. Avoid
+        # nullable joins here: PostgreSQL cannot lock their optional rows.
+        lists = lists.select_for_update()
+    else:
+        lists = lists.select_related("employee", "campus")
+    found = scope.get(lists, pk=pk)
     if request.method == "POST":
         action = request.POST.get("action")
         state = CallList.Status
@@ -162,19 +188,50 @@ def call_list(request, pk):
                 status=CallListEntry.Status.SKIPPED, reason="The list was cancelled"
             )
             audit.record(scope, "call_list.cancelled", found)
+        elif action in ("start", "pause", "resume", "cancel"):
+            # A double click, browser retry or an older open tab should show
+            # the current list, without repeating consent or reviving it.
+            messages.info(
+                request,
+                "This list has already changed. Review its current status below.",
+            )
         else:
             raise PermissionDenied
         return redirect("call-list", pk=found.pk)
+    entries = list(found.entries.select_related("call"))
+    for entry in entries:
+        entry.retry = retries.entry_options(scope, entry)
     return render(
         request,
         "calling/call_list.html",
         {
             "call_list": found,
-            "entries": found.entries.select_related("call"),
+            "entries": entries,
             "tally": calllists.counts(found),
             "step_url": reverse("call-list-step", args=[found.pk]),
         },
     )
+
+
+@require_POST
+@scoped("calls.place")
+def call_list_retry(request, pk, entry_pk):
+    scope = request.scope
+    found = scope.get(_lists(scope).select_related("employee", "campus"), pk=pk)
+    entry = scope.get(found.entries.select_related("call"), pk=entry_pk)
+    try:
+        retry = retries.retry_entry(scope, entry)
+    except calls.CallError as error:
+        messages.error(request, str(error))
+        return redirect("call-list", pk=found.pk)
+    target = retries.target_url(retry)
+    if target:
+        messages.success(
+            request, "Your retry is ready. The original call remains in your history."
+        )
+        return redirect(target)
+    messages.info(request, "A retry is already being prepared. Refresh in a moment.")
+    return redirect("call-list", pk=found.pk)
 
 
 @require_POST
@@ -194,6 +251,7 @@ def call_list_step(request, pk):
             "call_url": reverse("conversation-detail", args=[entry.call_id])
             if entry.call_id
             else "",
+            "retry": retries.entry_options(scope, entry),
         }
         for entry in found.entries.all()
     ]

@@ -98,6 +98,16 @@ urlpatterns = [
     path("make-calls/", calling_lists.make_calls, name="make-calls"),
     path("make-calls/<uuid:pk>/", calling_lists.call_list, name="call-list"),
     path(
+        "make-calls/<uuid:pk>/entries/<int:entry_pk>/retry/",
+        calling_lists.call_list_retry,
+        name="call-list-retry",
+    ),
+    path(
+        "conversations/<uuid:pk>/retry/",
+        crm_views.conversation_retry,
+        name="conversation-retry",
+    ),
+    path(
         "make-calls/<uuid:pk>/step/",
         calling_lists.call_list_step,
         name="call-list-step",

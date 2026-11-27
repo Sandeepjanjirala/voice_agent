@@ -2,14 +2,14 @@
 
 Review date: 17 November 2026. Development checkpoint accepted by the owner.
 This is not a production acceptance certificate. No paid calls, WhatsApp
-messages, real school contacts, public deployment or Git push were performed.
+messages, real customer contacts, public deployment or Git push were performed.
 
 ## One consolidated acceptance gate
 
 Run `uv run python scripts/acceptance.py` from the repository root. It runs the
 complete synthetic regression suite, Django checks and migration drift checks.
 `tests/django/test_acceptance.py` follows one admission enquiry through hiring,
-voice selection, publishing, campus knowledge, signed inbound routing,
+voice selection, publishing, location knowledge, signed inbound routing,
 test-number outbound dispatch, analysis, follow-up, transcript deletion,
 calendar booking, simulated Google/webhook execution and eager Celery reporting.
 All records are synthetic. LiveKit, LLM and external HTTP are mocked.
@@ -17,12 +17,12 @@ The test-number fixture is synthetic too; it is not the owner's live number.
 
 | Acceptance area | Automated evidence | What it does not prove |
 | --- | --- | --- |
-| Organisation/campus access | `test_tenancy_crm.py`, `test_platform_pages.py`, consolidated journey: cross-scope requests refused | Production staff and roles configured correctly |
+| Organisation/location access | `test_tenancy_crm.py`, `test_platform_pages.py`, consolidated journey: cross-scope requests refused | Production staff and roles configured correctly |
 | Hire, edit, publish, activate/pause | `test_workforce.py`, `test_calling.py`; immutable published snapshots | Spoken employee behaviour with a real provider |
-| Employee voice/knowledge | `test_employee_calls.py`, journey: voice and campus knowledge reach worker profile | Sarvam audio quality on phone |
+| Employee voice/knowledge | `test_employee_calls.py`, journey: voice and location knowledge reach worker profile | Sarvam audio quality on phone |
 | Assigned inbound employee | `test_calling.py`, journey: signed routing, invalid signatures, paused/draft refusal | SIP allowlist enforcement or a live inbound call |
 | Approved-number outbound | Fake gateway verifies only configured test destination, never contact number | Actual authorised number answering |
-| Leads and follow-up | Intake consent/DNC tests, call analysis, journey | Consent evidence for real school contacts |
+| Leads and follow-up | Intake consent/DNC tests, call analysis, journey | Consent evidence for real customer contacts |
 | Actions and results | Built-in follow-up and lead-stage actions after analysis | Integrations were removed on 25 Nov 2026 |
 | Calendar, REST, WhatsApp, webhooks | Removed on 25 Nov 2026 at the owner's request | – |
 | Summaries/privacy | Canned LLM, transcript masking/deletion, recording preference tests | Real-model summary accuracy or provider retention terms |
@@ -53,7 +53,7 @@ still needs outside parties or the owner is unchanged and listed under each.
 | --- | --- | --- | --- |
 | 1. Inbound fallback | The worker fails closed. A phone call that Django does not assign to a published employee (404, Django unreachable, paused or draft employee) hears one neutral line (`INBOUND_UNROUTED_MESSAGE`). No business conversation starts, LiveKit Cloud is asked to keep nothing (`record=False`), and the room is deleted | `tests/voice/test_inbound_fallback.py` (404, 503, unreachable, custom message) | LiveKit enforcing `allowed_addresses`, Vobiz ranges and SRTP, the negative security test |
 | 2. HTTP redirects and DNS rebinding | `transport.send` resolves the host once and checks every address. It connects only to that address, with TLS checked against the real host name. It never follows a redirect, and only `http` and `https` are allowed | `tests/django/test_transport_safety.py`: a real local redirect is not followed, a rebinding answer is not reconnected to, private, link-local and IPv6-local answers are refused, TLS uses the host name | An egress firewall in production is still good practice (DEPLOYMENT.md) |
-| 3a. Concurrent booking | A database rule allows one active booking per campus slot. The check and insert run under a per-campus row lock | `tests/django/test_booking_safety.py`: a forced race is refused by the database; a real four-thread race runs on PostgreSQL and exactly one wins | – |
+| 3a. Concurrent booking | A database rule allows one active booking per location slot. The check and insert run under a per-location row lock | `tests/django/test_booking_safety.py`: a forced race is refused by the database; a real four-thread race runs on PostgreSQL and exactly one wins | – |
 | 3b. Google results and retries | The slot is held locally first and checked in Google free/busy. The event is inserted with an ID derived from the hold, so a retry cannot duplicate it. Success needs that ID back. A timeout keeps the slot "not confirmed" and the retry confirms it (409 means already made) | Same file: busy slot, missing or wrong ID, unparseable answer, timeout then safe retry | Testing against an owner-approved Google calendar |
 | 3c. Webhook revocation | Switching a webhook off cancels its queued deliveries at once, and every delivery re-checks the switch at the moment of sending | Same file: queued delivery not sent after switch-off; page save cancels the queue | – |
 | Run-log identifiers | Event, appointment and message IDs in action results are no longer partly masked as if they were phone numbers (an intermittent test failure exposed this). Inputs and free text are still masked | `test_identifiers_with_long_digit_runs_are_not_masked_but_numbers_are` | – |
@@ -70,7 +70,7 @@ not code changes and stand as written below.
    only on a configuration value being saved.
    Also resolve the worker's fallback on a failed/404 inbound-context lookup:
    `run_inbound_call` currently starts with the fallback profile. Before a
-   multi-campus inbound pilot, fail closed or use an explicitly approved,
+   multi-location inbound pilot, fail closed or use an explicitly approved,
    non-business fallback; test backend failure and unassigned/paused routes
    through the worker, including recording defaults. Backend routing tests
    alone do not prove the worker refuses such calls.
@@ -92,7 +92,7 @@ not code changes and stand as written below.
 4. **Live human transfer is not implemented.** Escalation creates a callback task
    and notification; it does not bridge a call. Vobiz REFER support must be
    confirmed. If required for the pilot, add a narrowly scoped, scenario-first
-   transfer tool with an approved campus target, rejection/no-answer fallback
+   transfer tool with an approved location target, rejection/no-answer fallback
    and audited result. Otherwise explicitly agree to callback-only escalation.
 5. **No Git remote or verified off-device backup exists.** The refreshed local
    bundle is not disaster protection against device loss. Complete the private
@@ -113,9 +113,9 @@ Vobiz support or prove that enforcement is enabled for this project.
 2. Close HTTP safety and booking/result blockers with targeted tests. Keep
    `INTEGRATIONS_ALLOW_LOCAL=false` and stored-contact dialing disabled
    throughout this work.
-3. Configure one synthetic pilot campus and published employee in the dashboard:
+3. Configure one synthetic pilot location and published employee in the dashboard:
    approved facts, voice, opening hours, escalation owner, permitted actions,
-   least-privilege staff and retention choices. Routine campus and workflow
+   least-privilege staff and retention choices. Routine location and workflow
    edits use configuration; novel provider capabilities may still require code.
 4. Confirm LiveKit allowlist enablement and Vobiz number/ranges/SRTP. With owner
    approval for provisioning and testing, prove unlisted-source rejection and
@@ -145,10 +145,10 @@ Vobiz support or prove that enforcement is enabled for this project.
    and Redis, one Beat process, job freshness, provider failures, external
    health/backup-age alerts and owner notification. Restore an off-device dump
    with separately recovered keys; measure recovery time and lost-data window.
-10. Restrict the first pilot to the agreed campus, staff, duration, spend and
+10. Restrict the first pilot to the agreed location, staff, duration, spend and
     consented participants. Confirm stop/rollback ownership. Unrestricted
     dialing and campaigns remain disabled until separately authorised.
 
-The platform is substantially implemented for configurable school workflows.
+The platform is substantially implemented for configurable business workflows.
 Live integrations, speech behaviour and production recovery remain conditional;
 the passing synthetic gate must not be used to claim otherwise.

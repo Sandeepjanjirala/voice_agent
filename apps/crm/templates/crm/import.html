@@ -17,7 +17,7 @@
   <p class="status-line">{% if counts.existing %}<span class="tag">{{ counts.existing }} already contacts</span>{% endif %}{% if counts.repeated %}<span class="tag">{{ counts.repeated }} repeated</span>{% endif %}{% if counts.invalid %}<span class="tag bad">{{ counts.invalid }} invalid</span>{% endif %}{% if counts.opted_out %}<span class="tag bad">{{ counts.opted_out }} do not call</span>{% endif %}</p>
   <div class="table-scroll"><table class="data">
     <thead><tr><th>Line</th><th>Name</th><th>Number</th><th>Subject</th><th>Result</th></tr></thead>
-    <tbody>{% for row in rows|slice:":200" %}<tr><td>{{ row.line }}</td><td>{{ row.name|default:"–" }}</td><td>{{ row.masked|default:"–" }}</td><td>{{ row.subject|default:"–" }}</td><td class="wrap">{% if row.status == 'new' %}<span class="tag good">{{ row.status_label }}</span>{% else %}<span class="tag{% if row.status == 'invalid' or row.status == 'opted_out' %} bad{% endif %}">{{ row.status_label }}</span> {{ row.reason }}{% endif %}</td></tr>{% endfor %}</tbody>
+    <tbody>{% for row in rows|slice:":200" %}<tr><td>{{ row.line }}</td><td>{{ row.name|default:"–" }}</td><td>{{ row.display_phone|default:"–" }}</td><td>{{ row.subject|default:"–" }}</td><td class="wrap">{% if row.status == 'new' %}<span class="tag good">{{ row.status_label }}</span>{% else %}<span class="tag{% if row.status == 'invalid' or row.status == 'opted_out' %} bad{% endif %}">{{ row.status_label }}</span> {{ row.reason }}{% endif %}</td></tr>{% endfor %}</tbody>
   </table></div>
   {% if rows|length > 200 %}<p class="help">Showing the first 200 of {{ rows|length }} rows.</p>{% endif %}
 </section>

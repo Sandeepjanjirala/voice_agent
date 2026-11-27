@@ -8,20 +8,20 @@
 // data-budget-mode="employee": the text apps/workforce/publishing.py's
 // worker_payload builds from the editor (numbered steps, "Find out: ...", the
 // strictness sentence), which prompt_size measures.
-(() => {
+jQuery(function ($) {
   const encoder = new TextEncoder();
   const clean = (text) => text.split(/\s+/).filter(Boolean).join(' ');
 
-  const employeeParts = (form) => {
-    const sentences = JSON.parse(document.getElementById('strictness-sentences')?.textContent || '{}');
-    const one = (name) => clean(form.querySelector(`[name="${name}"]`)?.value || '');
-    const all = (name) => [...form.querySelectorAll(`[name="${name}"]`)].map((field) => clean(field.value));
+  const employeeParts = ($form) => {
+    const sentences = JSON.parse($('#strictness-sentences').text() || '{}');
+    const one = (name) => clean($form.find(`[name="${name}"]`).val() || '');
+    const all = (name) => $form.find(`[name="${name}"]`).map((_, field) => clean($(field).val())).get();
     const guidance = all('step_guidance');
     const steps = all('step_name').map((name, i) => guidance[i] || name).filter(Boolean);
     let goals = steps.map((text, i) => `${i + 1}. ${text}`).join(' ');
     const labels = all('question').filter(Boolean);
     if (labels.length) goals = `${goals} Find out: ${labels.join(', ')}.`;
-    const level = form.querySelector('[name="strictness"]:checked')?.value;
+    const level = $form.find('[name="strictness"]:checked').val();
     const limitations = [one('limits'), sentences[level] || ''].filter(Boolean).join(' ');
     // publishing.situations_text: "When …: …; When …: …", only complete pairs.
     const then = all('situation_then');
@@ -36,60 +36,57 @@
     ];
   };
 
-  for (const meter of document.querySelectorAll('[data-budget-total]')) {
-    const form = meter.closest('form') || document;
-    const employee = meter.dataset.budgetMode === 'employee';
-    const budget = Number(meter.dataset.budgetTotal);
-    const value = meter.querySelector('[data-budget-value]');
-    const chars = meter.querySelector('[data-budget-chars]');
-    const bar = meter.querySelector('progress');
-    const note = meter.querySelector('[data-budget-note]');
+  $('[data-budget-total]').each((_, meter) => {
+    const $meter = $(meter);
+    const $parentForm = $meter.closest('form');
+    const $form = $parentForm.length ? $parentForm : $(document);
+    const employee = $meter.attr('data-budget-mode') === 'employee';
+    const budget = Number($meter.attr('data-budget-total'));
+    const $value = $meter.find('[data-budget-value]');
+    const $chars = $meter.find('[data-budget-chars]');
+    const $bar = $meter.find('progress');
+    const $note = $meter.find('[data-budget-note]');
     const update = () => {
       const parts = employee
-        ? employeeParts(form)
-        : [...form.querySelectorAll('[data-budget]')].map((field) => field.value.trim());
+        ? employeeParts($form)
+        : $form.find('[data-budget]').map((_, field) => $(field).val().trim()).get();
       const used = parts.reduce(
         (sum, part) => sum + encoder.encode(employee ? part : part.replace(/\n/g, '\r\n')).length, 0);
       const letters = parts.reduce((sum, part) => sum + [...part].length, 0);
-      value.textContent = used.toLocaleString();
-      if (chars) chars.textContent = letters.toLocaleString();
-      if (bar) {
-        bar.max = budget;
-        bar.value = Math.min(used, budget);
-        bar.classList.toggle('over', used > budget);
-        bar.classList.toggle('near', used <= budget && used > budget * 0.85);
-      }
-      if (note) {
-        note.hidden = used <= budget;
-        note.textContent = used > budget
+      $value.text(used.toLocaleString());
+      $chars.text(letters.toLocaleString());
+      $bar.prop({ max: budget, value: Math.min(used, budget) })
+        .toggleClass('over', used > budget)
+        .toggleClass('near', used <= budget && used > budget * 0.85);
+      $note.prop('hidden', used <= budget).text(used > budget
           ? `About ${Math.ceil((used - budget) / 3).toLocaleString()} Telugu letters (or ${(used - budget).toLocaleString()} English letters) too long. Shorten the longest part, or move facts into Knowledge.`
-          : '';
-      }
+          : '');
     };
-    form.addEventListener('input', update);
-    form.addEventListener('click', () => setTimeout(update, 0));
+    $form.on('input', update);
+    $form.on('click', () => setTimeout(update, 0));
     update();
-  }
+  });
 
   // Character counters for long fields.
   const counted = 'textarea[maxlength], input[type=text][maxlength][data-budget]';
   const attach = (field) => {
-    if (field.dataset.counted || Number(field.maxLength) < 100) return;
-    field.dataset.counted = '1';
-    const counter = document.createElement('small');
-    counter.className = 'char-count';
-    counter.setAttribute('aria-live', 'polite');
-    field.insertAdjacentElement('afterend', counter);
+    const $field = $(field);
+    if ($field.attr('data-counted') || Number($field.prop('maxLength')) < 100) return;
+    $field.attr('data-counted', '1');
+    const $counter = $('<small>').addClass('char-count').attr('aria-live', 'polite');
+    $field.after($counter);
     const show = () => {
-      const length = [...field.value].length;
-      counter.textContent = `${length.toLocaleString()} / ${Number(field.maxLength).toLocaleString()} characters`;
-      counter.classList.toggle('near', length > field.maxLength * 0.9);
+      const length = [...$field.val()].length;
+      const maxLength = Number($field.prop('maxLength'));
+      $counter.text(`${length.toLocaleString()} / ${maxLength.toLocaleString()} characters`)
+        .toggleClass('near', length > maxLength * 0.9);
     };
-    field.addEventListener('input', show);
+    $field.on('input', show);
     show();
   };
-  document.querySelectorAll(counted).forEach(attach);
+  const attachCounters = () => $(counted).each((_, field) => attach(field));
+  attachCounters();
   // Steps and details added later get a counter too.
-  new MutationObserver(() => document.querySelectorAll(counted).forEach(attach))
+  new MutationObserver(attachCounters)
     .observe(document.body, { childList: true, subtree: true });
-})();
+});

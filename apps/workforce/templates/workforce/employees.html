@@ -7,7 +7,13 @@
     <h1>AI employees</h1>
     <p class="muted">Who speaks on your calls: what it says, asks and collects. One employee per job; only a published version is used on a call.</p>
   </div>
-  {% if scope.role != 'campus_staff' %}<a class="button primary" href="{% url 'employee-hire' %}" id="hire-button">Hire an employee</a>{% endif %}
+  {% if can_manage %}<a class="button primary" href="{% url 'employee-hire' %}" id="hire-button">Hire an employee</a>{% endif %}
+</section>
+
+<section class="next-action" aria-labelledby="employees-next-title">
+  <div><p class="eyebrow">START HERE</p><h2 id="employees-next-title">{% if not can_manage %}Choose who speaks on your calls{% elif total %}Choose an employee to review{% else %}Give your AI employee a job{% endif %}</h2>
+  <p>{% if not can_manage %}Use Make calls to select an available published employee. Ask your organisation administrator to create an employee or update its script.{% elif total %}Open a name below to edit its script. Drafts must be published before they can take calls. A published employee can be selected in Make calls.{% else %}Describe who it should call and what it should achieve. We will create a script for you to review, edit and publish.{% endif %}</p></div>
+  {% if not can_manage and scope.can_place_calls %}<a class="button primary" href="{% url 'make-calls' %}">Make calls</a>{% endif %}
 </section>
 
 <section class="panel">
@@ -29,7 +35,7 @@
     <ul class="plain-list roster" id="roster">
       {% for employee in employees %}
       <li>
-        <a class="person" href="{% url 'employee-detail' employee.pk %}"><span class="avatar" aria-hidden="true">{{ employee.initial }}</span><span class="person-text"><span class="person-name">{{ employee.name }}</span><span class="person-role">{{ employee.role }}</span></span></a>
+        {% if can_manage %}<a class="person" href="{% url 'employee-detail' employee.pk %}">{% else %}<div class="person">{% endif %}<span class="avatar" aria-hidden="true">{{ employee.initial }}</span><span class="person-text"><span class="person-name">{{ employee.name }}</span><span class="person-role">{{ employee.role }}</span></span>{% if can_manage %}</a>{% else %}</div>{% endif %}
         <span class="roster-meta"><span class="tag {{ employee.status }}">{{ employee.status_label }}</span><span>{{ employee.get_channel_display }}</span><span>{{ employee.get_language_display }}</span><span>Updated {{ employee.updated_at|date:"j M, H:i" }}</span></span>
       </li>
       {% endfor %}
@@ -37,7 +43,7 @@
   {% elif total %}
     <div class="empty-state"><strong>No employee matches</strong><a href="{% url 'employees' %}">Clear the filter</a></div>
   {% else %}
-    <div class="empty-state"><strong>No employees yet</strong>Describe a job in a sentence or two and get an editable draft.<br><a class="button primary small" href="{% url 'employee-hire' %}">Hire your first employee</a></div>
+    <div class="empty-state"><strong>No employees yet</strong>{% if can_manage %}Describe a job in a sentence or two and get an editable draft.<br><a class="button primary small" href="{% url 'employee-hire' %}">Hire your first employee</a>{% else %}Ask your organisation administrator to publish an employee for your location.{% endif %}</div>
   {% endif %}
 </section>
 {% endblock %}

@@ -6,6 +6,7 @@ here dials anyone.
 
 import logging
 import os
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.contrib import messages
@@ -39,7 +40,15 @@ def _numbers(scope):
 # --- numbers and incoming calls -----------------------------------------------------
 
 
-def _diagnostics() -> list[dict]:
+def _callback_configured(name):
+    try:
+        value = urlsplit(os.environ.get(name, "").strip())
+        return value.scheme in ("http", "https") and bool(value.hostname)
+    except ValueError:
+        return False
+
+
+def _diagnostics(rows) -> list[dict]:
     """What stands between this installation and answering real phone calls.
     Read from configuration only; nothing here contacts LiveKit or the provider."""
     from apps.telephony.conf import TelephonyConfigError, load_telephony_settings
@@ -47,13 +56,30 @@ def _diagnostics() -> list[dict]:
 
     checks = [
         {
-            "label": "The voice worker can report calls to Django",
-            "done": telephony_calls.reporting_configured(),
+            "label": "At least one business number has a ready employee",
+            "done": any(not row["problems"] for row in rows),
+            "help": "Add your incoming number, assign a published AI employee, "
+            "and switch on routing and the employee.",
+        },
+        {
+            "label": "LiveKit connection credentials are configured",
+            "done": bool(
+                settings.LIVEKIT_URL
+                and settings.LIVEKIT_API_KEY
+                and settings.LIVEKIT_API_SECRET
+            ),
+            "help": "Set LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET "
+            "for the same project as the voice worker.",
+        },
+        {
+            "label": "Call reporting to Django is configured",
+            "done": telephony_calls.reporting_configured()
+            and _callback_configured("CALL_EVENTS_URL"),
             "help": "Set CALL_EVENTS_URL and CALL_EVENTS_SECRET (32+ characters).",
         },
         {
-            "label": "The voice worker asks Django who answers each number",
-            "done": bool(os.environ.get("INBOUND_CONTEXT_URL", "").strip()),
+            "label": "Incoming-number lookup in Django is configured",
+            "done": _callback_configured("INBOUND_CONTEXT_URL"),
             "help": "Set INBOUND_CONTEXT_URL in .env.local and restart the worker.",
         },
         {
@@ -64,20 +90,47 @@ def _diagnostics() -> list[dict]:
     ]
     try:
         plan = build_plan(
-            load_telephony_settings(), agent_name=settings.LIVEKIT_AGENT_NAME
+            load_telephony_settings(),
+            agent_name=settings.LIVEKIT_AGENT_NAME,
+            # Like the CLI plan, include the routes added through the dashboard.
+            # Only this viewer's visible numbers contribute to this page.
+            extra_numbers=tuple(
+                row["number"].number
+                for row in rows
+                if row["number"].routing_enabled and row["number"].employee_id
+            ),
         )
     except TelephonyConfigError as error:
         checks.append({"label": "Inbound SIP trunk", "done": False, "help": str(error)})
     else:
-        blockers = [blocker.message for blocker in plan.blockers]
+        blockers = [
+            "No incoming number is configured. Add a provider-owned incoming number."
+            if blocker.code == "inbound_number_missing"
+            else blocker.message
+            for blocker in plan.blockers
+        ]
         checks.append(
             {
                 "label": "Inbound SIP trunk can be authenticated securely",
                 "done": plan.ready,
-                "help": " ".join(blockers[:3]),
+                "help": " ".join(blockers),
             }
         )
     return checks
+
+
+def _incoming_readiness(scope, rows):
+    checks = _diagnostics(rows)
+    ready = all(check["done"] for check in checks)
+    return {
+        "ready": ready,
+        "status": "Ready for provider test" if ready else "Setup incomplete",
+        "routed": sum(not row["problems"] for row in rows),
+        "total": len(rows),
+        "manage": scope.can("numbers.manage"),
+        "checks": checks if scope.can("numbers.manage") else (),
+        "vobiz": os.environ.get("TELEPHONY_PROVIDER", "").strip().lower() == "vobiz",
+    }
 
 
 @scoped("numbers.view")
@@ -104,7 +157,7 @@ def numbers(request):
             "rows": rows,
             "form": form,
             "manage": manage,
-            "checks": _diagnostics(),
+            "incoming_setup": _incoming_readiness(scope, rows),
             "outbound": telephony_calls_readiness(),
         },
     )
@@ -115,13 +168,11 @@ def telephony_calls_readiness() -> dict:
         outbound, plan = telephony_calls.outbound_context()
     except telephony_calls.CallError as error:
         return {"ready": False, "reason": str(error), "number": ""}
-    from apps.telephony.masking import mask_phone
-
     return {
         "ready": plan.ready,
         "reason": " ".join(b.message for b in plan.blockers),
-        "number": mask_phone(outbound.rehearsal_number),
-        "caller_id": mask_phone(outbound.caller_id),
+        "number": outbound.rehearsal_number,
+        "caller_id": outbound.caller_id,
     }
 
 
@@ -190,7 +241,7 @@ def incoming(request):
             "calls": calls[:30],
             "total": calls.count(),
             "routed": sum(1 for row in rows if not row["problems"]),
-            "checks": _diagnostics(),
+            "incoming_setup": _incoming_readiness(scope, rows),
             "missed": missed.filter(handled_at__isnull=True)[:50],
             "handled": missed.filter(handled_at__gte=week_ago)[:10],
             "can_handle": can_handle,

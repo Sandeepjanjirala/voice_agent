@@ -1,5 +1,5 @@
 /* Milestone E in real Chromium against tests/browser/dashboard_server.py
-   (start it fresh for this run). Campus hours, holidays and call handling;
+   (start it fresh for this run). Location hours, holidays and call handling;
    a lead and its WhatsApp permission; missed callers; the employee's voice
    preview; operations, usage and notifications; staff limits; phone widths.
    Every person and number is made up, and the server cannot leave the machine. */
@@ -10,8 +10,8 @@ const fs = require('node:fs');
 
 const BASE = 'http://127.0.0.1:8767';
 const EVENTS_SECRET = 'qa-call-events-secret-not-for-production-0123';
-const BRIEF = 'Call every parent who sends an admission enquiry, ask which class the child is joining and offer a campus visit.';
-// Made-up numbers. None may ever appear in a page in full.
+const BRIEF = 'Call people who request information about our services, understand their needs and offer a consultation.';
+// Made-up numbers used to verify visible contact and caller details.
 const NUMBERS = ['9876500001', '9876500002'];
 
 const day = (offset) => {
@@ -20,10 +20,14 @@ const day = (offset) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-// Sidebar links: the everyday ones are always shown; the rest are folded
-// under "More", which is opened first when needed.
+// Daily tools stay in the sidebar; setup and reports are explained in Settings.
 async function sideLink(page, name) {
-  const link = page.locator('.side-nav').getByRole('link', { name, exact: true });
+  const link = page.locator('.side-nav').getByRole('link', { name, exact: true, includeHidden: true });
+  if (!(await link.count())) {
+    await page.locator('.side-nav').getByRole('link', { name: 'Settings', exact: true }).click();
+    await page.locator('#workspace-tools').getByRole('link', { name, exact: true }).click();
+    return;
+  }
   if (!(await link.isVisible())) await page.locator('.side-more summary').click();
   await link.click();
 }
@@ -36,9 +40,8 @@ async function login(page, username, password) {
   await page.waitForURL(`${BASE}/home/`);
 }
 
-async function noFullNumbers(page, label) {
-  const html = await page.content();
-  for (const number of NUMBERS) assert.ok(!html.includes(number), `${label} shows ${number} in full`);
+async function visibleNumber(page, selector, number) {
+  assert.ok((await page.locator(selector).innerText()).includes('+91' + number), `${selector} does not show ${number} in full`);
 }
 
 async function noSidewaysScroll(page, label) {
@@ -72,14 +75,18 @@ async function inboundCall(called, caller, room) {
     watch(page);
     await login(page, 'dashboard-review', 'local-disposable-dashboard-check');
     const nav = await page.locator('.side-nav a').allTextContents();
-    for (const label of ['Usage & costs', 'Operations']) assert.ok(nav.includes(label), label);
+    for (const label of ['Usage & costs', 'Operations']) assert.ok(!nav.includes(label), label);
+    await sideLink(page, 'Settings');
+    for (const label of ['Usage & costs', 'Operations']) {
+      assert.ok(await page.locator('#workspace-tools').getByRole('link', { name: label, exact: true }).isVisible(), label);
+    }
     for (const label of ['Integrations & actions', 'Campaigns', 'Instant leads', 'Voice studio', 'Test line', 'Agent profile']) {
       assert.ok(!nav.includes(label), `${label} was deleted`);
     }
 
-    // --- Campus: opening hours, a holiday, and who takes escalations. ---------------
+    // --- Location: opening hours, a holiday, and who takes escalations. ---------------
     await page.goto(`${BASE}/campuses/`);
-    await page.locator('#campus-table tr', { hasText: 'North Campus' }).getByRole('link', { name: 'Edit' }).click();
+    await page.locator('#campus-table tr', { hasText: 'North Location' }).getByRole('link', { name: 'Edit' }).click();
     const campusUrl = page.url();
     await page.getByText('always open').waitFor();
     for (let weekday = 0; weekday < 7; weekday += 1) {
@@ -100,7 +107,7 @@ async function inboundCall(called, caller, room) {
     await page.locator('[name=holiday-whole_organisation]').check();
     await page.getByRole('button', { name: 'Add holiday' }).click();
     await page.getByText('Founders Day on').waitFor();
-    assert.ok((await page.locator('#campus-holidays').textContent()).includes('Every campus'));
+    assert.ok((await page.locator('#campus-holidays').textContent()).includes('Every location'));
     await page.locator('[name=calls-escalation_user]').selectOption({ label: 'north-review' });
     await page.locator('[name=calls-after_hours_message]').fill('Office hours are 8 to 8 every day.');
     await page.getByRole('button', { name: 'Save call handling' }).click();
@@ -109,10 +116,11 @@ async function inboundCall(called, caller, room) {
 
     // --- A lead and its WhatsApp permission. ----------------------------------------
     await page.goto(`${BASE}/leads/new/`);
-    await page.locator('[name=campus]').selectOption({ label: 'North Campus' });
+    await page.locator('[name=campus]').selectOption({ label: 'North Location' });
     await page.locator('[name=name]').fill('Asha Rao');
     await page.locator('[name=phone]').fill('98765 00001');
-    await page.locator('[name=subject]').fill('Campus visit');
+    await page.locator('[name=subject]').fill('Product consultation');
+    await page.locator('#lead-permission > summary').click();
     await page.locator('[name=consent]').selectOption('granted');
     await page.locator('[name=consent_evidence]').fill('Ticked the box on the enquiry form');
     await page.getByRole('button', { name: 'Add lead' }).click();
@@ -127,10 +135,10 @@ async function inboundCall(called, caller, room) {
     await page.locator('[name=whatsapp_evidence]').fill('Said yes on the call of 17 Nov');
     await page.locator('#whatsapp').getByRole('button', { name: 'Record' }).click();
     await page.getByText('WhatsApp permission recorded.').waitFor();
-    await noFullNumbers(page, 'contact');
+    await visibleNumber(page, '#contact-number', NUMBERS[0]);
     await page.goto(leadUrl);
     assert.equal(await page.locator('#lead-actions').count(), 0, 'approved actions were deleted');
-    await noFullNumbers(page, 'lead');
+    await visibleNumber(page, 'main', NUMBERS[0]);
     await page.screenshot({ path: 'browser-artifacts/platform-lead.png', fullPage: true });
 
 
@@ -138,14 +146,14 @@ async function inboundCall(called, caller, room) {
     await sideLink(page, 'Numbers & channels');
     await page.locator('[name=number]').fill('+91 40 1234 5679');
     await page.locator('[name=label]').fill('North evening line');
-    await page.locator('[name=campus]').selectOption({ label: 'North Campus' });
+    await page.locator('[name=campus]').selectOption({ label: 'North Location' });
     await page.getByRole('button', { name: 'Add number' }).click();
     await page.getByText('+914012345679 is added.').waitFor();
     assert.equal(await inboundCall('+914012345679', '+919876500002', 'qa-missed-1'), 404);
     await page.goto(`${BASE}/inbound/`);
     const missedRow = page.locator('#missed-table tbody tr').first();
     assert.ok((await missedRow.textContent()).includes('No employee was ready to answer'));
-    await noFullNumbers(page, 'incoming calls');
+    await visibleNumber(page, '#missed-table', NUMBERS[1]);
 
     // --- The employee: voice preview, where it works. -------------------------------
     await page.goto(`${BASE}/employees/hire/`);
@@ -163,7 +171,7 @@ async function inboundCall(called, caller, room) {
     await page.getByText('Draft saved.').waitFor();
     await page.getByRole('button', { name: 'Publish' }).click();
     await page.getByText('Version 1 of Meera is published.').waitFor();
-    assert.ok((await page.locator('#where-it-works').textContent()).includes('Every campus'));
+    assert.ok((await page.locator('#where-it-works').textContent()).includes('Every location'));
     await page.screenshot({ path: 'browser-artifacts/platform-employee.png', fullPage: true });
 
     // --- Operations and usage. ------------------------------------------------------
@@ -175,7 +183,7 @@ async function inboundCall(called, caller, room) {
     assert.ok(!(await page.locator('main').textContent()).includes('WhatsApp'));
     await page.screenshot({ path: 'browser-artifacts/platform-operations.png', fullPage: true });
 
-    // --- Campus staff: the missed caller reaches them; admin pages do not. ---------
+    // --- Location team members: the missed caller reaches them; admin pages do not. ---------
     const staff = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     watch(staff);
     await login(staff, 'north-review', 'local-disposable-north-check');

@@ -5,28 +5,36 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="same-origin">
-  <title>Sri Chaitanya Techno Schools &middot; {% block title %}Dashboard{% endblock %}</title>
+  <title>Vaani &middot; {% block title %}Dashboard{% endblock %}</title>
+  <script src="{% static 'vendor/jquery/jquery-4.1.0.min.js' %}"></script>
+  <script src="{% static 'dashboard/theme.js' %}"></script>
   <link rel="stylesheet" href="{% static 'dashboard/base.css' %}">
   <link rel="stylesheet" href="{% static 'dashboard/dashboard.css' %}">
-  <link rel="stylesheet" href="{% static 'brand/school.css' %}">
+  <link rel="stylesheet" href="{% static 'dashboard/workflow.css' %}">
+  {% if scope %}<link rel="stylesheet" href="{% static 'dashboard/assistant.css' %}">{% endif %}
+  <link rel="stylesheet" href="{% static 'brand/workspace.css' %}">
   {% block head %}{% endblock %}
 </head>
 <body{% if nav_sections %} class="shell"{% endif %}>
+{% include 'dashboard/_icons.html' %}
+<a class="skip-link" href="#main-content">Skip to content</a>
 {% if nav_sections %}
   <aside class="sidebar" id="sidebar" aria-label="Main">
-    <a class="side-brand" href="{% url 'home' %}"><img class="school-logo" src="{% static 'brand/sri-chaitanya-logo.png' %}" alt="Sri Chaitanya Techno Schools"><span class="brand-sub">AI EMPLOYEE PLATFORM</span></a>
+    <button class="menu-close small" id="menu-close" type="button">Close menu</button>
+    <a class="side-brand" href="{% url 'home' %}"><span class="brand-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>vaani<span class="brand-sub">VOICE WORKSPACE</span></span></a>
     {% if scope %}<div class="side-org"><span class="side-org-name" id="organisation-name">{{ scope.organisation.name }}</span><span class="side-org-role">{{ scope.role_label }}</span>
       {% if switch_organisations|length > 1 %}<form action="{% url 'organisation-switch' %}" method="post">{% csrf_token %}<select name="organisation" aria-label="Work in organisation" data-autosubmit>{% for organisation in switch_organisations %}<option value="{{ organisation.pk }}"{% if organisation.pk == scope.organisation.pk %} selected{% endif %}>{{ organisation.name }}</option>{% endfor %}</select><noscript><button class="small">Switch</button></noscript></form>{% endif %}
     </div>{% endif %}
     <nav class="side-nav" aria-label="Sections">
       {% for section in nav_sections %}
         {% if section.folded %}<details class="side-more"{% if section.open %} open{% endif %}><summary class="side-title">{{ section.title }}</summary>{% elif section.title %}<p class="side-title">{{ section.title }}</p>{% endif %}
-        {% for item in section.items %}<a href="{{ item.url }}"{% if item.current %} aria-current="page"{% endif %}{% if item.soon %} class="soon" title="Planned, not built yet"{% endif %}>{{ item.label }}</a>{% endfor %}
+        {% for item in section.items %}<a href="{{ item.url }}"{% if item.current %} aria-current="page"{% endif %}{% if item.soon %} class="soon" title="Planned, not built yet"{% endif %}><svg class="ui-icon" aria-hidden="true"><use href="#nav-{{ item.label|slugify }}"></use></svg><span>{{ item.label }}</span></a>{% endfor %}
         {% if section.folded %}</details>{% endif %}
       {% endfor %}
     </nav>
+    {% if scope %}<div class="side-helper"><span class="helper-spark" aria-hidden="true">✦</span><strong>A little help, right here.</strong><p>Find your next step with Vaani Assist.</p><button type="button" data-open-assist>Ask Vaani</button></div>{% endif %}
     <div class="side-foot">
-      <span class="side-user" title="Signed in">{{ user.get_username }}</span>
+      <span class="user-avatar" aria-hidden="true">{{ user.get_username|first|upper }}</span><span class="side-user" title="Signed in">{{ user.get_username }}</span>
       <form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text-button">Sign out</button></form>
     </div>
   </aside>
@@ -34,20 +42,22 @@
   <div class="page">
     <header class="pagebar">
       <button class="menu-button" id="menu-button" type="button" aria-controls="sidebar" aria-expanded="false">Menu</button>
-      <span class="workspace-label">School workspace</span><span class="pagebar-divider" aria-hidden="true">/</span><span class="pagebar-title">{% block bar_title %}{{ nav_current_label }}{% endblock %}</span>
-      {% if scope %}<a class="bell" href="{% url 'notifications' %}" id="bell" aria-label="Notifications{% if unread_notifications %}, {{ unread_notifications }} unread{% endif %}">Notifications{% if unread_notifications %} <span class="badge">{{ unread_notifications }}</span>{% endif %}</a>{% endif %}
+      <span class="workspace-label">Voice workspace</span><span class="pagebar-divider" aria-hidden="true">/</span><span class="pagebar-title">{% block bar_title %}{{ nav_current_label }}{% endblock %}</span>
+      {% include 'dashboard/_theme_toggle.html' %}
+      {% if scope %}<a class="bell" href="{% url 'notifications' %}" id="bell" aria-label="Notifications{% if unread_notifications %}, {{ unread_notifications }} unread{% endif %}" title="Notifications"><svg class="ui-icon" aria-hidden="true"><use href="#ui-bell"></use></svg>{% if unread_notifications %}<span class="badge">{{ unread_notifications }}</span>{% endif %}</a>{% endif %}
       {% if scope and scope.can_place_calls %}<a class="button primary small" href="{% url 'make-calls' %}" id="make-calls-button">Make calls</a>{% endif %}
     </header>
     {% if messages %}<div class="flashes" role="status">{% for message in messages %}<p class="flash {{ message.tags }}">{{ message }}</p>{% endfor %}</div>{% endif %}
 {% else %}
-  <header class="topbar"><a class="brand" href="{% url 'home' %}"><img class="school-logo" src="{% static 'brand/sri-chaitanya-logo.png' %}" alt="Sri Chaitanya Techno Schools"><span class="brand-sub">AI EMPLOYEE PLATFORM</span></a></header>
+  <header class="topbar"><a class="brand" href="{% url 'home' %}"><span class="brand-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>vaani<span class="brand-sub">VOICE WORKSPACE</span></span></a>{% include 'dashboard/_theme_toggle.html' %}</header>
 {% endif %}
-  <main>{% block content %}{% endblock %}</main>
-  <footer>Sri Chaitanya Techno Schools <span>AI Employee Platform &middot; Connecting every campus.</span></footer>
+  <main id="main-content" tabindex="-1">{% block content %}{% endblock %}</main>
+  <footer>Vaani <span>Thoughtful conversations. Meaningful connections.</span></footer>
 {% if nav_sections %}
   </div>
   <script src="{% static 'dashboard/dashboard.js' %}" defer></script>
 {% endif %}
+  {% if scope %}{% include 'dashboard/_assistant.html' %}{% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

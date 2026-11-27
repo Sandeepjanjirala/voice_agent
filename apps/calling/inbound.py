@@ -5,9 +5,9 @@ apps/telephony/views.inbound_context) when a phone call arrives. The answer is
 the published version of the employee assigned to the dialled number, with
 that number's campus knowledge, and a call record is created for the call.
 
-The caller's number is used only to recognise a known contact: it is matched
-through the keyed hash, stored encrypted on the call record, and never shown
-or logged. A caller on the do-not-call list is still answered: they called us.
+The caller's number is matched through the keyed hash and stored encrypted on
+the call record. Authorised staff can see it; logs remain masked. A caller on
+the do-not-call list is still answered: they called us.
 """
 
 import logging

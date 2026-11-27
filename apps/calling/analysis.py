@@ -51,8 +51,10 @@ RETRY_AFTER = timedelta(minutes=2)
 # fee questions, reminders or anything else an employee is set up for.
 SYSTEM_PROMPT = """You review phone calls handled by an AI employee for a \
 business. The business configured the employee's job; you are given that job, \
-then the conversation. Report what actually happened, so a staff member who \
+then the conversation. Report what actually happened, so a team member who \
 did not hear the call knows what was said and what to do next.
+Use only the supplied job and conversation to identify the organisation, \
+industry and relationship with the person; do not assume them.
 
 The "Person" lines are what speech recognition heard, which may contain \
 mistakes; "AI employee" lines are what the AI said. State only what the \
@@ -83,7 +85,7 @@ fits, or "" if none fits or none are listed.
 that was not answered or done on the call.
 - "next_step": one sentence: what the business should do next, or "" if \
 nothing.
-- "follow_up_needed": true if a staff member needs to act on this call.
+- "follow_up_needed": true if a team member needs to act on this call.
 - "follow_up_reason": why, in one sentence, or "".
 - "adherence": "followed", "partly" or "not_followed": whether the AI employee \
 did its job as configured (its purpose, steps, situations, limits, hand-over \
@@ -263,6 +265,11 @@ def analyse(record: CallRecord, *, complete=None) -> CallResult:
     if result.status == CallResult.Status.DONE and result.actions_applied_at:
         return result
     transcript = CallTranscript.objects.filter(call=record).first()
+    if result.status == CallResult.Status.DONE:
+        # The analysis was saved, but its database actions did not finish.
+        # Retry those saved decisions without asking the model again.
+        _finish_analysis(record, result, transcript)
+        return result
     if transcript is None or not transcript.turns:
         result.status = CallResult.Status.UNAVAILABLE
         result.error = (
@@ -299,10 +306,19 @@ def analyse(record: CallRecord, *, complete=None) -> CallResult:
     result.analysed_at = timezone.now()
     result.model = "llm"
     result.save()
+    _finish_analysis(record, result, transcript)
+    return result
+
+
+@transaction.atomic
+def _finish_analysis(
+    record: CallRecord, result: CallResult, transcript: CallTranscript | None
+) -> None:
+    """Apply decisions, settle the review and remove temporary text together."""
     apply_actions(record, result)
     _settle_follow_up(record, result)
-    _clean_up(record, transcript)
-    return result
+    if transcript is not None:
+        _clean_up(record, transcript)
 
 
 def request_for(record: CallRecord, turns: list[dict]) -> tuple[str, str]:
@@ -375,14 +391,12 @@ def _line_number(record: CallRecord) -> str:
     return ""
 
 
+@transaction.atomic
 def apply_actions(record: CallRecord, result: CallResult) -> list[CallAction]:
     """Carry out what the call calls for, once, and log every decision."""
-    with transaction.atomic():
-        locked = CallResult.objects.select_for_update().get(pk=result.pk)
-        if locked.actions_applied_at is not None:
-            return list(record.actions.all())
-        locked.actions_applied_at = timezone.now()
-        locked.save(update_fields=["actions_applied_at"])
+    locked = CallResult.objects.select_for_update().get(pk=result.pk)
+    if locked.actions_applied_at is not None:
+        return list(record.actions.all())
     allowed = set(record.context_snapshot.get("actions") or [])
     lead = record.lead
     done = []
@@ -460,27 +474,30 @@ def apply_actions(record: CallRecord, result: CallResult) -> list[CallAction]:
                 Done,
                 f"Lead moved to {lead.get_stage_display()}.",
             )
+    locked.actions_applied_at = timezone.now()
+    locked.save(update_fields=["actions_applied_at"])
     return done
 
 
 def pending(organisation=None, now=None):
-    """Calls that ended with a transcript and are waiting for analysis, or
-    for another attempt after a failed one."""
+    """Finished calls awaiting analysis or completion of their saved actions."""
     from django.db.models import Q
 
     now = now or timezone.now()
-    found = (
-        CallResult.objects.filter(call__transcript__isnull=False)
-        .filter(
-            Q(status=CallResult.Status.PENDING)
-            | Q(
-                status=CallResult.Status.FAILED,
-                attempts__lt=MAX_ATTEMPTS,
-                next_attempt_at__lte=now,
+    found = CallResult.objects.filter(
+        Q(status=CallResult.Status.DONE, actions_applied_at__isnull=True)
+        | (
+            Q(call__transcript__isnull=False)
+            & (
+                Q(status=CallResult.Status.PENDING)
+                | Q(
+                    status=CallResult.Status.FAILED,
+                    attempts__lt=MAX_ATTEMPTS,
+                    next_attempt_at__lte=now,
+                )
             )
         )
-        .exclude(call__status__in=CallRecord.ACTIVE)
-    )
+    ).exclude(call__status__in=CallRecord.ACTIVE)
     if organisation is not None:
         found = found.filter(call__organisation=organisation)
     return found.select_related("call")

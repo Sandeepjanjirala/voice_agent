@@ -308,3 +308,9 @@ LOGGING = {
         "level": os.environ.get("DJANGO_LOG_LEVEL", "INFO").upper(),
     },
 }
+
+# Dashboard-only Gemini assistant; never sent to the browser or voice worker.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GEMINI_ASSISTANT_MODEL = (
+    os.environ.get("GEMINI_ASSISTANT_MODEL", "").strip() or "gemini-3.1-flash-lite"
+)

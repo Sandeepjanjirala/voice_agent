@@ -126,14 +126,17 @@ log; latency rows never contain text.
 
 ## If it does not connect
 
-The worker log line `outbound call did not connect` carries an `outcome` and the SIP
-status.
+The worker log line `outbound call did not connect` carries an `outcome`, the SIP
+status, and `detail`: LiveKit's own error text, which often names the reason. The
+LiveKit Cloud **Telephony → Calls** page shows the same call by its `SCL_...` id (in the
+worker's `participant joined` line), with the SIP exchange and a PCAP.
 
 | Outcome / status | Likely cause |
 | :--- | :--- |
 | `busy_or_rejected` (486, 603) | You declined, or the line was busy |
 | `no_answer` (408, 480) | Not answered within 30 s |
-| `failed` 401 / 403 / 407 | Wrong username or password, or the credential is not attached to the trunk |
+| `failed` 401 / 403 / 407 | Wrong username or password, the credential is not attached to the trunk, or the trunk's IP allow-list (ACL) misses the address LiveKit dialled from |
+| `failed` 403 about 0.1 s after dialling, nothing in Vobiz's call logs | Vobiz turned the request away before logging it: usually the IP allow-list. LiveKit dials India calls from Hyderabad or Mumbai, from any of `143.223.88.0/21`, `161.115.160.0/19` and `153.57.128.0/18` ([static IPs](https://docs.livekit.io/deploy/admin/regions/endpoints/#static-ips)); allow all three |
 | `failed` 403 with "Violates Media Anchoring" | LiveKit did not dial from India; tell me, this is the regional routing question |
 | `failed` 404 / 484 | Number format; Vobiz may want a different form of the dialled number |
 | `failed` 488 / 503 right after dialling | TLS or SRTP not accepted by Vobiz; see "Configure" above |

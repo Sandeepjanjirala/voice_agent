@@ -15,9 +15,11 @@ def contact_call(*, contact, employee, user=None, lead=None, gateway=None):
         employee.campuses.exists()
         and not employee.campuses.filter(pk=contact.campus_id).exists()
     ):
-        raise calls.CallError("This employee is not assigned to the contact's campus.")
+        raise calls.CallError(
+            "This employee is not assigned to the contact's location."
+        )
     if not hours.is_open(contact.campus):
-        raise calls.CallError("The campus is outside its business hours.")
+        raise calls.CallError("The location is outside its business hours.")
     try:
         plan = publishing.plan_call(employee, campus=contact.campus, lead=lead)
         number = contacts.number_for_call(

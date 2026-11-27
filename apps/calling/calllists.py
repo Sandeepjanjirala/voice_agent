@@ -51,7 +51,19 @@ PHONE_HEADERS = (
     "mobile number",
     "ph",
 )
-NAME_HEADERS = ("name", "parent", "parent name", "student", "student name", "guardian")
+NAME_HEADERS = (
+    "name",
+    "full name",
+    "contact",
+    "contact name",
+    "customer",
+    "customer name",
+    "parent",
+    "parent name",
+    "student",
+    "student name",
+    "guardian",
+)
 PHONE_TOKEN = re.compile(r"\+?\d[\d\s\-()]{8,}\d")
 CONSENT_TEXT = "Everyone on this list agreed to be called by {organisation} about this."
 # A step holds this lock, so two steps (the open page and the scheduler, or
@@ -137,8 +149,11 @@ def _name_and_number(cells: list[str]) -> tuple[str, str]:
         cell = " ".join(str(cell or "").split())
         if not cell:
             continue
-        if not number and PHONE_TOKEN.fullmatch(cell.replace(".0", "")):
-            number = cell.replace(".0", "")
+        # A numeric spreadsheet export may end in .0. Never remove a decimal
+        # from the middle of an invalid value and turn it into a different number.
+        candidate = cell[:-2] if re.fullmatch(r"\d+\.0", cell) else cell
+        if not number and PHONE_TOKEN.fullmatch(candidate):
+            number = candidate
         elif not name and not PHONE_TOKEN.search(cell):
             name = cell
     return name, number
@@ -206,7 +221,12 @@ def _csv_rows(upload) -> list[list[str]]:
         raise ListError(
             "The CSV file could not be read. Save it as UTF-8 and try again."
         )
-    return _within_limit(csv.reader(io.StringIO(text)))
+    try:
+        return _within_limit(csv.reader(io.StringIO(text), strict=True))
+    except csv.Error:
+        raise ListError(
+            "The CSV file could not be read. Check its columns and save it as CSV again."
+        ) from None
 
 
 def _within_limit(rows) -> list[list[str]]:
@@ -302,12 +322,24 @@ def _advance(call_list: CallList, gateway, now) -> CallList:
     call_list.refresh_from_db()
     if call_list.status != CallList.Status.RUNNING:
         return call_list
-    if not call_list.entries.filter(status=Entry.WAITING).exists():
-        return _set(call_list, status=CallList.Status.DONE, waiting="")
-    reason = _wait_reason(call_list, now, gateway)
-    if reason:
-        return _set(call_list, waiting=reason)
+    reason = (
+        _wait_reason(call_list, now, gateway)
+        if call_list.entries.filter(status=Entry.WAITING).exists()
+        else ""
+    )
     with transaction.atomic():
+        # Pause/cancel can arrive while the network checks above are running.
+        # Claim the next entry only while the list is still running, under the
+        # same list-row lock used by its controls.
+        call_list = CallList.objects.select_for_update().get(pk=call_list.pk)
+        if call_list.status != CallList.Status.RUNNING:
+            return call_list
+        if call_list.entries.filter(status=Entry.CALLING).exists():
+            return call_list
+        if not call_list.entries.filter(status=Entry.WAITING).exists():
+            return _set(call_list, status=CallList.Status.DONE, waiting="")
+        if reason:
+            return _set(call_list, waiting=reason)
         entry = (
             call_list.entries.select_for_update()
             .filter(status=Entry.WAITING)
@@ -373,12 +405,19 @@ def _dial(call_list: CallList, entry: CallListEntry, gateway) -> CallList:
     from apps.workforce import publishing
 
     def give_back(waiting: str, *, pause: bool = False) -> CallList:
-        entry.status = Entry.WAITING
-        entry.save(update_fields=["status", "updated_at"])
-        fields = {"waiting": waiting}
-        if pause:
-            fields["status"] = CallList.Status.PAUSED
-        return _set(call_list, **fields)
+        with transaction.atomic():
+            current = CallList.objects.select_for_update().get(pk=call_list.pk)
+            if current.status == CallList.Status.CANCELLED:
+                _finish(entry, Entry.SKIPPED, "The list was cancelled")
+                return current
+            entry.status = Entry.WAITING
+            entry.save(update_fields=["status", "updated_at"])
+            if current.status != CallList.Status.RUNNING:
+                return current
+            fields = {"waiting": waiting}
+            if pause:
+                fields["status"] = CallList.Status.PAUSED
+            return _set(current, **fields)
 
     if contacts.is_opted_out(call_list.organisation, entry.phone_lookup):
         _finish(entry, Entry.SKIPPED, "On the do-not-call list")
@@ -386,13 +425,45 @@ def _dial(call_list: CallList, entry: CallListEntry, gateway) -> CallList:
     if call_list.employee is None:
         # Older lists may name no employee; every call needs one now.
         return give_back("Paused: choose an AI employee for these calls.", pause=True)
-    try:
-        plan = publishing.plan_call(
-            call_list.employee,
-            campus=call_list.campus,
-            caller_name=entry.name,
-            about=call_list.purpose,
+    employee = call_list.employee
+    if (
+        call_list.campus_id is not None
+        and employee.campuses.exists()
+        and not employee.campuses.filter(pk=call_list.campus_id).exists()
+    ):
+        return give_back(
+            "Paused: the AI employee is no longer assigned to this location.",
+            pause=True,
         )
+
+    def remember(record):
+        entry.call = record
+        entry.save(update_fields=["call", "updated_at"])
+
+    try:
+        from .models import CallRetry
+        from .retries import preserved_plan
+
+        retry = (
+            CallRetry.objects.filter(target_list=call_list)
+            .select_related("source_call__employee_version")
+            .first()
+        )
+        if retry is not None:
+            plan = preserved_plan(
+                retry.source_call,
+                employee=employee,
+                campus=call_list.campus,
+                caller_name=entry.name,
+                about=call_list.purpose,
+            )
+        else:
+            plan = publishing.plan_call(
+                call_list.employee,
+                campus=call_list.campus,
+                caller_name=entry.name,
+                about=call_list.purpose,
+            )
         record = calls.start_call(
             user=call_list.created_by,
             organisation=call_list.organisation,
@@ -400,6 +471,7 @@ def _dial(call_list: CallList, entry: CallListEntry, gateway) -> CallList:
             call_plan=plan,
             campus=call_list.campus,
             gateway=gateway,
+            on_created=remember,
         )
     except publishing.PublishError as error:
         return give_back(f"Paused: {error}", pause=True)
@@ -429,6 +501,12 @@ def _settle(entry: CallListEntry, gateway, now=None) -> bool:
             return False
         _finish(entry, Entry.FAILED, "The call was not placed.")
         return True
+    if record.is_active:
+        # This list cannot reach _line_busy until its own call is settled.
+        # Apply the same maximum-duration recovery here, including when the
+        # provider is unavailable or a paused/cancelled list has one last call.
+        calls.close_stale()
+        record.refresh_from_db()
     if record.is_active:
         record = calls.refresh(record, gateway=gateway)
     if record.is_active:

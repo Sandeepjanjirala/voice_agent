@@ -17,6 +17,21 @@
   <li{% if employee.live_version %} class="done"{% endif %}><b>3</b>Test and publish</li>
 </ol>
 
+<section class="next-action" aria-labelledby="employee-next-title">
+  <div><p class="eyebrow">YOUR NEXT STEP</p>
+  {% if employee.live_version and not has_changes and employee.taking_calls and can_call %}
+    <h2 id="employee-next-title">Ready to prepare a call</h2><p>This employee has a published script and is switched on. Add numbers, check the list, then confirm when you are ready.</p></div>
+    <a class="button primary" href="{% url 'make-calls' %}?speaker={{ employee.pk }}">Add numbers</a>
+  {% elif employee.live_version and not has_changes and not employee.taking_calls %}
+    <h2 id="employee-next-title">Switch this employee on when ready</h2><p>The script is published, but this employee is paused. Use Switch on in the publishing panel to make it available for calls.</p></div>
+    <a class="button" href="#publish-panel">Manage availability</a>
+  {% else %}
+    <h2 id="employee-next-title">Review, save, then publish</h2><p>Check the opening line and call goals below. Save your draft, then use the publishing panel to fix any issues and make the script available for calls.</p></div>
+    <a class="button" href="#publish-panel">View publishing checklist</a>
+  {% endif %}
+</section>
+<nav class="section-nav" aria-label="Employee sections"><a href="#employee-form">Edit script</a><a href="#voice-preview">Preview voice</a><a href="#publish-panel">Publish &amp; availability</a>{% if versions %}<a href="#versions">Version history</a>{% endif %}</nav>
+
 {% if employee.draft_source == 'template' %}<p class="notice" role="note">This draft started from a plain template, not from the AI. Edit it below, or use “Draft again” once the AI drafting service is available.</p>{% endif %}
 
 <div class="grid-2">
@@ -66,9 +81,9 @@
     </div>
     {% if campuses %}
     <fieldset class="field">
-      <legend>Campuses it works for</legend>
+      <legend>Locations it works for</legend>
       <div class="check-row">{% for campus in campuses %}<label><input type="checkbox" name="campus" value="{{ campus.pk }}"{% if campus.pk in assigned %} checked{% endif %}> {{ campus.name }}</label>{% endfor %}</div>
-      <p class="help">Leave all unticked for an employee that works for every campus.</p>
+      <p class="help">Leave all unticked for an employee that works for every location.</p>
     </fieldset>
     {% endif %}
     <div class="field">
@@ -82,7 +97,7 @@
     </div>
     <div class="field">
       <label for="f-success">What a successful call achieves <span class="optional">optional</span></label>
-      <textarea id="f-success" name="success" rows="2" data-budget maxlength="{{ limits.success }}" placeholder="e.g. The parent rated the event and said one thing to improve.">{{ config.success }}</textarea>
+      <textarea id="f-success" name="success" rows="2" data-budget maxlength="{{ limits.success }}" placeholder="e.g. The customer rated the service and shared one thing to improve.">{{ config.success }}</textarea>
       <p class="help">The employee works towards it, and the call report says whether it was reached.</p>
     </div>
 
@@ -121,7 +136,7 @@
         {% for item in config.situations %}
         <li class="row-item">
           <div class="row-fields">
-            <input type="text" name="situation_when" data-budget maxlength="{{ limits.situation_when }}" value="{{ item.when }}" aria-label="When this happens" placeholder="When this happens, e.g. they ask about fees">
+            <input type="text" name="situation_when" data-budget maxlength="{{ limits.situation_when }}" value="{{ item.when }}" aria-label="When this happens" placeholder="When this happens, e.g. they ask about pricing">
             <textarea name="situation_then" rows="2" data-budget maxlength="{{ limits.situation_then }}" aria-label="What to do" placeholder="What to do, e.g. give the fee from the information below; for discounts, say the accounts team will call">{{ item.then }}</textarea>
           </div>
           <div class="row-tools"><button type="button" data-remove aria-label="Remove situation">Remove</button></div>
@@ -138,7 +153,7 @@
     </div>
     <div class="field">
       <label for="f-escalation">When to hand over to a person <span class="optional">optional</span></label>
-      <textarea id="f-escalation" name="escalation" rows="2" data-budget maxlength="{{ limits.escalation }}" placeholder="e.g. They report a safety concern, or ask twice for a staff member.">{{ config.escalation }}</textarea>
+      <textarea id="f-escalation" name="escalation" rows="2" data-budget maxlength="{{ limits.escalation }}" placeholder="e.g. They report a safety concern, or ask twice for a team member.">{{ config.escalation }}</textarea>
       <p class="help">The employee tells the person a team member will call back (calls cannot be transferred yet), and the call report marks the call for follow-up.</p>
     </div>
     <div class="field">
@@ -153,12 +168,12 @@
         {% endfor %}
       </ul>
       <button type="button" class="add-row" id="add-outcome">Add a result</button>
-      <p class="help">Your own labels, such as "Feedback given" or "Wants a fee call back". After each call, one is chosen from what was said, and Conversations can be filtered by it. Not sent to the call.</p>
+      <p class="help">Your own labels, such as "Feedback given" or "Requested a callback". After each call, one is chosen from what was said, and Call results can be filtered by it. These labels are not spoken on the call.</p>
     </fieldset>
     <div class="field">
       <label for="f-information">Information it may give <span class="optional">optional</span></label>
-      <textarea id="f-information" name="information" rows="4" maxlength="{{ limits.information }}" placeholder="One fact per line, e.g. Term 2 fee: due 15 January.">{{ config.information }}</textarea>
-      <p class="help">Looked up by the employee when a caller asks, together with the campus's Knowledge; not sent on every turn. It may state only what is here or in Knowledge.</p>
+      <textarea id="f-information" name="information" rows="4" maxlength="{{ limits.information }}" placeholder="One fact per line, e.g. Support hours: Monday to Friday, 9 AM to 6 PM.">{{ config.information }}</textarea>
+      <p class="help">Looked up by the employee when a caller asks, together with the location's Knowledge; not sent on every turn. It may state only what is here or in Knowledge.</p>
     </div>
     <fieldset class="field">
       <legend>How closely it follows the script</legend>
@@ -213,7 +228,7 @@
     <section class="panel" id="where-it-works">
       <div class="panel-head"><h2>Where it works</h2></div>
       <dl class="facts-grid">
-        <dt>Campuses</dt><dd>{% if assigned %}{% for campus in campuses %}{% if campus.pk in assigned %}{{ campus.name }}{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}{% else %}Every campus{% endif %}</dd>
+        <dt>Locations</dt><dd>{% if assigned %}{% for campus in campuses %}{% if campus.pk in assigned %}{{ campus.name }}{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}{% else %}Every location{% endif %}</dd>
         <dt>Answers</dt><dd>{% for number in numbers %}<a href="{% url 'number-edit' number.pk %}">{{ number.number }}</a>{% if not number.routing_enabled %} (switched off){% endif %}{% if not forloop.last %}, {% endif %}{% empty %}No number{% endfor %}</dd>
       </dl>
       <p class="help">Numbers choose their employee on their own page; Make calls asks who speaks.</p>
@@ -277,7 +292,7 @@
 <template id="situation-template">
   <li class="row-item">
     <div class="row-fields">
-      <input type="text" name="situation_when" data-budget maxlength="{{ limits.situation_when }}" aria-label="When this happens" placeholder="When this happens, e.g. they ask about fees">
+      <input type="text" name="situation_when" data-budget maxlength="{{ limits.situation_when }}" aria-label="When this happens" placeholder="When this happens, e.g. they ask about pricing">
       <textarea name="situation_then" rows="2" data-budget maxlength="{{ limits.situation_then }}" aria-label="What to do" placeholder="What to do"></textarea>
     </div>
     <div class="row-tools"><button type="button" data-remove aria-label="Remove situation">Remove</button></div>

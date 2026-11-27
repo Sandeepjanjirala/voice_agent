@@ -1,0 +1,21 @@
+<section class="panel" id="inbound-setup" style="margin-bottom:24px" aria-labelledby="inbound-setup-title">
+  <div class="panel-head"><h2 id="inbound-setup-title">Set up incoming calls</h2><span class="tag {% if incoming_setup.ready %}good{% else %}draft{% endif %}" id="inbound-setup-status">{{ incoming_setup.status }}</span></div>
+  <p class="help" style="margin-top:0">{{ incoming_setup.routed }} of {{ incoming_setup.total }} number{{ incoming_setup.total|pluralize }} {% if incoming_setup.total == 1 %}has{% else %}have{% endif %} a ready AI employee. These are local checks; the provider connection and live call audio have not been verified here.</p>
+  <ol class="guide-list" style="margin-top:20px">
+    <li><strong>Prepare an AI employee.</strong> {% if incoming_setup.manage %}Open <a href="{% url 'employees' %}">AI employees</a>, choose Answers incoming calls for its job, review the greeting and instructions, then publish and switch it on.{% else %}Your organisation admin publishes and switches on an employee for incoming calls. You can review the available <a href="{% url 'employees' %}">AI employees</a>.{% endif %}</li>
+    <li><strong>Add an incoming phone number.</strong> Use a number you own that your provider has enabled for incoming calls. {% if incoming_setup.manage %}<a href="{% url 'numbers' %}#add-number">Add the number and assign its AI employee</a>.{% else %}Ask your organisation admin to add it and assign its AI employee.{% endif %}{% if incoming_setup.vobiz %} Vobiz trial numbers support outgoing calls only; incoming calls need a purchased number on a verified account. <a href="https://www.vobiz.ai/docs/faq/trial-inbound" target="_blank" rel="noopener noreferrer">Vobiz trial details</a>.{% endif %}</li>
+    <li><strong>Connect your phone provider.</strong> Your technical administrator connects the number to LiveKit, verifies authentication and routing, and starts the voice worker.{% if incoming_setup.manage %} Open Connection checks below for the remaining configuration steps.{% endif %}</li>
+    <li><strong>Make an incoming test call.</strong> Once the connection is confirmed, call your purchased number from a phone. Check the greeting and two-way audio, then open <a href="{% url 'conversations' %}?direction=inbound">incoming call results</a>.</li>
+  </ol>
+  {% if incoming_setup.manage %}
+  <details class="form-disclosure" id="inbound-checks" style="margin-top:20px">
+    <summary>Connection checks <span>For your technical administrator</span></summary>
+    <div class="disclosure-content">
+      {% include 'calling/_checks.html' with checks=incoming_setup.checks %}
+      <p class="help">Checked from local configuration only; this page does not contact LiveKit or the provider. A passing check does not confirm that a trunk or dispatch rule exists, that the worker is connected, or that a real call will succeed.</p>
+    </div>
+  </details>
+  {% else %}
+  <p class="help" style="margin-top:20px">Your organisation admin manages the provider connection and can review its configuration checks.</p>
+  {% endif %}
+</section>

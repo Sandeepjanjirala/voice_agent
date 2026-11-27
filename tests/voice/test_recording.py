@@ -24,6 +24,7 @@ from voice_agent.assistant import greet
 from voice_agent.call_reporting import CallReporter
 from voice_agent.profile import parse_profile, profile_instructions
 from voice_agent.recording import CallRecorder, sign_upload
+from voice_agent.simulation import grade_recording, recording_fixture
 
 from .fakes import make_settings
 from .test_call_reporting import SECRET, FakeSession
@@ -235,6 +236,87 @@ async def test_no_or_no_answer_records_nothing():
     # No answer at all: the call ends and nothing was started or sent.
     quiet, started = make_recorder([])
     assert await quiet.finish() is False and started == []
+
+
+async def test_demo_starts_without_consent_and_stops_without_uploading():
+    sent = []
+    recorder, started = make_recorder(sent, authorization="demo")
+    assert recorder.tools()[0].__name__ == "stop_recording"
+    await recorder.start_demo()
+    assert recorder.state == "recording" and len(started) == 1
+    await recorder.start_demo()
+    assert len(started) == 1
+    await recorder.tools()[0]()
+    await recorder.flush()
+    assert recorder.state == "declined" and not started[0].exists()
+    FakeSession.sent = []
+    assert await recorder.finish() is False and FakeSession.sent == []
+    assert [fields["state"] for _, fields in sent] == ["started", "declined"]
+
+
+async def test_verbal_recording_does_not_start_at_session_start():
+    recorder, started = make_recorder([])
+    await recorder.start_demo()
+    assert recorder.state == "waiting" and started == []
+    await recorder.consent(True)
+    assert recorder.state == "recording" and len(started) == 1
+    await recorder.consent(False)
+    await recorder.flush()
+
+
+def test_demo_profile_omits_question_and_keeps_stop_tool_instructions():
+    profile = parse_profile(
+        json.dumps(
+            {
+                "agent_profile": {
+                    "purpose": "Test a service enquiry",
+                    "greeting": "Hello, I am your AI assistant.",
+                    "recording": {"authorization": "demo", "notice": "May I record?"},
+                }
+            }
+        )
+    )
+    assert profile.recording_authorization == "demo" and profile.recording_notice == ""
+    instructions = profile_instructions(profile)
+    assert "stop_recording" in instructions and "recording_consent" not in instructions
+    assert "Nothing said on this call is saved" not in instructions
+    said = []
+    greet(
+        SimpleNamespace(say=lambda text, **kwargs: said.append(text)),
+        make_settings(),
+        profile=profile,
+    )
+    assert said == ["Hello, I am your AI assistant."]
+
+
+async def test_simulation_grades_real_stop_state_without_media_or_uploads():
+    profile = parse_profile(
+        json.dumps(
+            {
+                "agent_profile": {
+                    "purpose": "Demo",
+                    "recording": {"authorization": "demo"},
+                }
+            }
+        )
+    )
+    recorder = recording_fixture(SimpleNamespace(), profile)
+    await recorder.start_demo()
+    assert recorder.state == "recording" and recorder._directory is None
+    failures = []
+    simulation = SimpleNamespace(
+        userdata=lambda: {"recording_state": "declined"},
+        fail=failures.append,
+        job_context=SimpleNamespace(
+            primary_session=SimpleNamespace(userdata={"recording": recorder})
+        ),
+    )
+    await grade_recording(simulation)
+    assert failures  # Saying "stopped" alone cannot make a scenario pass.
+    failures.clear()
+    await recorder.tools()[0]()
+    await grade_recording(simulation)
+    assert failures == [] and await recorder.finish() is False
 
 
 async def test_a_change_of_mind_deletes_what_was_recorded():

@@ -26,8 +26,10 @@ from django.utils import timezone
 from apps.calling import recordings
 from apps.calling.models import CallRecording, PhoneNumber
 from apps.crm import retention
+from apps.telephony import calls
 from apps.telephony.models import CallRecord
 from apps.tenancy.models import AuditEvent
+from apps.workforce import publishing
 from voice_agent.recording import sign_upload
 
 from .test_calling import employee_for, inbound_post
@@ -123,6 +125,113 @@ def worker_event(record, **fields):
     return post_event(Client(), {"room": record.room, "event": "recording", **fields})
 
 
+@pytest.mark.parametrize(
+    "test_call,test_number", [(False, True), (True, False), (False, False)]
+)
+def test_demo_requires_test_provenance_and_approved_destination(
+    world, test_call, test_number
+):
+    world.org_a.recording = "demo"
+    payload, snapshot = {}, {}
+    assert not recordings.mark_call(
+        payload, snapshot, world.org_a, test_call=test_call, test_number=test_number
+    )
+    assert "recording" not in payload
+    assert snapshot["recording"]["allowed"] is False
+
+
+def test_demo_test_call_gets_separate_authorization(world, ogg):
+    world.org_a.recording = "demo"
+    world.org_a.save()
+    record = place_test_call(world)
+    policy = record.context_snapshot["recording"]
+    assert (
+        policy["allowed"]
+        and policy["test_call"]
+        and policy["approved_test_destination"]
+    )
+    assert record.context_snapshot["profile"]["recording"] == {"authorization": "demo"}
+    assert worker_event(record, state="started", offset=0).status_code == 204
+    assert upload(record, ogg, offset="0.00").status_code == 201
+    recording = CallRecording.objects.get(call=record)
+    assert recording.authorization == "demo" and recording.authorized_at is not None
+    assert recording.consented_at is None
+    html = body(
+        world.client(world.admin_a).get(
+            reverse("conversation-detail", args=[record.pk])
+        )
+    )
+    assert "approved demo test without a spoken recording question" in html
+    assert "recorded after the person agreed" not in html
+
+
+def test_demo_upload_without_started_event_never_fabricates_verbal_consent(world, ogg):
+    world.org_a.recording = "demo"
+    world.org_a.save()
+    record = place_test_call(world)
+    assert upload(record, ogg).status_code == 201
+    recording = CallRecording.objects.get(call=record)
+    assert recording.authorization == "demo" and recording.authorized_at is not None
+    assert recording.consented_at is None
+
+
+def test_missing_demo_audio_is_not_described_as_missing_verbal_consent(world):
+    world.org_a.recording = "demo"
+    world.org_a.save()
+    record = place_test_call(world)
+    record.status = CallRecord.Status.COMPLETED
+    record.answered_at = record.ended_at = timezone.now()
+    record.save()
+    html = body(
+        world.client(world.admin_a).get(
+            reverse("conversation-detail", args=[record.pk])
+        )
+    )
+    assert "demo recording did not arrive" in html
+    assert "recording question" not in html
+
+
+def test_demo_does_not_record_business_call_to_the_same_approved_number(
+    world, gateway, ogg
+):
+    world.org_a.recording = "demo"
+    world.org_a.save()
+    employee = employee_for(world)
+    record = calls.start_call(
+        user=world.admin_a,
+        organisation=world.org_a,
+        to=MOBILE,
+        call_plan=publishing.plan_call(employee, rehearsal=False),
+        gateway=gateway,
+    )
+    assert record.context_snapshot["recording"]["allowed"] is False
+    assert "recording" not in record.context_snapshot["profile"]
+    assert upload(record, ogg).status_code == 403
+
+
+def test_demo_does_not_record_inbound_even_from_approved_number(world, ogg):
+    world.org_a.recording = "demo"
+    world.org_a.save()
+    record, payload = inbound(world, MOBILE, "demo-inbound")
+    assert record.context_snapshot["recording"]["allowed"] is False
+    assert "recording" not in payload["agent_profile"]
+    assert upload(record, ogg).status_code == 403
+
+
+@pytest.mark.parametrize("mode", ["demo", "test"])
+def test_stop_request_blocks_late_started_event_and_upload(world, ogg, mode):
+    world.org_a.recording = mode
+    world.org_a.save()
+    record = place_test_call(world)
+    worker_event(record, state="started", offset=0)
+    worker_event(record, state="declined")
+    worker_event(record, state="started", offset=0)
+    recording = CallRecording.objects.get(call=record)
+    assert recording.status == "not_recorded"
+    assert "discarded" in recording.reason
+    assert upload(record, ogg).status_code == 409
+
+
 def upload(
     record,
     data,
@@ -187,7 +296,13 @@ def test_an_approved_test_call_may_be_recorded_and_the_worker_is_asked_to(
     world, gateway
 ):
     record = place_test_call(world)
-    assert record.context_snapshot["recording"] == {"allowed": True, "reason": ""}
+    assert record.context_snapshot["recording"] == {
+        "allowed": True,
+        "reason": "",
+        "authorization": "verbal",
+        "test_call": True,
+        "approved_test_destination": True,
+    }
     (request,) = gateway.dispatches
     profile = json.loads(request.metadata)["agent_profile"]
     assert profile["recording"] == {"notice": "May I record this call?"}

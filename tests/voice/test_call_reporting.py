@@ -187,6 +187,8 @@ async def test_failed_call_is_reported_with_its_sip_status_before_shutdown(
     class RecordingReporter(CallReporter):
         async def send(self, event, **fields):
             order.append(("report", event, fields))
+            # Never the real HTTP client: a running dashboard is on this URL.
+            self._session_factory = FakeSession
             return await super().send(event, **fields)
 
     monkeypatch.setattr(outbound, "CallReporter", RecordingReporter)

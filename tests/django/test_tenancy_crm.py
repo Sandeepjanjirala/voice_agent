@@ -11,6 +11,7 @@ import csv
 import io
 import json
 import logging
+import re
 from datetime import timedelta
 
 import pytest
@@ -22,6 +23,7 @@ from django.db import connection
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import strip_tags
 
 from apps.crm import contacts, crypto, importing, phones, retention
 from apps.crm.models import Contact, ContactImport, FollowUp, Lead, LeadNote, OptOut
@@ -106,6 +108,7 @@ class World:
 
     def call(self, organisation, campus=None, room=None, **fields):
         fields.setdefault("status", "completed")
+        fields.setdefault("remote_encrypted", crypto.encrypt(ASHA))
         return CallRecord.objects.create(
             organisation=organisation,
             campus=campus,
@@ -532,13 +535,71 @@ def test_the_sidebar_shows_what_the_role_allows(world):
     admin = body(world.client(world.admin_a).get(reverse("home")))
     staff = body(world.client(world.staff_north).get(reverse("home")))
     assert "Org A" in admin and "Organisation admin" in admin
-    assert "Campus staff" in staff
+    assert "Location team member" in staff
     # Both may place calls, so both get the Make calls button.
     assert 'id="make-calls-button"' in admin and 'id="make-calls-button"' in staff
     # Platform tools are for Django staff, which neither of them is.
     for html in (admin, staff):
-        assert ">Test line</a>" not in html and ">Agent profile</a>" not in html
-        assert ">Leads &amp; contacts</a>" in html
+        link_labels = {
+            strip_tags(content).strip()
+            for content in re.findall(r"<a\b[^>]*>(.*?)</a>", html, re.S)
+        }
+        assert "Test line" not in link_labels and "Agent profile" not in link_labels
+        assert "Leads &amp; contacts" in link_labels
+
+
+def test_settings_hub_keeps_tools_accessible_with_role_permissions(world):
+    admin = world.client(world.admin_a)
+    response = admin.get(reverse("settings"))
+    tools = response.context["settings_tools"]
+    assert {item["url"] for item in tools} == {
+        reverse(name)
+        for name in ("campuses", "numbers", "performance", "usage", "operations")
+    }
+    for tool in tools:
+        assert tool["description"] in body(response)
+        page = admin.get(tool["url"])
+        assert page.status_code == 200
+        assert page.context["nav_current_label"] == tool["label"]
+        current = [
+            item["label"]
+            for section in page.context["nav_sections"]
+            for item in section["items"]
+            if item["current"]
+        ]
+        assert current == ["Settings"]
+    staff = world.client(world.staff_north).get(reverse("settings"))
+    assert {item["url"] for item in staff.context["settings_tools"]} == {
+        reverse(name) for name in ("campuses", "numbers", "performance")
+    }
+    for name in ("operations", "usage"):
+        assert world.client(world.staff_north).get(reverse(name)).status_code == 403
+
+
+@pytest.mark.parametrize("mode", ["off", "demo", "test", "consent"])
+def test_recording_question_is_required_only_when_it_will_be_asked(world, mode):
+    response = world.client(world.admin_a).post(
+        reverse("settings"),
+        {
+            "action": "organisation",
+            "org-name": world.org_a.name,
+            "org-transcripts": "keep",
+            "org-recording": mode,
+            "org-recording_notice": "",
+            "org-cost_per_minute": "0",
+            "org-cost_per_analysis": "0",
+            "org-monthly_call_minutes": "0",
+        },
+    )
+    world.org_a.refresh_from_db()
+    if mode in ("off", "demo"):
+        assert response.status_code == 302
+        assert world.org_a.recording == mode
+        assert world.org_a.recording_notice
+    else:
+        assert response.status_code == 200
+        assert "Write the question to ask before recording." in body(response)
+        assert world.org_a.recording == "off"
 
 
 # --- campuses and staff --------------------------------------------------------------
@@ -558,7 +619,7 @@ def test_admins_manage_campuses_and_staff_only_see_their_own(world):
     again = admin.post(
         reverse("campuses"), {"campus-name": "east", "campus-is_active": "on"}
     )
-    assert "has a campus of this name" in body(again)
+    assert "has a location of this name" in body(again)
     Campus.objects.create(organisation=world.org_b, name="East")
 
     html = body(admin.get(reverse("campuses")))
@@ -611,7 +672,7 @@ def test_adding_staff_creates_an_ordinary_account_in_this_organisation(world):
     # Campus staff need a campus; another organisation's campus is not a choice;
     # weak passwords and taken usernames are refused.
     for change, message in (
-        ({"username": "x1", "campuses": []}, "Choose at least one campus"),
+        ({"username": "x1", "campuses": []}, "Choose at least one location"),
         ({"username": "x2", "campuses": [str(world.west.pk)]}, "not one of the"),
         ({"username": "x3", "password": "12345"}, "too short"),
         ({"username": "ADMIN-B"}, "username is taken"),
@@ -828,11 +889,39 @@ def test_adding_a_lead_stores_the_contact_safely(world):
     assert contact.consent_by == world.staff_north and contact.consent_at
     assert crypto.decrypt(contact.phone_encrypted) == ASHA
     html = body(response)
-    assert "Lead added." in html and "+91********01" in html
-    assert_no_full_number(html)
+    assert "Lead added." in html and ASHA in html
     assert {"contact.created", "lead.created"} <= set(
         AuditEvent.objects.values_list("action", flat=True)
     )
+
+
+def test_a_lead_needs_only_the_essential_fields_without_assuming_permission(world):
+    response = world.client(world.staff_north).post(
+        reverse("lead-new"),
+        {
+            "campus": str(world.north.pk),
+            "name": "Asha Rao",
+            "phone": ASHA,
+            "subject": "Product enquiry",
+        },
+    )
+    assert response.status_code == 302
+    lead = Lead.objects.get()
+    assert lead.contact.consent == Contact.Consent.UNKNOWN
+    assert lead.contact.consent_at is None
+    assert lead.contact.consent_evidence == ""
+    assert lead.contact.origin == Contact.Origin.OTHER
+    assert lead.assigned_to_id is None and lead.employee_id is None
+
+
+def test_a_permission_error_keeps_the_optional_section_open(world):
+    response = world.client(world.staff_north).post(
+        reverse("lead-new"), _lead_form(world, consent_evidence="")
+    )
+    assert response.context["form"].permission_open
+    assert 'id="lead-permission" open' in body(response)
+    assert "how and when the person agreed" in body(response)
+    assert not Contact.objects.exists()
 
 
 def test_a_second_lead_for_a_known_number_joins_the_contact(world):
@@ -853,7 +942,7 @@ def test_a_number_held_by_another_campus_is_not_revealed(world):
     response = staff.post(reverse("lead-new"), _lead_form(world))
     html = body(response)
     assert response.status_code == 200 and not Lead.objects.exists()
-    assert "another campus" in html and "Secret Name" not in html
+    assert "another location" in html and "Secret Name" not in html
     # The same number in another organisation is no obstacle at all.
     other = world.client(world.admin_b)
     assert (
@@ -976,13 +1065,12 @@ def test_lead_filters(world):
 # --- contact pages -----------------------------------------------------------------------
 
 
-def test_opening_a_contact_is_logged_and_shows_no_number(world):
+def test_opening_a_contact_is_logged_and_shows_its_number(world):
     contact = world.contact(world.admin_a, world.north)
     client = world.client(world.staff_north)
     url = reverse("contact-detail", args=[contact.pk])
     html = body(client.get(url))
-    assert "+91********01" in html and "never shown" in html
-    assert_no_full_number(html)
+    assert ASHA in html and "never shown" not in html
     event = AuditEvent.objects.get(action="contact.viewed")
     assert event.actor_name == "staff-north" and event.target_id == str(contact.pk)
     assert event.campus == world.north
@@ -1027,8 +1115,8 @@ def test_only_admins_erase_and_export(world):
     text = body(export)
     assert export["Content-Type"].startswith("text/csv")
     assert "Asha Rao" in text and "Not Ours" not in text
-    assert "'+91********01" in text, "a leading + is neutralised for spreadsheets"
-    assert_no_full_number(text)
+    assert "'" + ASHA in text, "a leading + is neutralised for spreadsheets"
+    assert LATA not in text, "another organisation's number cannot be exported"
     assert AuditEvent.objects.get(action="contacts.exported").detail == {"rows": 1}
 
     assert admin.post(url, {"action": "erase"}).status_code == 302
@@ -1090,8 +1178,7 @@ def test_import_checks_every_row_then_stores_only_the_good_ones(world):
         "opted_out": 1,
     }
     html = body(preview)
-    assert "Import 1 contact" in html and "+91********01" in html
-    assert_no_full_number(html.split("<textarea")[0])
+    assert "Import 1 contact" in html and ASHA in html
     assert Contact.objects.count() == 1, "a preview stores nothing"
 
     done = client.post(
@@ -1188,8 +1275,7 @@ def test_the_do_not_call_list_is_shared_by_the_organisation(world):
         follow=True,
     )
     html = body(response)
-    assert "+91********03 is on the do-not-call list." in html
-    assert_no_full_number(html)
+    assert f"{LATA} is on the do-not-call list." in html
     entry = OptOut.objects.get()
     assert entry.organisation == world.org_a and entry.created_by == world.staff_north
     bad = staff.post(reverse("settings"), {"action": "opt_out", "dnc-phone": "123"})
@@ -1199,9 +1285,7 @@ def test_the_do_not_call_list_is_shared_by_the_organisation(world):
     remove = reverse("optout-remove", args=[entry.pk])
     assert staff.post(remove).status_code == 403
     assert world.client(world.admin_b).post(remove).status_code == 404
-    assert "+91********03" not in body(
-        world.client(world.admin_b).get(reverse("settings"))
-    )
+    assert LATA not in body(world.client(world.admin_b).get(reverse("settings")))
     assert world.client(world.admin_a).post(remove).status_code == 302
     assert not OptOut.objects.exists()
     assert AuditEvent.objects.get(action="optout.removed").detail == {
@@ -1247,14 +1331,14 @@ def test_conversations_list_filters_details_and_notes(world):
 
     url = reverse("conversation-detail", args=[answered.pk])
     html = body(client.get(url))
-    assert "90 seconds" in html and "1.40 s" in html and "+91********01" in html
+    assert "90 seconds" in html and "1.40 s" in html and ASHA in html
     client.post(url, {"notes": f"Parent asked to ring {ASHA} instead"})
     answered.refresh_from_db()
     assert answered.notes.startswith("Parent asked")
     assert AuditEvent.objects.filter(action="call.noted").exists()
 
 
-def test_call_export_is_masked_filtered_scoped_and_logged(world):
+def test_call_export_has_full_numbers_is_filtered_scoped_and_logged(world):
     world.call(world.org_a, world.north, status="no_answer")
     world.call(world.org_a, world.south)
     world.call(world.org_b, world.west)
@@ -1262,7 +1346,8 @@ def test_call_export_is_masked_filtered_scoped_and_logged(world):
     rows = list(
         csv.reader(io.StringIO(body(admin.get(reverse("conversations-export")))))
     )
-    assert rows[0][2] == "Number (masked)" and len(rows) == 3
+    assert rows[0][2] == "Number" and len(rows) == 3
+    assert all(row[2] == "'" + ASHA for row in rows[1:])
     assert {row[5] for row in rows[1:]} == {"North", "South"}
     filtered = admin.get(reverse("conversations-export"), {"status": "no_answer"})
     assert len(list(csv.reader(io.StringIO(body(filtered))))) == 2
@@ -1333,7 +1418,7 @@ def test_performance_counts_by_campus_and_employee(world):
 
     export = admin.get(reverse("performance"), {"format": "csv"})
     rows = list(csv.reader(io.StringIO(body(export))))
-    assert ["Campus", "North", "1", "1", "1", "1", "2.0"] in rows
+    assert ["Location", "North", "1", "1", "1", "1", "2.0"] in rows
     assert AuditEvent.objects.filter(action="report.exported").exists()
 
 
@@ -1555,7 +1640,8 @@ def test_a_call_uses_the_published_version_and_records_it(world, gateway):
     detail = admin.get(reverse("conversation-detail", args=[record.pk]))
     html = body(detail)
     assert "Meera, version 1" in html and "This call is in progress" in html
-    assert 'http-equiv="refresh"' in html and "End call" in html
+    assert 'http-equiv="refresh"' not in html
+    assert 'data-call-refresh="3000"' in html and "End call" in html
     rows = admin.get(reverse("performance")).context["employee_rows"]
     assert rows[0]["name"] == "Meera" and rows[0]["total"] == 1
 
@@ -1589,7 +1675,11 @@ def test_a_draft_or_paused_employee_cannot_be_put_on_a_call(world, gateway):
         _place(employee, world.admin_a)
     page = body(admin.get(reverse("employee-detail", args=[employee.pk])))
     assert 'id="test-call"' not in page
-    assert "Meera" not in body(admin.get(reverse("make-calls"))).split("<main>")[1]
+    main = re.search(
+        r"<main\b[^>]*>(.*?)</main>", body(admin.get(reverse("make-calls"))), re.S
+    )
+    assert main is not None
+    assert "Meera" not in main.group(1)
     assert not CallRecord.objects.exists() and gateway.dispatches == []
 
 

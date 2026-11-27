@@ -13,14 +13,15 @@
   <div class="stack">
     {% if form %}
     <form method="post" enctype="multipart/form-data" class="panel" id="make-calls-form" novalidate>{% csrf_token %}
+      <div class="panel-head"><h2>Prepare your call list</h2><span class="tag">Review before calling</span></div>
       {% if form.non_field_errors %}<p class="field-error" role="alert" id="form-error">{{ form.non_field_errors|join:" " }}</p>{% endif %}
       <div class="field">
-        <label for="{{ form.speaker.id_for_label }}">Who speaks</label>{{ form.speaker }}{% if form.speaker.errors %}<p class="field-error" role="alert">{{ form.speaker.errors|join:" " }}</p>{% endif %}
-        <p class="help">Not listed? <a href="{% url 'employee-hire' %}">Set up an AI employee</a> and publish it.</p>
+        <label for="{{ form.speaker.id_for_label }}">Choose your AI employee</label>{{ form.speaker }}{% if form.speaker.errors %}<p class="field-error" role="alert">{{ form.speaker.errors|join:" " }}</p>{% endif %}
+        <p class="help">{% if can_manage_employees %}Not listed? <a href="{% url 'employee-hire' %}">Set up an AI employee</a> and publish it.{% else %}Missing an employee? Ask your organisation administrator to publish and switch on an employee for your location.{% endif %}</p>
       </div>
       <div class="field"><label for="{{ form.purpose.id_for_label }}">What the calls are about <span class="optional">optional</span></label>{{ form.purpose }}{% if form.purpose.errors %}<p class="field-error" role="alert">{{ form.purpose.errors|join:" " }}</p>{% endif %}</div>
       {% if form.campus.field.choices|length > 1 or form.campus.field.required %}
-      <div class="field"><label for="{{ form.campus.id_for_label }}">Campus</label>{{ form.campus }}{% if form.campus.errors %}<p class="field-error" role="alert">{{ form.campus.errors|join:" " }}</p>{% endif %}</div>
+      <div class="field"><label for="{{ form.campus.id_for_label }}">Location</label>{{ form.campus }}{% if form.campus.errors %}<p class="field-error" role="alert">{{ form.campus.errors|join:" " }}</p>{% endif %}</div>
       {% endif %}
       <div class="field">
         <label for="{{ form.numbers.id_for_label }}">{{ form.numbers.label }}</label>{{ form.numbers }}{% if form.numbers.errors %}<p class="field-error" role="alert">{{ form.numbers.errors|join:" " }}</p>{% endif %}
@@ -34,11 +35,16 @@
     </form>
     {% else %}
     <section class="panel">
-      <div class="empty-state" id="no-speaker"><strong>First set up who speaks</strong>Calls need a published AI employee that is switched on.<br><a class="button" href="{% url 'employee-hire' %}">Set up an AI employee</a></div>
+      <div class="empty-state" id="no-speaker"><strong>First set up who speaks</strong>Calls need a published AI employee that is switched on.{% if can_manage_employees %}<br><a class="button" href="{% url 'employee-hire' %}">Set up an AI employee</a>{% else %}<p>Ask your organisation administrator to publish and switch on an employee for your location.</p>{% endif %}</div>
     </section>
     {% endif %}
   </div>
 
+  <div class="stack">
+  <section class="panel" aria-labelledby="prepare-guide">
+    <div class="panel-head"><h2 id="prepare-guide">What happens next?</h2></div>
+    <ol class="guide-list"><li><b>Choose an employee.</b> This is the published voice and script used for the calls.</li><li><b>Add your contacts.</b> Paste numbers or upload an Excel or CSV file.</li><li><b>Check numbers.</b> Review valid numbers and any rows that need fixing.</li><li><b>Confirm and start.</b> Calls begin only after you confirm consent and choose Start calling.</li></ol>
+  </section>
   <section class="panel" id="recent-lists">
     <div class="panel-head"><h2>Your call lists</h2></div>
     {% if recent %}
@@ -54,5 +60,6 @@
     <div class="empty-state"><strong>No lists yet</strong>Your lists and their progress appear here.</div>
     {% endif %}
   </section>
+  </div>
 </div>
 {% endblock %}

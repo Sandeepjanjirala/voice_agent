@@ -13,6 +13,7 @@ from datetime import timedelta
 
 import pytest
 from django.core.management import call_command
+from django.db import OperationalError
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
@@ -281,7 +282,7 @@ def test_a_lead_is_rehearsed_on_the_test_number_only(world, gateway):
     lead = world.lead(world.admin_a, world.north, subject="Brochure request")
     admin = world.client(world.admin_a)
     page = body(admin.get(reverse("lead-detail", args=[lead.pk])))
-    assert "Rehearse this call on the test number" in page and "+91********10" in page
+    assert "Demo call on the approved test number" in page and "+919876543210" in page
 
     response = admin.post(
         reverse("lead-rehearse", args=[lead.pk]), {"employee": employee.pk}
@@ -317,7 +318,7 @@ def test_rehearsals_are_for_admins_of_this_organisation(world, gateway):
     )
     admin = world.client(world.admin_a)
     assert admin.post(url, {"employee": theirs.pk}).status_code == 404
-    assert "Rehearse" not in body(
+    assert 'id="rehearse"' not in body(
         world.client(world.staff_north).get(reverse("lead-detail", args=[lead.pk]))
     )
     assert not CallRecord.objects.exists() and gateway.dispatches == []
@@ -383,7 +384,7 @@ def test_the_transcript_is_kept_only_when_the_organisation_allows(world, env):
     turns = CallTranscript.objects.get(call=record).turns
     assert turns[1] == {
         "role": "user",
-        "text": "Yes. Call me back Friday on 98******01.",
+        "text": "Yes. Call me back Friday on 98765 00001.",
     }
     assert turns[2]["role"] == "user", "an unknown role is never shown as the employee"
     assert CallResult.objects.get(call=record).status == "pending"
@@ -417,7 +418,87 @@ def test_analysis_summarises_and_carries_out_only_permitted_actions(world, monke
     html = body(admin.get(reverse("conversation-detail", args=[record.pk])))
     assert "Asked for a call back" in html and "Preferred visit day" in html
     assert "Follow-up added: call back Friday evening." in html
-    assert "98******01" in html and ASHA not in html
+    assert "98765 00001" in html
+
+
+@pytest.mark.parametrize("action", ["opt_out", "create_follow_up", "update_lead_stage"])
+def test_interrupted_actions_roll_back_and_retry_saved_analysis(
+    world, monkeypatch, action
+):
+    lead = world.lead(world.admin_a, world.north)
+    record = _ended_call(
+        world,
+        lead=lead,
+        contact=lead.contact,
+        transcripts="analyse",
+        rehearsal=False,
+    )
+    record.status = CallRecord.Status.COMPLETED
+    record.save()
+    CallTranscript.objects.create(call=record, turns=TRANSCRIPT[:2])
+    original_create = CallAction.objects.create
+
+    def interrupted_log(**fields):
+        if fields["action"] == action:
+            raise OperationalError("Temporary database failure")
+        return original_create(**fields)
+
+    with monkeypatch.context() as fail:
+        fail.setattr(CallAction.objects, "create", interrupted_log)
+        with pytest.raises(OperationalError, match="Temporary database failure"):
+            analysis.analyse(
+                record,
+                complete=canned(opt_out_requested=action == "opt_out"),
+            )
+
+    result = CallResult.objects.get(call=record)
+    assert result.status == CallResult.Status.DONE
+    assert result.actions_applied_at is None
+    assert analysis.pending().filter(pk=result.pk).exists()
+    assert not record.actions.exists()
+    assert not FollowUp.objects.filter(lead=lead).exists()
+    assert not OptOut.objects.exists()
+    lead.refresh_from_db()
+    assert lead.stage == Lead.Stage.NEW
+    assert CallTranscript.objects.filter(call=record).exists()
+
+    def unexpected_llm(*args, **kwargs):
+        raise AssertionError("Saved decisions must not be analysed again")
+
+    # Use a new record instance, as the scheduled recovery task does.
+    record = CallRecord.objects.get(pk=record.pk)
+    analysis.analyse(record, complete=unexpected_llm)
+    analysis.analyse(record, complete=unexpected_llm)
+    result.refresh_from_db()
+    lead.refresh_from_db()
+    assert result.actions_applied_at is not None
+    assert FollowUp.objects.filter(lead=lead).count() == 1
+    assert OptOut.objects.count() == (1 if action == "opt_out" else 0)
+    assert lead.stage == Lead.Stage.FOLLOW_UP
+    assert record.actions.count() == (3 if action == "opt_out" else 2)
+    assert not CallTranscript.objects.filter(call=record).exists()
+    assert not analysis.pending().filter(pk=result.pk).exists()
+
+
+def test_saved_analysis_actions_recover_even_without_a_transcript(world):
+    lead = world.lead(world.admin_a, world.north)
+    record = _ended_call(world, lead=lead)
+    record.status = CallRecord.Status.COMPLETED
+    record.save()
+    result = CallResult.objects.create(
+        call=record,
+        status=CallResult.Status.DONE,
+        callback_requested=True,
+        callback_when="Friday",
+    )
+
+    assert analysis.pending().filter(pk=result.pk).exists()
+    analysis.analyse(record, complete=canned())
+
+    assert canned.prompts == []
+    assert FollowUp.objects.get(lead=lead).title == "Call back Friday"
+    result.refresh_from_db()
+    assert result.actions_applied_at is not None
 
 
 def test_actions_not_switched_on_are_logged_as_not_done(world, monkeypatch):
@@ -640,7 +721,7 @@ def test_the_inbound_endpoint_needs_a_valid_signature(world, env):
     assert not CallRecord.objects.exists()
 
 
-def test_an_unknown_caller_can_become_a_lead_without_showing_the_number(world, env):
+def test_an_unknown_caller_shows_its_number_and_can_become_a_lead(world, env):
     route(world, employee_for(world), campus=world.south)
     inbound_post({"room": "in-4", "called": BUSINESS_LINE, "caller": LATA})
     record = CallRecord.objects.get()
@@ -649,7 +730,7 @@ def test_an_unknown_caller_can_become_a_lead_without_showing_the_number(world, e
     url = reverse("conversation-detail", args=[record.pk])
     page = body(admin.get(url))
     assert "Unknown caller" in page and "Add as a lead" in page
-    assert LATA not in page and LATA[3:] not in page
+    assert LATA in page
     response = admin.post(
         url, {"action": "create_lead", "name": "Lata Devi", "subject": "Transport"}
     )
@@ -710,7 +791,7 @@ def test_numbers_are_managed_by_admins_within_their_organisation(world):
     assert number.number == BUSINESS_LINE and number.organisation == world.org_a
     assert inbound.route_for(BUSINESS_LINE) == number
     page = body(admin.get(reverse("numbers")))
-    assert "Routed" in page and "Inbound readiness" in page
+    assert "Routed locally" in page and "Set up incoming calls" in page
     for change, message in (
         ({}, "already set up"),
         ({"number": "+91 40 5555 0000", "employee": theirs.pk}, "not one of the"),

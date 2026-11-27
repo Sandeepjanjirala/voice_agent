@@ -110,15 +110,17 @@ PROVIDERS: dict[str, Provider] = {
                 "media must stay in India; its guide uses the global endpoint."
             ),
             INBOUND_DIGEST_AUTH: (
-                "Vobiz's origination URI has no username or password field, so "
-                "digest is not available for inbound. Use ip_allowlist."
+                "Vobiz's documented origination URI has no username or password "
+                "field. Inbound digest support is unconfirmed; use ip_allowlist "
+                "unless Vobiz confirms another supported authentication method."
             ),
             ALLOWED_ADDRESSES_ENFORCED: (
                 "Vobiz documents three source addresses for delivered calls. "
                 "LiveKit said on 16 Nov 2026 it can enable enforcement for a "
                 "Build project on request (community.livekit.io/t/2530). List "
-                "this only once LiveKit says it is on for this project and a call "
-                "from an unlisted address is rejected."
+                "this only once LiveKit says it is on for this project. Verify "
+                "unlisted-source rejection against the configured trunk before "
+                "accepting public traffic; an empty trunk list proves nothing."
             ),
             INBOUND_SRTP: (
                 "Vobiz trunks have a 'secure' setting for SRTP and a TLS transport "

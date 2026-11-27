@@ -5,9 +5,14 @@
 <section class="page-head">
   <div>
     <h1>Call results</h1>
-    <p class="muted">Every call{% if not scope.all_campuses %} of your campuses{% endif %}: what happened, what was said and what to do next. Open a call to listen and read. Numbers are masked.</p>
+    <p class="muted">Every call{% if not scope.all_campuses %} of your locations{% endif %}: what happened, what was said and what to do next. Open a call to listen and read.</p>
   </div>
   {% if can_export %}<a class="button small" href="{% url 'conversations-export' %}{% if querystring %}?{{ querystring }}{% endif %}">Export CSV</a>{% endif %}
+</section>
+
+<section class="next-action" aria-labelledby="results-next-title">
+  <div><p class="eyebrow">YOUR NEXT STEP</p><h2 id="results-next-title">{% if summary.total %}Open a call to understand the result{% else %}Your results will appear here{% endif %}</h2><p>{% if summary.total %}Select a number to read the summary and conversation. If a call failed or went unanswered, choose Call again to retry it. Use the Need follow-up card to focus on calls that need attention.{% else %}If you have made calls, clear the filters. Otherwise, prepare a call list to get started.{% endif %}</p></div>
+  {% if not summary.total %}<a class="button" href="{% url 'make-calls' %}">Prepare a call list</a>{% endif %}
 </section>
 
 <div class="tiles five">
@@ -23,7 +28,7 @@
     <select name="days" aria-label="Period"><option value="">All time</option><option value="1"{% if filters.days == '1' %} selected{% endif %}>Last 24 hours</option><option value="7"{% if filters.days == '7' %} selected{% endif %}>Last 7 days</option><option value="30"{% if filters.days == '30' %} selected{% endif %}>Last 30 days</option><option value="90"{% if filters.days == '90' %} selected{% endif %}>Last 90 days</option></select>
     <select name="status" aria-label="Result"><option value="">Any result</option>{% for value, label in statuses %}<option value="{{ value }}"{% if value == filters.status %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
     <select name="direction" aria-label="Direction"><option value="">Both directions</option>{% for value, label in directions %}<option value="{{ value }}"{% if value == filters.direction %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
-    <select name="campus" aria-label="Campus"><option value="">Every campus</option>{% for item in campuses %}<option value="{{ item.pk }}"{% if filters.campus and item.pk == filters.campus.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
+    <select name="campus" aria-label="Location"><option value="">Every location</option>{% for item in campuses %}<option value="{{ item.pk }}"{% if filters.campus and item.pk == filters.campus.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
     <select name="employee" aria-label="AI employee"><option value="">Any employee</option>{% for item in employees %}<option value="{{ item.pk }}"{% if filters.employee and item.pk == filters.employee.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
     <select name="outcome" aria-label="Outcome"><option value="">Any outcome</option>{% for value, label in outcomes %}<option value="{{ value }}"{% if value == filters.outcome %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
     {% if filters.labels %}<select name="result" aria-label="Employee's result"><option value="">Any employee result</option>{% for label in filters.labels %}<option value="{{ label }}"{% if label == filters.result %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>{% endif %}
@@ -32,12 +37,12 @@
   </form>
   {% if page.object_list %}
   <div class="table-scroll"><table class="data" id="call-table">
-    <thead><tr><th>Started</th><th>Number</th><th>Result</th><th>Talk time</th><th>Campus</th><th>AI employee</th><th>What happened</th></tr></thead>
+    <thead><tr><th>Started</th><th>Number</th><th>Result</th><th>Talk time</th><th>Location</th><th>AI employee</th><th>What happened</th><th>Actions</th></tr></thead>
     <tbody>
       {% for call in page %}
       <tr>
-        <td><a href="{% url 'conversation-detail' call.pk %}"><time datetime="{{ call.created_at|date:'c' }}" data-local-time>{{ call.created_at|date:"j M, H:i" }}</time></a></td>
-        <td>{{ call.masked_number }}<small>{{ call.get_direction_display }}</small></td>
+        <td><time datetime="{{ call.created_at|date:'c' }}" data-local-time>{{ call.created_at|date:"j M, H:i" }}</time></td>
+        <td><a href="{% url 'conversation-detail' call.pk %}">{{ call.display_number }}</a><small>{{ call.get_direction_display }}</small></td>
         <td><span class="tag{% if call.status == 'completed' or call.status == 'answered' %} good{% elif call.is_active %}{% else %} bad{% endif %}">{{ call.get_status_display }}</span></td>
         <td>{% if call.duration_seconds is None %}–{% else %}{{ call.duration_seconds|floatformat:0 }} s{% endif %}</td>
         <td>{{ call.campus.name|default:"–" }}</td>
@@ -46,6 +51,7 @@
           <span class="tag">{{ result.result_label|default:result.get_outcome_display }}</span>{% if result.resolution and result.resolution != 'na' %} <span class="tag{% if result.resolution == 'resolved' %} good{% elif result.resolution == 'unresolved' %} bad{% endif %}">{{ result.get_resolution_display }}</span>{% endif %}{% if result.follow_up_needed %} <span class="tag draft">Follow up</span>{% endif %}{% if result.has_issues %} <span class="tag bad">Issues</span>{% endif %}
           {% if result.reason %}<small>{{ result.reason|truncatechars:110 }}</small>{% endif %}
         {% else %}–{% endif %}{% endwith %}</td>
+        <td>{% include 'calling/_retry_action.html' with retry=call.retry %}</td>
       </tr>
       {% endfor %}
     </tbody>

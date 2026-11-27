@@ -136,7 +136,7 @@ def test_the_transcript_is_kept_only_when_the_profile_allows_it():
     assert "agent_turns" in fields
     assert [(turn["role"], turn["text"]) for turn in fields["transcript"]] == [
         ("assistant", "Hello, who am I speaking to?"),
-        ("user", "Call me on 98******10 please"),
+        ("user", "Call me on 98765 43210 please"),
     ]
 
 

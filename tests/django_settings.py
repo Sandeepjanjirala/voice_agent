@@ -19,6 +19,8 @@ os.environ["DJANGO_SECURE_COOKIES"] = "false"
 # Set TEST_DATABASE_URL=postgres://... to run the suite against PostgreSQL.
 os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL") or "sqlite://:memory:"
 os.environ["CALL_EVENTS_SECRET"] = ""
+os.environ["GEMINI_API_KEY"] = ""
+os.environ["GEMINI_ASSISTANT_MODEL"] = "gemini-3.1-flash-lite"
 # Dialing and call-profile settings are pinned too: a developer's .env.local
 # (live dialing, a CALL_EVENTS_URL) must never change what the tests see.
 os.environ["OUTBOUND_DIALING_MODE"] = "allowlist"

@@ -28,7 +28,7 @@ from .observability import attach_session_observers
 from .pipeline import build_audio_input, build_session
 from .profile import AgentProfile, recording_options, voice_for
 from .recording import recorder_for
-from .telephony import log_callers, mask_phone
+from .telephony import log_callers, mask_phone, mask_phones_in
 
 logger = logging.getLogger("voice_agent")
 
@@ -101,6 +101,20 @@ def classify_failure(error: Exception) -> str:
     return FAILED
 
 
+def failure_detail(error: Exception) -> str:
+    """LiveKit's own words about a failed dial, such as the provider's reason
+    header, with phone numbers masked. The status code alone does not say
+    whether credentials, an IP allow-list or the provider refused the call."""
+    parts = [str(getattr(error, "message", "") or "")]
+    metadata = getattr(error, "metadata", None) or {}
+    parts += [
+        f"{key}={value}"
+        for key, value in metadata.items()
+        if key not in ("sip_status_code", "sip_status")
+    ]
+    return mask_phones_in("; ".join(part for part in parts if part))[:500]
+
+
 async def place_call(
     ctx: JobContext, dial: DialRequest, settings: VoiceSettings
 ) -> DialResult:
@@ -157,6 +171,7 @@ async def place_call(
                 "sip_status_code": result.sip_status_code,
                 "sip_status": result.sip_status,
                 "error_type": type(error).__name__,
+                "detail": failure_detail(error),
             },
         )
         return result
@@ -198,7 +213,7 @@ async def run_outbound_call(
             logger.warning(
                 "could not delete call room", extra={"error_type": type(error).__name__}
             )
-        # The person is off the line; now the recording, if they agreed to one.
+        # The person is off the line; now upload any authorized recording.
         if call["recorder"] is not None:
             await call["recorder"].finish()
 
@@ -252,7 +267,7 @@ async def run_outbound_call(
             metrics.note_end("caller_hung_up")
             ctx.shutdown(reason="callee hung up")
 
-    # Only for a call Django allows to be recorded, and only after a yes.
+    # The profile carries verbal-consent or explicit demo-test authorization.
     call["recorder"] = recorder_for(
         ctx, settings, profile, session, reporter, started_at=metrics.started_at
     )
@@ -270,5 +285,7 @@ async def run_outbound_call(
         **recording_options(profile),
     )
     # People say "hello" as they answer. That must not cut the greeting off.
+    if call["recorder"] is not None:
+        await call["recorder"].start_demo()
     greet(session, settings, allow_interruptions=False, profile=profile)
     return result.outcome

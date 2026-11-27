@@ -43,7 +43,7 @@ def _error(error: calls.CallError) -> Response:
 
 def _visible_calls(request):
     """Calls this person may see: their organisation's (and campuses'), or all
-    of them for platform staff working outside any organisation."""
+    of them for platform superusers working outside any organisation."""
     scope = scope_for(request)
     found = CallRecord.objects.select_related("placed_by")
     if scope is not None and scope.organisation is not None:
@@ -52,7 +52,11 @@ def _visible_calls(request):
             found = found.filter(
                 Q(campus__in=scope.campus_ids) | Q(placed_by=request.user)
             )
-    elif not request.user.is_staff:
+    elif request.user.is_staff and not request.user.is_superuser:
+        # Legacy diagnostic calls have no organisation. Staff status alone
+        # must never grant access to every business's calls.
+        found = found.filter(organisation__isnull=True)
+    elif not request.user.is_superuser:
         found = found.none()
     return found
 
@@ -150,7 +154,7 @@ class CallHangupView(APIView):
     permission_classes = (IsAdminUser,)
 
     def post(self, request, pk):
-        record = CallRecord.objects.filter(pk=pk).first()
+        record = _visible_calls(request).filter(pk=pk).first()
         if record is None:
             return Response(
                 {"error": "No such call."}, status=status.HTTP_404_NOT_FOUND
@@ -299,9 +303,9 @@ def call_events(request):
 def inbound_context(request):
     """Which published AI employee answers an inbound call (voice_agent/inbound.py).
 
-    404 means the number is not routed: the worker then answers with its own
-    profile. The caller's number is used to recognise a known contact and is
-    never logged or returned.
+    404 means the number is not routed: the worker plays its neutral unavailable
+    message and ends the call. The caller's number is used to recognise a known
+    contact and is never logged or returned.
     """
     secret = django_settings.CALL_EVENTS_SECRET
     if not calls.reporting_configured():

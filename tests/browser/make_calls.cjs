@@ -54,9 +54,9 @@ async function noSidewaysScroll(page, label) {
     // Step 2: type a number and upload the Excel list.
     await nav.getByRole('link', { name: 'Make calls', exact: true }).click();
     await page.waitForURL(`${BASE}/make-calls/`);
-    assert.equal(await page.locator('.steps-bar .current').textContent(), '2 Numbers');
-    await page.locator('[name=purpose]').fill('Fee reminder');
-    await page.locator('[name=numbers]').fill('Typed parent, 9000000001\n12345');
+    assert.match(await page.locator('.steps-bar .current').textContent(), /Add numbers/);
+    await page.locator('[name=purpose]').fill('Appointment reminder');
+    await page.locator('[name=numbers]').fill('Typed customer, 9000000001\n12345');
     await page.locator('[name=upload]').setInputFiles('.test-tmp/qa-numbers.xlsx');
     await page.screenshot({ path: 'browser-artifacts/make-calls.png', fullPage: true });
     await page.getByRole('button', { name: 'Check numbers' }).click();
@@ -68,7 +68,7 @@ async function noSidewaysScroll(page, label) {
     assert.ok((await page.locator('#rejected summary').textContent()).includes('1 row could not be used'));
     assert.ok((await page.locator('.flash').textContent()).includes('listed twice'));
     const html = await page.content();
-    assert.ok(!html.includes('9000000001') && !html.includes('9876500077'), 'a full number leaked');
+    assert.ok(html.includes('+919000000001') && html.includes('+919876500077'), 'the review must show complete phone numbers');
     // Nothing starts without the confirmation.
     await page.locator('#start-calling').click();
     assert.equal(page.url(), listUrl);
@@ -90,12 +90,61 @@ async function noSidewaysScroll(page, label) {
     assert.equal((await second.locator('[data-status]').textContent()).trim(), 'Could not call');
     assert.ok((await second.locator('[data-reason]').textContent()).includes('OUTBOUND_ALLOWLIST_NUMBERS'));
     assert.ok((await page.locator('[data-counts]').textContent()).includes('1 answered'));
+    assert.equal(await first.getByRole('button', { name: 'Call again', exact: true }).count(), 0);
+    await second.getByRole('button', { name: 'Call again', exact: true }).waitFor();
     await page.screenshot({ path: 'browser-artifacts/call-list-done.png', fullPage: true });
+
+    // Retry a failed row without re-entering its number or recreating the list.
+    await second.getByRole('button', { name: 'Call again', exact: true }).click();
+    await page.waitForURL(url => /\/make-calls\/[0-9a-f-]{36}\/$/.test(url.pathname) && url.href !== listUrl);
+    const retryUrl = page.url();
+    assert.equal(await page.locator('#entries tbody tr').count(), 1);
+    assert.ok((await page.locator('#entries').textContent()).includes('+919876500077'));
+    assert.equal(await page.locator('#start-form').count(), 0, 'retry reuses the original confirmation');
+    await page.locator('#list-status', { hasText: 'Finished' }).waitFor({ timeout: 20000 });
+    // This simulated destination is still disallowed; retry must preserve that check.
+    assert.ok((await page.locator('[data-reason]').textContent()).includes('OUTBOUND_ALLOWLIST_NUMBERS'));
+    await page.goto(listUrl);
+    assert.equal(await page.locator('#entries tbody tr').count(), 2, 'original history remains');
+    assert.equal(await second.getByRole('link', { name: 'View retry', exact: true }).getAttribute('href'), new URL(retryUrl).pathname);
 
     // Step 4: the result opens the call page.
     await first.locator('[data-result] a').click();
     await page.waitForURL(/\/conversations\/[0-9a-f-]{36}\/$/);
-    assert.ok((await page.locator('main .eyebrow').textContent()).includes('CALL RESULTS'));
+    assert.ok((await page.locator('.page-head .eyebrow').textContent()).includes('CALL RESULTS'));
+
+    // A failed call result also offers the same retry action, while a completed one does not.
+    assert.equal(await page.getByRole('button', { name: 'Call again', exact: true }).count(), 0);
+    assert.ok((await page.locator('.page-head h1').textContent()).includes('+919000000001'));
+
+    // Simulate a network failure for an allowed number, then retry directly from its result.
+    await page.goto(`${BASE}/make-calls/`);
+    await page.locator('[name=purpose]').fill('Retry browser check');
+    await page.locator('[name=numbers]').fill('Test customer, 9000000001');
+    await page.getByRole('button', { name: 'Check numbers' }).click();
+    await page.locator('#consent').check();
+    await page.locator('#start-calling').click();
+    await page.locator('#entries [data-status]', { hasText: 'Calling now' }).waitFor({ timeout: 15000 });
+    const failedCall = await page.evaluate(async () => (await (await fetch('/api/telephony/calls/')).json()).calls[0]);
+    assert.equal(await workerEvent({ room: failedCall.room, event: 'ended', outcome: 'failed' }), 204);
+    await page.locator('#list-status', { hasText: 'Finished' }).waitFor({ timeout: 15000 });
+    await page.getByRole('link', { name: 'View result', exact: true }).click();
+    const failedResultUrl = page.url();
+    await page.getByRole('button', { name: 'Call again', exact: true }).waitFor();
+    assert.ok((await page.locator('.page-head h1').textContent()).includes('+919000000001'));
+    await page.screenshot({ path: 'browser-artifacts/failed-call-retry.png', fullPage: true });
+    await page.getByRole('button', { name: 'Call again', exact: true }).click();
+    await page.waitForURL(/\/make-calls\/[0-9a-f-]{36}\/$/);
+    await page.locator('#entries [data-status]', { hasText: 'Calling now' }).waitFor({ timeout: 15000 });
+    const retriedCall = await page.evaluate(async () => (await (await fetch('/api/telephony/calls/')).json()).calls[0]);
+    assert.notEqual(retriedCall.id, failedCall.id);
+    assert.equal(retriedCall.number, '+919000000001');
+    assert.equal(await workerEvent({ room: retriedCall.room, event: 'answered' }), 204);
+    assert.equal(await workerEvent({ room: retriedCall.room, event: 'ended', outcome: 'completed', talk_seconds: 12 }), 204);
+    await page.locator('#list-status', { hasText: 'Finished' }).waitFor({ timeout: 15000 });
+    await page.goto(failedResultUrl);
+    assert.equal((await page.locator('#call-status').textContent()).trim(), 'Failed');
+    await page.getByRole('link', { name: 'View retry', exact: true }).waitFor();
 
     // Phone width.
     await page.setViewportSize({ width: 390, height: 900 });

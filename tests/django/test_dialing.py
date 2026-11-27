@@ -26,7 +26,7 @@ from .test_calls import (  # noqa: F401 - pytest fixtures
     staff,
     staff_client,
 )
-from .test_tenancy_crm import ASHA, RAVI, World, assert_no_full_number, body
+from .test_tenancy_crm import ASHA, RAVI, World, body
 
 pytestmark = pytest.mark.django_db
 
@@ -76,7 +76,7 @@ def test_allowlist_mode_dials_any_approved_number_typed_on_the_page(
     assert response.status_code == 201
     assert response.json()["call"]["masked_number"] == "+91********99"
     assert dialled(gateway) == [SECOND]
-    assert SECOND not in response.content.decode()
+    assert response.json()["call"]["number"] == SECOND
 
 
 @pytest.mark.parametrize("to", [RAVI, FOREIGN])
@@ -135,14 +135,12 @@ def test_the_caller_id_is_never_a_destination(env, gateway, staff_client, at_ele
     assert response.status_code == 400 and gateway.dispatches == []
 
 
-def test_test_numbers_are_offered_masked_by_position(env, gateway):
+def test_test_numbers_are_offered_in_full_by_position(env, gateway):
     from apps.calling import dialer
 
     policy(env)
     offered = dialer.test_numbers()
-    assert offered == [(0, "+91********10"), (1, "+91********99")]
-    for number in (MOBILE, SECOND):
-        assert number not in str(offered)
+    assert offered == [(0, MOBILE), (1, SECOND)]
 
 
 def test_rehearsals_ring_the_first_allowlisted_number(env, gateway):
@@ -234,7 +232,7 @@ def test_calling_a_lead_uses_its_own_number_under_the_policy(
     lead, employee = lead_for(world), employee_for(world)
     page = body(world.client(world.admin_a).get(reverse("lead-detail", args=[lead.pk])))
     assert 'id="lead-call"' in page
-    assert_no_full_number(page)
+    assert ASHA in page
 
     response = call_lead(world, lead, employee)
     record = CallRecord.objects.get()
@@ -247,7 +245,7 @@ def test_calling_a_lead_uses_its_own_number_under_the_policy(
     assert record.employee_version == employee.live_version
     assert AuditEvent.objects.filter(action="contact.number_used").exists()
     assert AuditEvent.objects.filter(action="lead.outbound_call").exists()
-    assert_no_full_number(body(response))
+    assert ASHA in body(response)
 
 
 def test_a_lead_off_the_allowlist_is_refused_with_a_clear_message(

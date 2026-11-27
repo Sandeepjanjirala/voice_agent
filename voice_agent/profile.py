@@ -93,6 +93,8 @@ class AgentProfile:
     # Set only when Django allows this call to be recorded: the question said
     # after the opening line. Recording starts only after a clear yes.
     recording_notice: str = ""
+    # Demo authorization is only for explicit tests to approved destinations.
+    recording_authorization: str = ""
     # Whether LiveKit Cloud may keep this session's audio, transcript, traces
     # and logs (Agent observability). None follows the project setting.
     cloud_recording: bool | None = None
@@ -150,6 +152,7 @@ def parse_profile(metadata: str | None) -> AgentProfile | None:
         notice=" ".join(str(raw.get("notice") or "").split())[:NOTICE_LIMIT],
         keep_transcript=raw.get("transcript") is True,
         recording_notice=_recording_notice(raw.get("recording")),
+        recording_authorization=_recording_authorization(raw.get("recording")),
         cloud_recording=raw["observability"]
         if isinstance(raw.get("observability"), bool)
         else None,
@@ -158,9 +161,15 @@ def parse_profile(metadata: str | None) -> AgentProfile | None:
 
 
 def _recording_notice(value: Any) -> str:
-    if not isinstance(value, dict):
+    if not isinstance(value, dict) or value.get("authorization") == "demo":
         return ""
     return " ".join(str(value.get("notice") or "").split())[:RECORDING_NOTICE_LIMIT]
+
+
+def _recording_authorization(value: Any) -> str:
+    if isinstance(value, dict) and value.get("authorization") == "demo":
+        return "demo"
+    return "verbal" if _recording_notice(value) else ""
 
 
 def load_profile_file(path: str) -> AgentProfile | None:
@@ -286,7 +295,15 @@ def profile_instructions(
         "change or arrange anything. Only if they ask for that, say our team "
         "will take care of it."
     )
-    if profile.recording_notice:
+    if profile.recording_authorization == "demo":
+        lines.append(
+            "- This is an approved demo test with recording enabled by the organiser. "
+            "Proceed with the purpose without a recording announcement or permission "
+            "question. Never claim the tester verbally consented. If asked about "
+            "recording, answer truthfully. If they ask to stop recording, call "
+            "stop_recording immediately and use its result."
+        )
+    elif profile.recording_notice:
         lines.append(
             "- Recording: your opening line asked if this call may be recorded. "
             "When they answer, call recording_consent once: agreed=true only for "
@@ -295,9 +312,10 @@ def profile_instructions(
             "call recording_consent with agreed=false."
         )
     if not profile.keep_transcript:
-        # The organisation keeps nothing from this call: "noted" would be untrue.
+        # Audio may still be kept separately; do not promise that nothing is saved.
         lines.append(
-            "- Nothing said on this call is saved: never say you noted anything."
+            "- Do not claim to have written down details for the team: "
+            "never say you noted anything."
         )
     lines.append(
         "- Work towards the purpose; never ask what help the caller needs if you "

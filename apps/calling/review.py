@@ -14,8 +14,6 @@ evidence are really in the transcript.
 import itertools
 import re
 
-from apps.telephony.masking import mask_phones_in
-
 MAX_TURNS = 160
 TURN_CHARS = 600
 # Thresholds for the measured checks.
@@ -35,7 +33,7 @@ def _seconds(value) -> float | None:
 
 
 def clean_turns(turns) -> list[dict]:
-    """The worker's turns as they may be stored: masked, cut, typed."""
+    """The worker's turns as they may be stored: bounded and typed."""
     if not isinstance(turns, list):
         return []
     clean = []
@@ -55,7 +53,7 @@ def clean_turns(turns) -> list[dict]:
                     entry["t"] = at
                 clean.append(entry)
             continue
-        text = mask_phones_in(" ".join(str(turn.get("text", "")).split()))[:TURN_CHARS]
+        text = " ".join(str(turn.get("text", "")).split())[:TURN_CHARS]
         if not text:
             continue
         entry = {

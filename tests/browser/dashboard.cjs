@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const BASE = 'http://127.0.0.1:8767';
-const BRIEF = 'Call every parent who sends an admission enquiry, ask which class the child is joining and offer a campus visit.';
+const BRIEF = 'Call people who request information about our services, understand their needs and offer a consultation.';
 
 async function login(page, username, password) {
   await page.goto(`${BASE}/accounts/login/`);
@@ -40,13 +40,21 @@ async function noSidewaysScroll(page, label) {
     // Every sidebar entry opens a page that marks itself current.
     const links = await page.locator('.side-nav a').evaluateAll(all => all.map(a => ({ href: a.getAttribute('href'), label: a.textContent })));
     assert.deepEqual(links.map(link => link.label), ['Home', 'AI employees', 'Make calls', 'Call results', 'Settings',
-      'Leads & contacts', 'Campuses & staff', 'Performance', 'Incoming calls', 'Numbers & channels', 'Knowledge',
-      'Usage & costs', 'Operations']);
+      'Leads & contacts', 'Knowledge', 'Incoming calls']);
     for (const { href, label } of links) {
       const response = await page.goto(BASE + href);
       assert.equal(response.status(), 200, `${label} answered ${response.status()}`);
       assert.equal(await page.locator('nav a[aria-current=page]').textContent(), label);
       await noSidewaysScroll(page, label);
+    }
+    await page.goto(`${BASE}/settings/`);
+    const tools = await page.locator('.settings-tool').evaluateAll(all => all.map(a => ({ href: a.getAttribute('href'), label: a.querySelector('strong').textContent })));
+    assert.deepEqual(tools.map(tool => tool.label), ['Locations & team', 'Numbers & channels', 'Performance', 'Usage & costs', 'Operations']);
+    for (const { href, label } of tools) {
+      const response = await page.goto(BASE + href);
+      assert.equal(response.status(), 200, label);
+      assert.equal(await page.locator('.side-nav a[aria-current=page]').textContent(), 'Settings');
+      assert.equal(await page.locator('.pagebar-title').textContent(), label);
     }
 
     // No section of the sidebar is a placeholder any more.
@@ -58,8 +66,8 @@ async function noSidewaysScroll(page, label) {
     await page.goto(`${BASE}/employees/`);
     await page.locator('#hire-button').click();
     await page.waitForURL(`${BASE}/employees/hire/`);
-    await page.getByRole('button', { name: 'Parent support' }).click();
-    assert.ok((await page.locator('[name=brief]').inputValue()).startsWith('Answer parents who call'));
+    await page.getByRole('button', { name: 'Customer support' }).click();
+    assert.ok((await page.locator('[name=brief]').inputValue()).startsWith('Answer customers who call'));
     assert.equal(await page.locator('[name=channel]:checked').inputValue(), 'inbound');
 
     // Too short a brief is refused with a message, and nothing is created.
@@ -87,7 +95,7 @@ async function noSidewaysScroll(page, label) {
     assert.equal(await page.locator('nav a[aria-current=page]').textContent(), 'AI employees');
     assert.equal(await page.locator('#steps .row-item').count(), 3);
     assert.ok((await page.locator('#f-greeting').inputValue()).includes('AI assistant'));
-    await page.getByText('Fee structure').waitFor();
+    await page.getByText('Price list').waitFor();
     await page.screenshot({ path: 'browser-artifacts/dashboard-editor.png', fullPage: true });
 
     // Edit: add a step, move it to the top, remove a detail, change strictness.
@@ -104,21 +112,21 @@ async function noSidewaysScroll(page, label) {
     await page.locator('#questions .row-item').first().getByRole('button', { name: 'Remove detail' }).click();
     await page.locator('[name=strictness][value="4"]').check({ force: true });
     await page.locator('#f-name').fill('Lakshmi');
-    await page.locator('#f-limits').fill('ఫీజు గురించి   హామీ ఇవ్వవద్దు.\n  Never quote fees. ');
+    await page.locator('#f-limits').fill('ధర గురించి   హామీ ఇవ్వవద్దు.\n  Never quote unapproved prices. ');
     // The rest of the job: success, a situation, hand-over, results, facts.
-    await page.locator('#f-success').fill('The parent knows the next step.');
+    await page.locator('#f-success').fill('The customer knows the next step.');
     await page.locator('#add-situation').click();
     const situation = page.locator('#situations .row-item').last();
-    await situation.locator('[name=situation_when]').fill('they ask about   fees');
+    await situation.locator('[name=situation_when]').fill('they ask about   pricing');
     await situation.locator('[name=situation_then]').fill('say the accounts team will call back');
-    await page.locator('#f-escalation').fill('They ask twice for a staff member.');
+    await page.locator('#f-escalation').fill('They ask twice for a team member.');
     assert.equal(await page.locator('#outcomes .row-item').count(), 3, 'the draft suggested results');
     await page.locator('#add-outcome').click();
-    await page.locator('#outcomes .row-item').last().locator('input').fill('Wants a fee call');
+    await page.locator('#outcomes .row-item').last().locator('input').fill('Wants a pricing call');
     await page.locator('#f-information').fill('Office: 9 to 5, Monday to Saturday.');
     await page.getByRole('button', { name: 'Save draft' }).click();
     await page.getByText('Draft saved.').waitFor();
-    assert.equal(await page.locator('[name=situation_when]').first().inputValue(), 'they ask about fees');
+    assert.equal(await page.locator('[name=situation_when]').first().inputValue(), 'they ask about pricing');
     assert.equal(await page.locator('#outcomes .row-item').count(), 4);
     assert.equal(await page.locator('#f-information').inputValue(), 'Office: 9 to 5, Monday to Saturday.');
     assert.equal(await page.locator('h1').textContent(), 'Lakshmi');
@@ -127,7 +135,7 @@ async function noSidewaysScroll(page, label) {
     const size = async (selector) => Number((await page.locator(selector).textContent()).replace(/\D/g, ''));
     assert.equal(await size('#instruction-budget [data-budget-value]'), await size('#prompt-size'));
     const names = await page.locator('#steps [name=step_name]').evaluateAll(all => all.map(input => input.value));
-    assert.deepEqual(names, ['Greet warmly', 'Confirm parent', 'Ask class', 'Offer visit']);
+    assert.deepEqual(names, ['Greet warmly', 'Confirm caller', 'Understand needs', 'Offer consultation']);
     assert.equal(await page.locator('#questions .row-item').count(), 1);
     assert.equal(await page.locator('[name=strictness]:checked').inputValue(), '4');
 
@@ -196,7 +204,7 @@ async function noSidewaysScroll(page, label) {
     await page.getByText('The call was ended.').waitFor();
     assert.equal((await page.locator('#call-status').textContent()).trim(), 'Completed');
     assert.equal(await page.locator('#live-call').count(), 0);
-    assert.ok(!(await page.content()).includes('9000000001'), 'the full test number leaked');
+    assert.ok((await page.locator('main h1').innerText()).includes('+919000000001'), 'the full test number is visible');
     await page.goto(editorUrl);
 
     // The step limit (data-max, config.MAX_STEPS) disables "Add a step".

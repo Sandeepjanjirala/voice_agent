@@ -32,7 +32,7 @@ from voice_agent.prompts import ROLE_WITH_TASK, build_instructions
 
 from .test_calling import inbound_post
 from .test_calls import env, post_event  # noqa: F401
-from .test_tenancy_crm import ASHA, RAVI, World, assert_no_full_number, body
+from .test_tenancy_crm import ASHA, RAVI, World, body
 
 pytestmark = pytest.mark.django_db
 
@@ -355,7 +355,7 @@ def test_a_fee_call_is_analysed_against_its_own_job_and_shown_turn_by_turn(world
         "user",
         "assistant",
     ]
-    assert stored[4]["text"] == "Can I get a discount? My number is 98******10."
+    assert stored[4]["text"] == "Can I get a discount? My number is 98765 43210."
     assert stored[5]["interrupted"] is True and stored[4]["confidence"] == 0.41
 
     llm = Analyst(FEES_ANSWER)
@@ -415,7 +415,7 @@ def test_a_fee_call_is_analysed_against_its_own_job_and_shown_turn_by_turn(world
     ):
         assert text in page, text
     assert "Invented problem" not in page
-    assert_no_full_number(page)
+    assert ASHA in page and "98765 43210" in page
     assert AuditEvent.objects.filter(action="call.transcript_viewed").count() == 1
 
 

@@ -174,6 +174,24 @@ async def test_sip_failures_map_to_outcomes_and_are_logged_masked(
     assert all(MOBILE not in str(r.__dict__) for r in caplog.records)
 
 
+async def test_the_failure_log_keeps_livekits_reason_with_the_number_masked(
+    caplog,
+) -> None:
+    error = sip_error(403, "Forbidden")
+    error.metadata["error_details"] = f"IP not allowed, dialling {MOBILE}"
+    job = FakeJob(error=error)
+
+    with caplog.at_level("INFO", logger="voice_agent"):
+        await outbound.place_call(
+            job, outbound.parse_dial_request(metadata()), settings_allowing()
+        )
+
+    failure = next(r for r in caplog.records if "did not connect" in r.message)
+    assert "IP not allowed" in failure.detail
+    assert "call to +91" in failure.detail
+    assert MOBILE not in failure.detail
+
+
 async def test_non_sip_errors_are_failures_not_crashes() -> None:
     job = FakeJob(error=TimeoutError("no route"))
 

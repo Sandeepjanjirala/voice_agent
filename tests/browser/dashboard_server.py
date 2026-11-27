@@ -89,6 +89,8 @@ _write_qa_recording(Path(".test-tmp/qa-call.ogg"))
 from django.contrib.auth import get_user_model  # noqa: E402
 from django.utils import timezone  # noqa: E402
 
+from apps.calling.models import CallResult, CallTranscript  # noqa: E402
+from apps.crm import crypto  # noqa: E402
 from apps.integrations import transport  # noqa: E402
 from apps.telephony import calls, outbound  # noqa: E402
 from apps.telephony.models import CallRecord  # noqa: E402
@@ -111,12 +113,12 @@ plain, _ = User.objects.get_or_create(username="plain-review")
 plain.set_password("local-disposable-plain-check")
 plain.save()
 
-# One organisation with two campuses. The reviewer is its admin (and Django
-# staff, to reach the platform's own pages); north-review is campus staff.
+# One organisation with two locations. The reviewer is its admin (and Django
+# staff, to reach the platform's own pages); north-review is a location team member.
 organisation = Organisation.objects.create(name="Demo Organisation")
 RetentionPolicy.objects.create(organisation=organisation)
-north = Campus.objects.create(organisation=organisation, name="North Campus")
-south = Campus.objects.create(organisation=organisation, name="South Campus")
+north = Campus.objects.create(organisation=organisation, name="North Location")
+south = Campus.objects.create(organisation=organisation, name="South Location")
 Membership.objects.create(
     user=staff, organisation=organisation, role=Membership.Role.ORG_ADMIN
 )
@@ -132,6 +134,7 @@ CallRecord.objects.create(
     campus=north,
     room="qa-answered",
     masked_number="+91********01",
+    remote_encrypted=crypto.encrypt("+919876500001"),
     status="completed",
     answered_at=now,
     ended_at=now,
@@ -147,6 +150,7 @@ CallRecord.objects.create(
     campus=north,
     room="qa-no-answer",
     masked_number="+91********02",
+    remote_encrypted=crypto.encrypt("+919876500002"),
     status="no_answer",
     failure_reason="Nobody answered before the ringing timeout.",
 )
@@ -155,34 +159,64 @@ CallRecord.objects.create(
     campus=south,
     room="qa-south",
     masked_number="+91********03",
+    remote_encrypted=crypto.encrypt("+919876500003"),
     status="failed",
+)
+
+# A saved conversation for checking readability and the call review workflow.
+review_call = CallRecord.objects.get(room="qa-answered")
+CallTranscript.objects.create(
+    call=review_call,
+    turns=[
+        {"role": "assistant", "t": 0, "text": "నమస్కారం! మీకు ఏ విధంగా సహాయం చేయగలను?"},
+        {"role": "user", "t": 4, "text": "Could you call me back on Friday evening?"},
+        {
+            "role": "assistant",
+            "t": 8,
+            "text": "I will note your preferred time for the team.",
+        },
+        {
+            "role": "user",
+            "t": 12,
+            "text": "Thank you. I would like to discuss a product consultation.",
+        },
+    ],
+)
+CallResult.objects.create(
+    call=review_call,
+    status="done",
+    outcome="callback",
+    summary="The caller would like to discuss a product consultation on Friday evening.",
+    follow_up_needed=True,
+    next_step="Confirm a suitable callback time with the team.",
+    analysed_at=now,
 )
 
 
 CANNED_ANALYSIS = {
-    "summary": "The parent asked about a campus visit and wants a call back on "
+    "summary": "The customer asked about a product consultation and wants a call back on "
     "Friday evening.",
     "outcome": "callback",
-    "answers": {"class": "Class 6"},
+    "answers": {"service": "Product consultation"},
     "callback_requested": True,
     "callback_when": "Friday evening",
     "opt_out_requested": False,
-    "reason": "The parent wants to talk about a campus visit for their son.",
-    "topics": ["Campus visit", "Class 6"],
+    "reason": "The customer wants to talk about a product consultation.",
+    "topics": ["Product consultation", "Service options"],
     "info_given": ["Meera said a team member would call back."],
     "details": [{"label": "Best time", "value": "Friday evening"}],
     "resolution": "partly",
     "result": "Call back later",
-    "pending": ["A day and time for the visit"],
-    "next_step": "Call the parent back on Friday evening to fix a visit.",
+    "pending": ["A day and time for the consultation"],
+    "next_step": "Call the customer back on Friday evening to arrange a consultation.",
     "follow_up_needed": True,
-    "follow_up_reason": "The parent asked for a call back.",
+    "follow_up_reason": "The customer asked for a call back.",
     "adherence": "followed",
     # A quote that is in the conversation, and one that is not (dropped).
     "issues": [
         {
             "kind": "unanswered",
-            "detail": "The visit day was not agreed on the call.",
+            "detail": "The consultation day was not agreed on the call.",
             "quote": "Call me back Friday evening",
         },
         {"kind": "other", "detail": "Invented by the model", "quote": "never said"},
@@ -197,23 +231,29 @@ def canned_draft(system, user, **kwargs):
         return dict(CANNED_ANALYSIS)
     return {
         "agent_name": "Meera",
-        "role": "Admissions enquiry assistant",
+        "role": "Sales enquiry assistant",
         "greeting": (
-            "హలో అండి! నేను Meera, AI assistant ని మాట్లాడుతున్నాను. మీ admission "
+            "హలో అండి! నేను Meera, AI assistant ని మాట్లాడుతున్నాను. మీ sales "
             "enquiry గురించి call చేశాను. ఒక్క నిమిషం మాట్లాడవచ్చా అండి?"
         ),
-        "purpose": "Follow up on the parent's admission enquiry and offer a visit.",
+        "purpose": "Follow up on the customer enquiry and offer a consultation.",
         "steps": [
-            {"name": "Confirm parent", "guidance": "Check you are speaking to them."},
-            {"name": "Ask class", "guidance": "Ask which class the child joins."},
-            {"name": "Offer visit", "guidance": "Offer a campus visit."},
+            {"name": "Confirm caller", "guidance": "Check you are speaking to them."},
+            {
+                "name": "Understand needs",
+                "guidance": "Ask which service the caller needs.",
+            },
+            {
+                "name": "Offer consultation",
+                "guidance": "Offer a consultation with the team.",
+            },
         ],
-        "questions": ["Class", "Preferred campus"],
-        "limits": "You cannot confirm an admission or quote fees.",
-        "ending": "End once a visit preference is noted.",
+        "questions": ["Service", "Preferred location"],
+        "limits": "Do not promise availability or quote unapproved prices.",
+        "ending": "End once a consultation preference is noted.",
         "strictness": 2,
-        "open_questions": ["Fee structure", "Campus visit timings"],
-        "outcomes": ["Visit agreed", "Call back later", "Not interested"],
+        "open_questions": ["Price list", "Consultation availability"],
+        "outcomes": ["Consultation agreed", "Call back later", "Not interested"],
     }
 
 
@@ -288,7 +328,7 @@ def _write_qa_numbers(path: Path) -> None:
 
     book = Workbook()
     book.active.append(("Name", "Mobile"))
-    book.active.append(("Test parent", 9000000001))
+    book.active.append(("Test customer", 9000000001))
     book.active.append(("Not approved", "98765 00077"))
     book.save(path)
 

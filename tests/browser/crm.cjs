@@ -1,11 +1,11 @@
 /* Run against tests/browser/dashboard_server.py: real Chromium + real Django,
-   one made-up organisation with two campuses. Every name and number is fake. */
+   one made-up organisation with two locations. Every name and number is fake. */
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const BASE = 'http://127.0.0.1:8767';
-// Made-up numbers. None may ever appear in a page in full.
+// Made-up numbers used to check visible numbers and location boundaries.
 const NUMBERS = ['9876500001', '9876500002', '9876500003', '9876500004'];
 const LIST = [
   'name,phone,subject',
@@ -15,10 +15,14 @@ const LIST = [
   'Lata Devi,09876500003,',
 ].join('\n');
 
-// Sidebar links: the everyday ones are always shown; the rest are folded
-// under "More", which is opened first when needed.
+// Daily tools stay in the sidebar; setup and reports are explained in Settings.
 async function sideLink(page, name) {
-  const link = page.locator('.side-nav').getByRole('link', { name, exact: true });
+  const link = page.locator('.side-nav').getByRole('link', { name, exact: true, includeHidden: true });
+  if (!(await link.count())) {
+    await page.locator('.side-nav').getByRole('link', { name: 'Settings', exact: true }).click();
+    await page.locator('#workspace-tools').getByRole('link', { name, exact: true }).click();
+    return;
+  }
   if (!(await link.isVisible())) await page.locator('.side-more summary').click();
   await link.click();
 }
@@ -31,11 +35,9 @@ async function login(page, username, password) {
   await page.waitForURL(`${BASE}/home/`);
 }
 
-async function noFullNumbers(page, label, { ignoreFields = false } = {}) {
-  let html = await page.content();
-  // A list being imported sits in its own text box until it is submitted.
-  if (ignoreFields) html = html.replace(/<textarea[\s\S]*?<\/textarea>/g, '');
-  for (const number of NUMBERS) assert.ok(!html.includes(number), `${label} shows ${number} in full`);
+async function visibleNumbers(page, selector, numbers) {
+  const text = await page.locator(selector).innerText();
+  for (const number of numbers) assert.ok(text.includes('+91' + number), `${selector} does not show ${number} in full`);
 }
 
 async function noSidewaysScroll(page, label) {
@@ -59,35 +61,37 @@ async function noSidewaysScroll(page, label) {
     const startingCalls = Number(await page.locator('#call-total').textContent());
     assert.ok(startingCalls >= 3, 'the three seeded calls are missing');
 
-    // Campuses and staff: add a campus, then a campus-staff member for it.
-    await sideLink(page, 'Campuses & staff');
+    // Locations and team: add a location, then a team member for it.
+    await sideLink(page, 'Locations & team');
     assert.equal(await page.locator('#campus-table tbody tr').count(), 2);
-    await page.locator('[name=campus-name]').fill('East Campus');
+    await page.locator('[name=campus-name]').fill('East Location');
     await page.locator('[name=campus-city]').fill('Vizag');
-    await page.getByRole('button', { name: 'Add campus' }).click();
-    await page.getByText('East Campus is added.').waitFor();
+    await page.getByRole('button', { name: 'Add location' }).click();
+    await page.getByText('East Location is added.').waitFor();
     assert.equal(await page.locator('#campus-table tbody tr').count(), 3);
-    await page.getByRole('link', { name: 'Add a staff member' }).click();
+    await page.getByRole('link', { name: 'Add a team member' }).click();
     await page.locator('[name=username]').fill('east-review');
     await page.locator('[name=password]').fill('a-long-Unusual-pass-91');
     await page.locator('[name=role]').selectOption('campus_staff');
-    await page.getByRole('button', { name: 'Add staff member' }).click();
-    await page.getByText('Choose at least one campus for campus staff.').waitFor();
+    await page.getByRole('button', { name: 'Add team member' }).click();
+    await page.getByText('Choose at least one location for a location team member.').waitFor();
     await page.locator('[name=password]').fill('a-long-Unusual-pass-91');
-    await page.getByLabel('East Campus').check();
-    await page.getByRole('button', { name: 'Add staff member' }).click();
+    await page.getByLabel('East Location').check();
+    await page.getByRole('button', { name: 'Add team member' }).click();
     await page.getByText('east-review can now sign in.').waitFor();
-    assert.ok((await page.locator('#member-table').textContent()).includes('East Campus'));
+    assert.ok((await page.locator('#member-table').textContent()).includes('East Location'));
     await page.screenshot({ path: 'browser-artifacts/crm-campuses.png', fullPage: true });
 
-    // A lead in the North campus. The number is shown masked from the first page.
+    // A lead in the North location. Its number is visible from the first page.
     await page.goto(`${BASE}/leads/`);
     await page.getByText('No leads yet').waitFor();
     await page.getByRole('link', { name: 'Add a lead' }).first().click();
-    await page.locator('[name=campus]').selectOption({ label: 'North Campus' });
+    await page.locator('[name=campus]').selectOption({ label: 'North Location' });
     await page.locator('[name=name]').fill('Asha Rao');
     await page.locator('[name=phone]').fill('98765 00001');
     await page.locator('[name=subject]').fill('Wants a call back');
+    assert.equal(await page.locator('[name=consent]').isVisible(), false);
+    await page.locator('#lead-permission > summary').click();
     await page.locator('[name=consent]').selectOption('granted');
     await page.getByRole('button', { name: 'Add lead' }).click();
     await page.getByText('Say how and when the person agreed').waitFor();
@@ -95,9 +99,9 @@ async function noSidewaysScroll(page, label) {
     await page.getByRole('button', { name: 'Add lead' }).click();
     await page.getByText('Lead added.').waitFor();
     const northLead = page.url();
-    assert.ok((await page.locator('main').textContent()).includes('+91********01'));
+    assert.ok((await page.locator('main').textContent()).includes('+919876500001'));
     assert.ok((await page.locator('#call-block').textContent()).includes('Yes'));
-    await noFullNumbers(page, 'the lead page');
+    await visibleNumbers(page, 'main', [NUMBERS[0]]);
 
     // Work the lead: a note, a follow-up, done, and a new stage.
     await page.locator('#note-text').fill('Prefers a call after 5 pm.');
@@ -121,22 +125,22 @@ async function noSidewaysScroll(page, label) {
     assert.equal((await page.locator('#lead-stage').textContent()).trim(), 'Interested');
     await page.screenshot({ path: 'browser-artifacts/crm-lead.png', fullPage: true });
 
-    // Import into the South campus: checked first, then only the good rows.
+    // Import into the South location: checked first, then only the good rows.
     await page.goto(`${BASE}/contacts/import/`);
-    await page.locator('[name=campus]').selectOption({ label: 'South Campus' });
+    await page.locator('[name=campus]').selectOption({ label: 'South Location' });
     await page.locator('[name=calling_purpose]').fill('Follow-up on their enquiry');
     await page.locator('[name=text]').fill(LIST);
     await page.getByRole('button', { name: 'Check the list' }).click();
     await page.locator('#preview').waitFor();
     assert.equal((await page.locator('#preview-new').textContent()).trim(), '2 will be added');
     const preview = await page.locator('#preview').textContent();
-    for (const text of ['Already a contact', 'Invalid', '+91********02']) assert.ok(preview.includes(text), text);
-    await noFullNumbers(page, 'the import preview', { ignoreFields: true });
+    for (const text of ['Already a contact', 'Invalid', '+919876500002']) assert.ok(preview.includes(text), text);
+    await visibleNumbers(page, '#preview', NUMBERS.slice(0, 3));
     await page.screenshot({ path: 'browser-artifacts/crm-import.png', fullPage: true });
     await page.locator('#import-button').click();
     await page.getByText('2 contacts added. 1 duplicates, 1 invalid and 0 on the').waitFor();
     assert.equal(await page.locator('#contact-table tbody tr').count(), 3);
-    await noFullNumbers(page, 'the contact list');
+    await visibleNumbers(page, '#contact-table', NUMBERS.slice(0, 3));
     await page.locator('[name=q]').fill('+91 98765 00002');
     await page.getByRole('button', { name: 'Filter' }).click();
     assert.equal(await page.locator('#contact-table tbody tr').count(), 1);
@@ -144,12 +148,12 @@ async function noSidewaysScroll(page, label) {
     const southContact = page.url();
 
     // A contact: no agreement recorded, so it may not be called; then opt it out.
-    assert.ok((await page.locator('#contact-number').textContent()).includes('never shown'));
+    assert.equal((await page.locator('#contact-number').textContent()).trim(), '+919876500002');
     assert.ok((await page.locator('#call-block').textContent()).includes('May not be called'));
     page.once('dialog', dialog => dialog.accept());
     await page.getByRole('button', { name: 'Do not call' }).click();
     await page.getByText('Added to the do-not-call list.').waitFor();
-    await noFullNumbers(page, 'the contact page');
+    await visibleNumbers(page, '#contact-number', [NUMBERS[1]]);
     await page.screenshot({ path: 'browser-artifacts/crm-contact.png', fullPage: true });
 
     // Settings: the list, a new number, the retention policy, the log.
@@ -158,19 +162,19 @@ async function noSidewaysScroll(page, label) {
     await page.locator('[name=dnc-phone]').fill('98765 00004');
     await page.locator('[name=dnc-reason]').fill('Rang to ask');
     await page.getByRole('button', { name: 'Add to the list' }).click();
-    await page.getByText('+91********04 is on the do-not-call list.').waitFor();
+    await page.getByText('+919876500004 is on the do-not-call list.').waitFor();
     await page.locator('[name=keep-contact_days]').fill('365');
     await page.getByRole('button', { name: 'Save retention' }).click();
     await page.getByText('Retention policy saved.').waitFor();
     assert.ok((await page.locator('#retention-preview').textContent()).includes('erase 0 contacts'));
-    await noFullNumbers(page, 'the settings page');
+    await visibleNumbers(page, '#optout-table', [NUMBERS[1], NUMBERS[3]]);
     await page.screenshot({ path: 'browser-artifacts/crm-settings.png', fullPage: true });
     await page.getByRole('link', { name: 'Access log', exact: true }).click();
     const log = await page.locator('#audit-table').textContent();
     for (const action of ['contact.created', 'contacts.imported', 'contact.viewed', 'contact.opted_out', 'optout.added']) {
       assert.ok(log.includes(action), `the access log lacks ${action}`);
     }
-    await noFullNumbers(page, 'the access log');
+    for (const number of NUMBERS) assert.ok(!log.includes(number), 'access log should not copy phone numbers');
 
     // Conversations: totals, a filter, and one call's details with notes.
     await sideLink(page, 'Call results');
@@ -179,7 +183,7 @@ async function noSidewaysScroll(page, label) {
     await page.getByRole('button', { name: 'Filter' }).click();
     assert.equal(await page.locator('#call-table tbody tr').count(), 1);
     await page.goto(`${BASE}/conversations/?status=completed&campus=`);
-    await page.locator('#call-table tbody tr', { hasText: '+91********01' }).last().locator('a').click();
+    await page.locator('#call-table tbody tr', { hasText: '+919876500001' }).last().locator('a').click();
     assert.equal((await page.locator('#call-status').textContent()).trim(), 'Completed');
     assert.ok((await page.locator('main').textContent()).includes('84 seconds'));
     await page.locator('#call-notes').fill('Clear line, caller was happy.');
@@ -193,31 +197,33 @@ async function noSidewaysScroll(page, label) {
     assert.equal(await page.locator('#perf-calls').textContent(), String(startingCalls));
     assert.equal(await page.locator('#perf-leads').textContent(), '3');
     const report = await page.locator('#campus-report').textContent();
-    for (const campus of ['North Campus', 'South Campus', 'East Campus']) assert.ok(report.includes(campus));
-    await page.locator('[name=campus]').selectOption({ label: 'South Campus' });
+    for (const campus of ['North Location', 'South Location', 'East Location']) assert.ok(report.includes(campus));
+    await page.locator('[name=campus]').selectOption({ label: 'South Location' });
     await page.waitForURL(/campus=/);
     assert.equal(await page.locator('#perf-calls').textContent(), '1');
     await page.screenshot({ path: 'browser-artifacts/crm-performance.png', fullPage: true });
     await page.goto(`${BASE}/home/`);
     assert.equal(await page.locator('#stat-open-leads').textContent(), '3');
 
-    // Campus staff of the North campus: their own records, and nothing else.
+    // Location team members of the North location: their own records, and nothing else.
     const staff = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     staff.on('pageerror', error => errors.push(error.message));
     await login(staff, 'north-review', 'local-disposable-north-check');
     const links = await staff.locator('.side-nav a').allTextContents();
     for (const hidden of ['Test line', 'Agent profile']) assert.ok(!links.includes(hidden), hidden);
-    // Campus staff may place calls, so the one button they get is Make calls.
+    // Location team members may place calls, so the one button they get is Make calls.
     assert.deepEqual(await staff.locator('.pagebar a:not(#bell)').evaluateAll(all => all.map(a => a.id)), ['make-calls-button']);
     await staff.goto(`${BASE}/leads/`);
     assert.equal(await staff.locator('#lead-table tbody tr').count(), 1);
     assert.ok((await staff.locator('#lead-table').textContent()).includes('Wants a call back'));
     await staff.goto(`${BASE}/contacts/`);
     assert.equal(await staff.locator('#contact-table tbody tr').count(), 1);
+    await visibleNumbers(staff, '#contact-table', [NUMBERS[0]]);
+    assert.ok(!(await staff.locator('#contact-table').innerText()).includes(NUMBERS[1]), 'a South location number was shown to North staff');
     await staff.goto(`${BASE}/conversations/`);
     assert.equal(await staff.locator('#call-total').textContent(), '2');
     assert.equal((await staff.goto(northLead)).status(), 200);
-    // A South-campus contact, and admin pages, by typing the address.
+    // A South-location contact, and admin pages, by typing the address.
     assert.equal((await staff.goto(southContact)).status(), 404);
     for (const path of ['/settings/access-log/', '/contacts/export/', '/conversations/export/', '/employees/hire/', '/staff/add/']) {
       assert.equal((await staff.goto(BASE + path)).status(), 403, path);

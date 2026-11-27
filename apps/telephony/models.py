@@ -1,4 +1,4 @@
-"""Call records. One row per call; phone numbers are stored masked only."""
+"""Call records with encrypted phone numbers and redacted log representations."""
 
 import uuid
 
@@ -110,8 +110,8 @@ class CallRecord(models.Model):
     # Exactly what the voice worker was given for this call: employee, version,
     # script, voice and knowledge. Written once when the call starts.
     context_snapshot = models.JSONField(default=dict, blank=True, editable=False)
-    # An inbound caller's number, encrypted and as a match value (apps/crm/crypto),
-    # so staff can turn the call into a lead without the number ever being shown.
+    # The actual remote number for inbound and outbound calls, encrypted and as
+    # a match value (apps/crm/crypto). Rehearsals keep their test destination.
     remote_encrypted = models.TextField(blank=True, editable=False)
     remote_lookup = models.CharField(max_length=64, blank=True, editable=False)
     notes = models.TextField(max_length=2000, blank=True)
@@ -153,6 +153,18 @@ class CallRecord(models.Model):
     @property
     def is_active(self) -> bool:
         return self.status in self.ACTIVE
+
+    @property
+    def destination_number(self) -> str:
+        from .numbers import destination_number
+
+        return destination_number(self)
+
+    @property
+    def display_number(self) -> str:
+        from apps.crm.phone_display import UNAVAILABLE
+
+        return self.destination_number or UNAVAILABLE
 
     @property
     def is_rehearsal(self) -> bool:

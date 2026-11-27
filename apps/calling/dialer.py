@@ -15,14 +15,12 @@ from .models import CallAttempt
 
 
 def test_numbers() -> list[tuple[int, str]]:
-    """(slot, masked number) for each approved test destination."""
+    """(slot, full number) for each approved test destination."""
     try:
         outbound, _ = calls.outbound_context()
     except calls.CallError:
         return []
-    return [
-        (slot, mask_phone(number)) for slot, number in enumerate(_approved(outbound))
-    ]
+    return list(enumerate(_approved(outbound)))
 
 
 def _approved(outbound) -> list[str]:
@@ -38,7 +36,10 @@ def test_destination(slot) -> str:
     numbers = _approved(outbound)
     # A whole number or its digits; a float, bool or sign is not a position.
     if isinstance(slot, str) and slot.isascii() and slot.isdigit():
-        index = int(slot)
+        try:
+            index = int(slot)
+        except ValueError:
+            index = -1
     elif isinstance(slot, int) and not isinstance(slot, bool):
         index = slot
     else:

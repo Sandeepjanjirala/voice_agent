@@ -61,10 +61,10 @@ def test_no_kind_of_enquiry_is_built_into_the_base_prompt():
 def test_every_configured_part_of_the_job_reaches_the_prompt():
     section = profile_instructions(
         profile(
-            purpose="Collect feedback on the annual day.",
-            success="The parent rated the event and said one thing to improve.",
+            purpose="Collect feedback on the recent service.",
+            success="The customer rated the service and said one thing to improve.",
             objectives="1. Ask for a rating. 2. Ask what to improve.",
-            situations="When they complain about a teacher: listen, do not argue.",
+            situations="When they complain about a team member: listen, do not argue.",
             escalation="They report a safety concern.",
             limitations="Never discuss fees.",
             rules="Do not name staff.",
@@ -72,10 +72,10 @@ def test_every_configured_part_of_the_job_reaches_the_prompt():
         )
     )
     for expected in (
-        "- Purpose: Collect feedback on the annual day.",
-        "- A successful call: The parent rated the event",
+        "- Purpose: Collect feedback on the recent service.",
+        "- A successful call: The customer rated the service",
         "- Goals: 1. Ask for a rating.",
-        "- Situations: When they complain about a teacher",
+        "- Situations: When they complain about a team member",
         "- Hand over to a person when: They report a safety concern.",
         "- Limits: Never discuss fees.",
         "- Business rules: Do not name staff.",
@@ -156,7 +156,7 @@ def test_turns_keep_time_interruption_confidence_and_tools_but_no_tool_data():
         {"role": "assistant", "text": "Hello, Meera here.", "t": 0.4},
         {
             "role": "user",
-            "text": "My number is 98******10",
+            "text": "My number is 98765 43210",
             "t": 3.2,
             "confidence": 0.82,
         },

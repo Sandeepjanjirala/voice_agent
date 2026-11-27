@@ -21,6 +21,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from apps.crm import crypto
 from apps.tenancy.access import organisation_of
 from dialing import DialingPolicyError
 
@@ -70,6 +71,14 @@ OUTCOME_REASONS = {
     Status.NO_ANSWER: "Nobody answered before the ringing timeout.",
     Status.FAILED: "The call could not be connected.",
 }
+# SIP codes with which the phone provider refuses LiveKit itself, before the
+# number is dialled: the trunk's sign-in or the provider's IP allow-list.
+PROVIDER_REFUSALS = (401, 403, 407)
+PROVIDER_REFUSAL_REASON = (
+    "The phone provider refused the call (SIP {code}). Check the trunk's "
+    "username and password, and that the provider allows all of LiveKit's "
+    "addresses (docs/OUTBOUND_TEST.md)."
+)
 METRIC_FIELDS = {
     "agent_turns": (int, 0, 1000),
     "user_turns": (int, 0, 1000),
@@ -90,9 +99,12 @@ class CallError(Exception):
 
     http_status = 400
 
-    def __init__(self, message: str, details: list[str] | None = None) -> None:
+    def __init__(
+        self, message: str, details: list[str] | None = None, *, record=None
+    ) -> None:
         super().__init__(mask_phones_in(message))
         self.details = [mask_phones_in(d) for d in details or []]
+        self.record = record
 
 
 class CallNotReadyError(CallError):
@@ -260,6 +272,7 @@ def start_call(
     caller_number: str = "",
     trunk_id: str = "",
     allowlisted_only: bool = False,
+    on_created: Callable[[CallRecord], None] | None = None,
 ) -> CallRecord:
     """Record and place one call to the allow-listed number.
 
@@ -280,6 +293,11 @@ def start_call(
         )
     # No destination means a rehearsal: it rings the rehearsal number. The phone
     # calls page, lead calls and campaigns always pass their destination.
+    test_call = (
+        to is None
+        or allowlisted_only
+        or bool(call_plan and call_plan.snapshot.get("rehearsal") is True)
+    )
     to = outbound.rehearsal_number if to is None else str(to).strip()
     try:
         to = outbound.policy.validate(to)
@@ -298,6 +316,13 @@ def start_call(
         raise CallError("The destination must differ from the caller ID.")
     if outbound.policy.mode == "live":
         _check_live_hours(campus)
+    try:
+        encrypted_number = crypto.encrypt(to)
+        number_lookup = crypto.lookup(to)
+    except crypto.CryptoError as error:
+        raise CallNotReadyError(
+            "Phone number storage is not ready.", details=[str(error)]
+        ) from None
     gateway = gateway or make_gateway()
 
     # A finished call must not block the next one: settle any active record.
@@ -312,6 +337,8 @@ def start_call(
             record = CallRecord.objects.create(
                 room=new_room_name(),
                 masked_number=mask_phone(to),
+                remote_encrypted=encrypted_number,
+                remote_lookup=number_lookup,
                 placed_by=user if getattr(user, "is_authenticated", False) else None,
                 # The employee's organisation; else the one the person is
                 # working in (a platform superuser chooses it in the sidebar).
@@ -333,7 +360,10 @@ def start_call(
         record,
         call_plan.snapshot.get("profile") if call_plan else None,
         test_number=to in outbound.policy.numbers or to == outbound.allowed_number,
+        test_call=test_call,
     )
+    if on_created is not None:
+        on_created(record)
     try:
         async_to_sync(place_test_call)(
             plan,
@@ -354,18 +384,25 @@ def start_call(
         )
     except CallInProgressError as error:
         _close_failed(record, str(error))
-        raise CallBusyError(str(error)) from None
+        record.refresh_from_db()
+        raise CallBusyError(str(error), record=record) from None
     except ProvisioningRefusedError as error:
         _close_failed(record, str(error))
-        raise CallNotReadyError(str(error)) from None
+        record.refresh_from_db()
+        raise CallNotReadyError(str(error), record=record) from None
     except TelephonyGatewayError as error:
         _close_failed(record, str(error))
-        raise CallUpstreamError(str(error)) from None
+        record.refresh_from_db()
+        raise CallUpstreamError(str(error), record=record) from None
     return record
 
 
 def _mark_recording(
-    record: CallRecord, payload: dict | None, *, test_number: bool
+    record: CallRecord,
+    payload: dict | None,
+    *,
+    test_number: bool,
+    test_call: bool = False,
 ) -> None:
     """Whether the worker may ask to record this call (apps/calling/recordings).
     `payload` is the profile the worker gets; the decision is kept with the call."""
@@ -380,7 +417,11 @@ def _mark_recording(
         }
     else:
         recordings.mark_call(
-            payload, snapshot, record.organisation, test_number=test_number
+            payload,
+            snapshot,
+            record.organisation,
+            test_number=test_number,
+            test_call=test_call,
         )
     record.context_snapshot = snapshot
     CallRecord.objects.filter(pk=record.pk).update(context_snapshot=snapshot)
@@ -616,6 +657,8 @@ def apply_worker_event(payload: dict) -> CallRecord:
                             "The call request was too old when a voice worker "
                             "picked it up, so it was not dialled."
                         )
+                    elif outcome == Status.FAILED and code in PROVIDER_REFUSALS:
+                        reason = PROVIDER_REFUSAL_REASON.format(code=code)
                     locked.failure_reason = reason
                 else:
                     locked.failure_reason = ""
@@ -653,7 +696,7 @@ def _iso(value) -> str | None:
 
 
 def serialize(record: CallRecord) -> dict[str, Any]:
-    """Safe for the browser: masked number only, no credentials, no trunk data."""
+    """Details for an authorised browser; no credentials or trunk data."""
     now = timezone.now()
     end = record.ended_at or now
     return {
@@ -663,6 +706,7 @@ def serialize(record: CallRecord) -> dict[str, Any]:
         "status_label": record.get_status_display(),
         "active": record.is_active,
         "masked_number": record.masked_number,
+        "number": record.display_number,
         "placed_by": record.placed_by.get_username()
         if record.placed_by
         else "command line",

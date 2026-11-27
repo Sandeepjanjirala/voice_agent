@@ -1,21 +1,21 @@
 {% extends 'dashboard/base.html' %}
-{% block title %}Campuses &amp; staff{% endblock %}
+{% block title %}Locations &amp; team{% endblock %}
 {% block content %}
 <section class="page-head">
   <div>
     <p class="eyebrow">TEAM</p>
-    <h1>Campuses &amp; staff</h1>
-    <p class="muted">Contacts, leads and calls belong to a campus. Campus staff see only the campuses they are given; organisation admins see all of them.</p>
+    <h1>Locations &amp; team</h1>
+    <p class="muted">Contacts, leads and calls belong to a location. Location team members see only the locations they are given; organisation admins see all of them.</p>
   </div>
   {% if user.is_superuser %}<a class="button small" href="{% url 'organisation-setup' %}">Add an organisation</a>{% endif %}
 </section>
 
 <div class="grid-2">
   <section class="panel">
-    <div class="panel-head"><h2>Campuses</h2></div>
+    <div class="panel-head"><h2>Locations</h2></div>
     {% if campuses %}
     <div class="table-scroll"><table class="data" id="campus-table">
-      <thead><tr><th>Campus</th><th class="num">Contacts</th><th class="num">Leads</th><th class="num">Staff</th><th></th></tr></thead>
+      <thead><tr><th>Location</th><th class="num">Contacts</th><th class="num">Leads</th><th class="num">Team</th><th></th></tr></thead>
       <tbody>
         {% for campus in campuses %}
         <tr>
@@ -27,37 +27,37 @@
       </tbody>
     </table></div>
     {% else %}
-    <div class="empty-state"><strong>No campus yet</strong>{% if manage %}Add the first one on the right.{% else %}Ask an organisation admin to give you a campus.{% endif %}</div>
+    <div class="empty-state"><strong>No location yet</strong>{% if manage %}Add the first one on the right.{% else %}Ask an organisation admin to give you a location.{% endif %}</div>
     {% endif %}
   </section>
   {% if manage %}
   <form method="post" class="panel" novalidate>{% csrf_token %}
-    <div class="panel-head"><h2>Add a campus</h2></div>
+    <div class="panel-head"><h2>Add a location</h2></div>
     {% include 'dashboard/_fields.html' %}
-    <button class="primary small" type="submit">Add campus</button>
+    <button class="primary small" type="submit">Add location</button>
   </form>
   {% endif %}
 </div>
 
 {% if manage %}
 <section class="panel" style="margin-top:20px">
-  <div class="panel-head"><h2>Staff</h2><a class="button small" href="{% url 'member-add' %}">Add a staff member</a></div>
+  <div class="panel-head"><h2>Team</h2><a class="button small" href="{% url 'member-add' %}">Add a team member</a></div>
   {% if members %}
   <div class="table-scroll"><table class="data" id="member-table">
-    <thead><tr><th>Person</th><th>Role</th><th>Campuses</th><th></th></tr></thead>
+    <thead><tr><th>Person</th><th>Role</th><th>Locations</th><th></th></tr></thead>
     <tbody>
       {% for member in members %}
       <tr>
         <td>{{ member.user.get_username }}{% if member.user.first_name %}<small>{{ member.user.first_name }}</small>{% endif %}</td>
         <td>{{ member.get_role_display }}{% if not member.user.is_active %} <span class="tag bad">Cannot sign in</span>{% endif %}</td>
-        <td class="wrap">{% if member.role == 'org_admin' %}All campuses{% else %}{% for campus in member.campuses.all %}{{ campus.name }}{% if not forloop.last %}, {% endif %}{% empty %}None{% endfor %}{% endif %}</td>
+        <td class="wrap">{% if member.role == 'org_admin' %}All locations{% else %}{% for campus in member.campuses.all %}{{ campus.name }}{% if not forloop.last %}, {% endif %}{% empty %}None{% endfor %}{% endif %}</td>
         <td><a href="{% url 'member-edit' member.pk %}">Edit</a></td>
       </tr>
       {% endfor %}
     </tbody>
   </table></div>
   {% else %}
-  <div class="empty-state"><strong>No staff yet</strong>Add an organisation admin or campus staff. The platform superuser is not listed here.</div>
+  <div class="empty-state"><strong>No team members yet</strong>Add an organisation admin or a location team member. The platform superuser is not listed here.</div>
   {% endif %}
 </section>
 {% endif %}

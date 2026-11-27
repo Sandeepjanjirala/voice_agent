@@ -11,6 +11,7 @@ No command prints a phone number or an existing key.
 
 import hashlib
 import secrets
+from dataclasses import dataclass
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -19,10 +20,34 @@ from apps.crm import crypto
 from apps.crm.models import Contact, OptOut
 
 
+@dataclass
+class StoredNumber:
+    row: object
+    encrypted_field: str = "phone_encrypted"
+    lookup_field: str = "phone_lookup"
+
+    @property
+    def encrypted(self):
+        return getattr(self.row, self.encrypted_field)
+
+    @property
+    def lookup(self):
+        return getattr(self.row, self.lookup_field)
+
+    def update(self, **fields):
+        type(self.row).objects.filter(pk=self.row.pk).update(**fields)
+
+
 def _stored():
     """Every row that holds an encrypted number."""
-    yield from Contact.objects.exclude(phone_encrypted="").iterator()
-    yield from OptOut.objects.iterator()
+    from apps.calling.models import CallListEntry
+    from apps.telephony.models import CallRecord
+
+    for model in (Contact, OptOut, CallListEntry):
+        for row in model.objects.exclude(phone_encrypted="").iterator():
+            yield StoredNumber(row)
+    for row in CallRecord.objects.exclude(remote_encrypted="").iterator():
+        yield StoredNumber(row, "remote_encrypted", "remote_lookup")
 
 
 class Command(BaseCommand):
@@ -69,10 +94,10 @@ class Command(BaseCommand):
         total = old = unreadable = 0
         for row in _stored():
             total += 1
-            if crypto.uses_current_key(row.phone_encrypted):
+            if crypto.uses_current_key(row.encrypted):
                 continue
             try:
-                crypto.decrypt(row.phone_encrypted)
+                crypto.decrypt(row.encrypted)
             except crypto.CryptoError:
                 unreadable += 1
             else:
@@ -90,16 +115,16 @@ class Command(BaseCommand):
         changed = 0
         with transaction.atomic():
             for row in _stored():
-                if crypto.uses_current_key(row.phone_encrypted):
+                if crypto.uses_current_key(row.encrypted):
                     continue
                 try:
-                    token = crypto.rotate(row.phone_encrypted)
+                    token = crypto.rotate(row.encrypted)
                 except crypto.CryptoError as error:
                     # Nothing is half-rotated: the transaction is rolled back.
                     raise CommandError(f"{error} Nothing was changed.") from None
                 changed += 1
                 if not dry_run:
-                    type(row).objects.filter(pk=row.pk).update(phone_encrypted=token)
+                    row.update(**{row.encrypted_field: token})
         verb = "would be" if dry_run else "were"
         self.stdout.write(f"{changed} stored numbers {verb} re-encrypted.")
         if not dry_run and changed:
@@ -115,26 +140,27 @@ class Command(BaseCommand):
             updates = []
             for row in _stored():
                 try:
-                    lookup = crypto.lookup(crypto.decrypt(row.phone_encrypted))
+                    lookup = crypto.lookup(crypto.decrypt(row.encrypted))
                 except crypto.CryptoError as error:
                     raise CommandError(f"{error} Nothing was changed.") from None
-                key = (type(row).__name__, row.organisation_id, lookup)
-                if key in seen:
-                    raise CommandError(
-                        "Two stored rows hold the same number in one organisation. "
-                        "Nothing was changed."
-                    )
-                seen[key] = row.pk
-                if lookup != row.phone_lookup:
+                # Contacts and opt-outs are unique by organisation. Call
+                # history and call lists intentionally repeat destinations.
+                if isinstance(row.row, (Contact, OptOut)):
+                    key = (type(row.row).__name__, row.row.organisation_id, lookup)
+                    if key in seen:
+                        raise CommandError(
+                            "Two stored rows hold the same number in one organisation. "
+                            "Nothing was changed."
+                        )
+                    seen[key] = row.row.pk
+                if lookup != row.lookup:
                     updates.append((row, lookup))
             changed = len(updates)
             if not dry_run:
                 # Two passes, so a unique constraint cannot trip half-way.
                 for row, _ in updates:
-                    type(row).objects.filter(pk=row.pk).update(
-                        phone_lookup=f"rehash:{secrets.token_hex(16)}"
-                    )
+                    row.update(**{row.lookup_field: f"rehash:{secrets.token_hex(16)}"})
                 for row, lookup in updates:
-                    type(row).objects.filter(pk=row.pk).update(phone_lookup=lookup)
+                    row.update(**{row.lookup_field: lookup})
         verb = "would be" if dry_run else "were"
         self.stdout.write(f"{changed} match values {verb} recomputed.")

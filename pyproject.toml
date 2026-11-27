@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "telugu-ai-calling-agent"
 version = "0.1.0"
-description = "Telugu AI calling agent: LiveKit Agents voice worker + Django backend (separate processes)"
+description = "Vaani universal voice-agent workspace: LiveKit Agents voice worker + Django backend (separate processes)"
 requires-python = ">=3.11, <3.14"
 
 dependencies = [
@@ -26,6 +26,7 @@ dependencies = [
     "boto3>=1.35,<2",
     # Excel (.xlsx) lists of numbers to call (apps/calling/calllists.py).
     "openpyxl>=3.1,<4",
+    "langgraph>=1.0,<2",
 ]
 
 [dependency-groups]

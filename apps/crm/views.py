@@ -20,10 +20,9 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from apps.calling import analysis, recordings, review
+from apps.calling import analysis, recordings, retries, review
 from apps.calling.models import CallResult, CallTranscript
 from apps.telephony import calls as telephony_calls
-from apps.telephony.masking import mask_phone
 from apps.telephony.models import CallRecord
 from apps.tenancy import audit
 from apps.tenancy.access import scoped
@@ -188,7 +187,7 @@ def lead_new(request):
             # Do not reveal anything about a contact this user cannot see.
             form.add_error(
                 "phone",
-                "This number already belongs to a contact in another campus. "
+                "This number already belongs to a contact in another location. "
                 "Ask an organisation admin.",
             )
         else:
@@ -385,14 +384,14 @@ def contact_list(request):
 
 @scoped("contacts.export")
 def contact_export(request):
-    """Contacts as CSV, with masked numbers only. Each export is logged."""
+    """Contacts as CSV with their numbers. Each export is logged."""
     scope = request.scope
     found = _contacts(scope).filter(erased_at__isnull=True)[:EXPORT_LIMIT]
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = 'attachment; filename="contacts.csv"'
     writer = csv.writer(response)
     writer.writerow(
-        ["Name", "Number (masked)", "Campus", "Origin", "Permission to call", "Added"]
+        ["Name", "Number", "Location", "Origin", "Permission to call", "Added"]
     )
     rows = 0
     for contact in found:
@@ -400,7 +399,7 @@ def contact_export(request):
             _csv_cell(value)
             for value in (
                 contact.name,
-                contact.phone_masked,
+                contact.display_phone,
                 contact.campus.name,
                 contact.get_origin_display(),
                 contact.get_consent_display(),
@@ -626,11 +625,14 @@ def _filtered_calls(request, scope):
 def conversations(request):
     scope = request.scope
     found, filters = _filtered_calls(request, scope)
+    page = _page(request, found)
+    for call in page:
+        call.retry = retries.call_options(scope, call)
     return render(
         request,
         "crm/conversations.html",
         {
-            "page": _page(request, found),
+            "page": page,
             "summary": reports.call_summary(found),
             "filters": filters,
             "statuses": CallRecord.Status.choices,
@@ -646,7 +648,7 @@ def conversations(request):
 
 @scoped("calls.export")
 def conversations_export(request):
-    """The filtered calls as CSV, with masked numbers. Each export is logged."""
+    """The filtered calls as CSV with their numbers. Each export is logged."""
     scope = request.scope
     found, _ = _filtered_calls(request, scope)
     response = HttpResponse(content_type="text/csv; charset=utf-8")
@@ -656,10 +658,10 @@ def conversations_export(request):
         [
             "Started",
             "Direction",
-            "Number (masked)",
+            "Number",
             "Result",
             "Talk seconds",
-            "Campus",
+            "Location",
             "AI employee",
             "Response seconds (median)",
         ]
@@ -672,7 +674,7 @@ def conversations_export(request):
             for value in (
                 f"{timezone.localtime(call.created_at):%Y-%m-%d %H:%M}",
                 call.get_direction_display(),
-                call.masked_number,
+                call.display_number,
                 call.get_status_display(),
                 call.duration_seconds,
                 call.campus.name if call.campus else "",
@@ -754,6 +756,8 @@ def conversation_detail(request, pk):
         {
             "call": call,
             "may_end": may_end,
+            "can_manage_employee": scope.can("employees.manage"),
+            "retry": retries.call_options(scope, call),
             "result": result,
             "answers": answers,
             "transcript": transcript,
@@ -773,6 +777,26 @@ def conversation_detail(request, pk):
             and call.campus_id is not None,
         },
     )
+
+
+@require_POST
+@scoped("calls.place")
+def conversation_retry(request, pk):
+    scope = request.scope
+    call = scope.get(_calls(scope), pk=pk)
+    try:
+        retry = retries.retry_call(scope, call)
+    except telephony_calls.CallError as error:
+        messages.error(request, str(error))
+        return redirect("conversation-detail", pk=call.pk)
+    target = retries.target_url(retry)
+    if target:
+        messages.success(
+            request, "Your retry is ready. The original call remains in your history."
+        )
+        return redirect(target)
+    messages.info(request, "A retry is already being prepared. Refresh in a moment.")
+    return redirect("conversation-detail", pk=call.pk)
 
 
 def _recording_view(request, scope, call) -> dict:
@@ -797,6 +821,8 @@ def _recording_view(request, scope, call) -> dict:
         note = f"Not recorded. {decision.get('reason', '')}".strip()
     elif call.answered_at is None:
         note = "Not recorded: nobody answered."
+    elif decision.get("authorization") == "demo":
+        note = "The demo recording did not arrive from the voice worker."
     else:
         note = (
             "Not recorded: the person was not asked, or did not answer, the "
@@ -998,7 +1024,7 @@ def performance(request):
         writer.writerow(
             ["Group", "Name", "Leads", "Converted", "Calls", "Answered", "Talk min"]
         )
-        for group, rows in (("Campus", campus_rows), ("AI employee", employee_rows)):
+        for group, rows in (("Location", campus_rows), ("AI employee", employee_rows)):
             for row in rows:
                 writer.writerow(
                     _csv_cell(value)
@@ -1061,7 +1087,7 @@ def privacy_settings(request):
                 )
                 audit.record(scope, "optout.added", entry)
                 messages.success(
-                    request, f"{entry.phone_masked} is on the do-not-call list."
+                    request, f"{entry.display_phone} is on the do-not-call list."
                 )
                 return redirect("settings")
         elif not manage:
@@ -1113,9 +1139,10 @@ def opt_out_remove(request, pk):
     scope = request.scope
     entry = scope.get(OptOut.objects.filter(organisation=scope.organisation), pk=pk)
     masked = entry.phone_masked
+    shown = entry.display_phone
     entry.delete()
     audit.record(scope, "optout.removed", number=masked)
-    messages.success(request, f"{masked} was taken off the do-not-call list.")
+    messages.success(request, f"{shown} was taken off the do-not-call list.")
     return redirect("settings")
 
 
@@ -1124,7 +1151,7 @@ def _test_number() -> str:
         outbound, plan = telephony_calls.outbound_context()
     except telephony_calls.CallError:
         return ""
-    return mask_phone(outbound.rehearsal_number) if plan.ready else ""
+    return outbound.rehearsal_number if plan.ready else ""
 
 
 @scoped("employees.manage")

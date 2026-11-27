@@ -6,6 +6,7 @@ test that would open a network connection for drafting.
 
 import io
 import json
+import re
 import urllib.error
 from datetime import timedelta
 from pathlib import Path
@@ -16,8 +17,10 @@ from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import strip_tags
 
 from apps.core.navigation import MODULES, SECTIONS
+from apps.crm import crypto
 from apps.telephony.models import AgentProfile, CallRecord
 from apps.tenancy.models import Campus, Membership, Organisation
 from apps.workforce import config, drafting, llm, publishing
@@ -349,9 +352,11 @@ def test_every_sidebar_entry_resolves_and_marks_the_current_page(staff_client):
     ):
         html = staff_client.get(reverse(name)).content.decode()
         assert html.count('aria-current="page"') == 1
-        assert f'aria-current="page">{label}</a>' in html.replace(
-            ' class="soon" title="Planned, not built yet"', ""
+        current_link = re.search(
+            r'<a\b[^>]*\baria-current="page"[^>]*>(.*?)</a>', html, re.S
         )
+        assert current_link is not None
+        assert strip_tags(current_link.group(1)).strip() == label
 
 
 def test_planned_modules_say_plainly_that_they_are_not_built(staff_client):
@@ -359,7 +364,9 @@ def test_planned_modules_say_plainly_that_they_are_not_built(staff_client):
         html = staff_client.get(reverse(slug)).content.decode()
         assert "Not built yet" in html
         assert f"MILESTONE {info['milestone']}" in html
-        assert "<form" not in html.split("<main>")[1].split("</main>")[0]
+        main = re.search(r"<main\b[^>]*>(.*?)</main>", html, re.S)
+        assert main is not None
+        assert "<form" not in main.group(1)
 
 
 def test_someone_outside_any_organisation_sees_no_sidebar(plain_client):
@@ -414,6 +421,7 @@ def test_home_reports_real_numbers(staff_client):
         organisation=organisation(),
         room="r1",
         masked_number="+91********01",
+        remote_encrypted=crypto.encrypt("+919876500001"),
         status="completed",
         answered_at=now,
         e2e_latency_p50=1.2,
@@ -422,6 +430,7 @@ def test_home_reports_real_numbers(staff_client):
         organisation=organisation(),
         room="r2",
         masked_number="+91********01",
+        remote_encrypted=crypto.encrypt("+919876500001"),
         status="failed",
     )
     CallRecord.objects.create(
@@ -437,7 +446,7 @@ def test_home_reports_real_numbers(staff_client):
     assert stats["employees"] == 1 and stats["week_total"] == 2
     assert stats["answer_rate"] == 50 and stats["response"] == 1.2
     html = response.content.decode()
-    assert "+91********01" in html, "the latest call is listed"
+    assert "+919876500001" in html, "the latest call's full number is listed"
     assert "+91********09" not in html and "+91********08" not in html
     done = {item["label"]: item["done"] for item in response.context["setup"]}
     assert done["First AI employee drafted"] is True
@@ -448,7 +457,7 @@ def test_home_reports_real_numbers(staff_client):
 
 def test_hiring_drafts_an_editable_employee(staff_client, ai):
     page = staff_client.get(reverse("employee-hire")).content.decode()
-    assert "Describe the job" in page and "Admissions enquiry" in page
+    assert "Describe the job" in page and "New enquiry" in page
     response = staff_client.post(
         reverse("employee-hire"),
         {"brief": f"  {BRIEF}  ", "channel": "instant", "language": "te-en"},

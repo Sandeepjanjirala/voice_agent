@@ -5,7 +5,7 @@
   <div>
     <p class="eyebrow"><a href="{% url 'contacts' %}">CONTACTS</a> · {{ contact.campus.name }}</p>
     <h1>{{ contact.name }}</h1>
-    <p class="muted" id="contact-number">{% if contact.is_erased %}Personal details erased {{ contact.erased_at|date:"j M Y" }}.{% else %}{{ contact.phone_masked }} · the full number is stored encrypted and is never shown.{% endif %}</p>
+    <p class="muted" id="contact-number">{% if contact.is_erased %}Personal details erased {{ contact.erased_at|date:"j M Y" }}.{% else %}{{ contact.display_phone }}{% endif %}</p>
   </div>
   <span id="call-block">{% if call_block %}<span class="tag bad">May not be called</span>{% else %}<span class="tag good">May be called</span>{% endif %}</span>
 </section>
@@ -46,7 +46,7 @@
         <button class="small" type="submit">Record permission</button>
       </form>
       {% if not opted_out %}
-      <form method="post" class="inline-form" style="margin-top:16px;border-top:1px solid #edf0eb;padding-top:14px" data-ask="Add this number to the do-not-call list? Nobody in the organisation will be able to call it.">{% csrf_token %}<input type="hidden" name="action" value="opt_out">
+      <form method="post" class="inline-form" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px" data-ask="Add this number to the do-not-call list? Nobody in the organisation will be able to call it.">{% csrf_token %}<input type="hidden" name="action" value="opt_out">
         <div class="field"><label for="dnc-reason">Asked not to be called? Reason (optional)</label><input type="text" id="dnc-reason" name="reason" maxlength="200"></div>
         <button class="danger small" type="submit">Do not call</button>
       </form>

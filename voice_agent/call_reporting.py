@@ -2,9 +2,9 @@
 
 The worker never imports Django. It posts a small JSON message, signed with
 HMAC-SHA256, to CALL_EVENTS_URL. The message carries the room name, the outcome
-and timings, and never a phone number. What was said is sent only when the
-call's profile allows it (its organisation keeps transcripts), with any
-number-like text masked. With CALL_EVENTS_URL or CALL_EVENTS_SECRET unset,
+and timings. What was said, including spoken numbers, is sent only when the
+call's profile allows it (its organisation keeps transcripts).
+With CALL_EVENTS_URL or CALL_EVENTS_SECRET unset,
 reporting is off and Django infers the outcome from LiveKit room state instead.
 """
 
@@ -23,7 +23,6 @@ import aiohttp
 
 from .config import VoiceSettings
 from .observability import turn_row
-from .telephony import mask_phones_in
 
 logger = logging.getLogger("voice_agent")
 
@@ -67,7 +66,7 @@ class CallMetrics:
     each side said (as speech recognition heard the caller), seconds from the
     start of the conversation, whether the agent was cut off, how sure the
     speech recognition was, and the tools the agent used (name and whether it
-    worked, never their arguments). Phone numbers are masked."""
+    worked, never their arguments). Spoken numbers remain in the transcript."""
 
     def __init__(
         self, *, keep_transcript: bool = False, started_at: float | None = None
@@ -128,12 +127,12 @@ class CallMetrics:
             )
 
     def transcript(self) -> list[dict[str, Any]]:
-        """The kept turns, masked and cut to the report's size limits."""
+        """The kept turns, cut to the report's size limits."""
         kept, total = [], 0
         for turn in self.turns[:TRANSCRIPT_TURNS]:
             turn = dict(turn)
             if "text" in turn:
-                turn["text"] = mask_phones_in(turn["text"])[:TRANSCRIPT_TURN_CHARS]
+                turn["text"] = turn["text"][:TRANSCRIPT_TURN_CHARS]
             size = len(json.dumps(turn, ensure_ascii=False).encode())
             if total + size > TRANSCRIPT_TOTAL_BYTES:
                 break

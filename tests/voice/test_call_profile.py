@@ -143,9 +143,9 @@ def meta(**fields) -> str:
 
 def test_long_telugu_instructions_reach_the_prompt_whole():
     # About 1900 Telugu letters of instructions: 5.7 kB, inside the budget.
-    purpose = "విద్యార్థి తల్లిదండ్రులతో admission గురించి మాట్లాడండి. " * 10
-    goals = " ".join(f"{n}. తరగతి, campus, visit సమయం అడగండి." for n in range(1, 13))
-    limits = "ఫీజు చెప్పవద్దు. admission ఖచ్చితం అని చెప్పవద్దు. " * 6
+    purpose = "వినియోగదారులతో కోరుకున్న service గురించి మాట్లాడండి. " * 10
+    goals = " ".join(f"{n}. సేవ, location, visit సమయం అడగండి." for n in range(1, 13))
+    limits = "ధర చెప్పవద్దు. service ఖచ్చితం అని చెప్పవద్దు. " * 6
     profile = parse_profile(
         meta(
             purpose=purpose.strip(),

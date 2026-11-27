@@ -1,11 +1,12 @@
 """Inbound phone calls: ask Django which AI employee answers, then run the call.
 
-Used only when INBOUND_CONTEXT_URL is set. The worker posts the dialled number,
-the caller's number and the room to Django, signed like call reports (see
+The worker posts the dialled number, the caller's number and the room to
+Django through INBOUND_CONTEXT_URL, signed like call reports (see
 call_reporting.py). Django answers with the profile of the published employee
 assigned to the dialled number, or 404 when the number is not routed. The
 caller's number goes to Django only, over this signed request, so that Django
-can recognise a known contact; it is never logged here.
+can recognise a known contact; it is never logged here. A missing routing URL
+declines the phone call instead of starting an unassigned assistant.
 
 Nothing in this module opens a phone line. Calls reach it only through a
 LiveKit dispatch rule, which stays off until the SIP trunk is authenticated.

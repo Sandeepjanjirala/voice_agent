@@ -28,12 +28,13 @@ class Organisation(models.Model):
 
     class Recording(models.TextChoices):
         OFF = "off", "Never record calls"
+        DEMO = "demo", "Demo test calls, without a recording question"
         TEST_CALLS = "test", "Record approved test calls only, after consent"
         WITH_CONSENT = "consent", "Record any call, after the person agrees on the call"
 
     # Our own call recordings (apps/calling/recordings.py), separate from
     # LiveKit Cloud's copy above. Off unless an admin switches it on; even
-    # then a call is recorded only after the person agrees on the call.
+    # then a call requires verbal consent, except explicitly approved demo tests.
     recording = models.CharField(
         max_length=8, choices=Recording.choices, default=Recording.OFF
     )
@@ -88,7 +89,8 @@ class Campus(models.Model):
 
     class Meta:
         ordering = ("name",)
-        verbose_name_plural = "campuses"
+        verbose_name = "location"
+        verbose_name_plural = "locations"
         constraints = (
             models.UniqueConstraint(
                 fields=["organisation", "name"], name="one_campus_name_per_organisation"
@@ -104,7 +106,7 @@ class Membership(models.Model):
 
     class Role(models.TextChoices):
         ORG_ADMIN = "org_admin", "Organisation admin"
-        CAMPUS_STAFF = "campus_staff", "Campus staff"
+        CAMPUS_STAFF = "campus_staff", "Location team member"
 
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="membership"

@@ -33,6 +33,7 @@ KMS
 .github/personal-instructions.md
 
 # Project runtime output
+*.log
 db.sqlite3
 logs/
 console-recordings/

@@ -1,21 +1,41 @@
 {% extends 'dashboard/base.html' %}{% load static %}
-{% block title %}Call {{ call.masked_number }}{% endblock %}
-{% block head %}{% if call.is_active %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block title %}Call {{ call.display_number }}{% endblock %}
 {% block content %}
+{% include 'dashboard/_steps.html' with step=4 %}
 <section class="page-head">
   <div>
     <p class="eyebrow"><a href="{% url 'conversations' %}">CALL RESULTS</a></p>
-    <h1>{{ call.get_direction_display }} call · {{ call.masked_number }}</h1>
+    <h1>{{ call.get_direction_display }} call · {{ call.display_number }}</h1>
     <p class="muted">Started <time datetime="{{ call.created_at|date:'c' }}" data-local-time>{{ call.created_at|date:"j M Y, H:i" }}</time>{% if call.placed_by %} by {{ call.placed_by.get_username }}{% endif %}{% if call.employee_version %} · {{ call.employee_version.employee.name }}, version {{ call.employee_version.number }}{% endif %}{% if call.duration_seconds is not None %} · {{ call.duration_seconds|floatformat:0 }} s talk time{% endif %}.{% if call.is_rehearsal %} Rehearsal: the approved test number stood in for the contact.{% endif %}</p>
   </div>
   <span class="tag{% if call.status == 'completed' or call.status == 'answered' %} good{% elif call.is_active %}{% else %} bad{% endif %}" id="call-status">{{ call.get_status_display }}</span>
 </section>
 {% if call.failure_reason %}<p class="notice" role="note">{{ call.failure_reason }}</p>{% endif %}
 {% if call.is_active %}
-<div class="notice status-line" role="status" id="live-call"><span>This call is in progress. The page updates every few seconds.</span>
+<div class="notice status-line" role="status" id="live-call" data-call-refresh="3000"><span id="call-refresh-status">This call is in progress. Refresh the page to see its latest status.</span>
   {% if may_end %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="hang_up"><button class="danger small" type="submit">End call</button></form>{% endif %}
 </div>
 {% endif %}
+
+<section class="next-action" aria-labelledby="call-next-title">
+  <div><p class="eyebrow">YOUR NEXT STEP</p>
+  {% if call.is_active %}
+    <h2 id="call-next-title">Wait for the call to finish</h2><p>The status updates automatically. Once the call ends, review its summary and conversation below.</p></div>
+  {% elif call.status == 'failed' or call.status == 'no_answer' or call.status == 'rejected' %}
+    <h2 id="call-next-title">{% if call.status == 'failed' %}This call did not connect{% elif call.status == 'rejected' %}This call was declined{% else %}No answer on this attempt{% endif %}</h2><p>{% if retry.retry_target_url %}You have already requested another attempt. Open it to follow its progress.{% elif retry.can_retry %}Call the same number again with the same AI employee and call details. This starts a new attempt; the original result stays in your history.{% else %}Review the failure details below before your next attempt.{% endif %}</p></div>
+    <div class="call-row-actions">{% include 'calling/_retry_action.html' %}<a class="button small" href="#technical-details" data-open-details>View details</a></div>
+  {% elif result and result.status == 'done' %}
+    <h2 id="call-next-title">{% if result.opt_out_requested %}Respect this person's opt-out{% elif result.follow_up_needed %}This call needs follow-up{% else %}Review the outcome{% endif %}</h2><p>{% if result.opt_out_requested %}The person asked not to be called. Review the recorded actions and their contact's do-not-call status before any future outreach.{% elif result.next_step %}{{ result.next_step }}{% else %}Read the summary, check important details against the conversation and save your notes.{% endif %}</p></div>
+    {% if result.opt_out_requested %}<a class="button" href="#actions">Review recorded actions</a>{% elif result.follow_up_needed and call.lead %}<a class="button primary" href="{% url 'lead-detail' call.lead.pk %}">Manage follow-up</a>{% else %}<a class="button" href="#staff-notes">Add review notes</a>{% endif %}
+  {% elif can_analyse %}
+    <h2 id="call-next-title">Generate a summary of this call</h2><p>Use Analyse now in Call summary to identify the outcome and follow-up needs. You can also read the conversation below.</p></div>
+    <a class="button" href="#result">Go to call summary</a>
+  {% else %}
+    <h2 id="call-next-title">Review the available call details</h2><p>Check the status and any available conversation or recording. Save a note for your team before returning to the results list.</p></div>
+    <a class="button" href="#staff-notes">Add a note</a>
+  {% endif %}
+</section>
+<nav class="section-nav" aria-label="Call sections"><a href="#result">Summary</a><a href="#conversation">Conversation</a><a href="#recording">Recording</a><a href="#staff-notes">Team notes</a><a href="#technical-details" data-open-details>Technical details</a><a href="{% url 'conversations' %}">All call results</a></nav>
 
 <div class="grid-2 call-layout">
   <div class="stack">
@@ -60,12 +80,33 @@
           <span class="player-time"><span data-current>0:00</span> / <span data-total>{% if rec.recording.duration_seconds %}{{ rec.recording.duration_seconds|floatformat:0 }}s{% else %}–{% endif %}</span></span>
         </div>
         <p class="player-legend"><span class="ear left">Left ear: the person on the call</span><span class="ear right">Right ear: {% if call.employee_version %}{{ call.employee_version.employee.name }}, the AI employee{% else %}the AI assistant{% endif %}</span></p>
-        <p class="help">The actual call audio, recorded after the person agreed{% if rec.recording.consented_at %} ({{ rec.recording.consented_at|date:"H:i:s" }}){% endif %}. Click a line in the conversation below to jump there.{% if rec.download_url %} <a href="{{ rec.download_url }}" id="recording-download">Download</a>.{% endif %} Opening and downloading recordings are logged.</p>
+        <p class="help">The actual call audio, {% if rec.recording.authorization == 'demo' %}recorded as an approved demo test without a spoken recording question{% else %}recorded after the person agreed{% if rec.recording.consented_at %} ({{ rec.recording.consented_at|date:"H:i:s" }}){% endif %}{% endif %}. Click a line in the conversation below to jump there.{% if rec.download_url %} <a href="{{ rec.download_url }}" id="recording-download">Download</a>.{% endif %} Opening and downloading recordings are logged.</p>
       </div>
       {% else %}
       <p class="help" id="recording-note">{{ rec.note }}</p>
       {% endif %}
     </section>
+
+    <section class="panel" id="conversation">
+      <div class="panel-head"><h2>Conversation</h2></div>
+      {% if turns %}
+      <p class="notice small-note" role="note">What speech recognition heard, not a recording: the person's words may contain mistakes. The AI employee's lines are what it said.</p>
+      <ol class="chat" aria-label="The conversation, in order" tabindex="0">
+        {% for turn in turns %}
+        {% if turn.role == 'tool' %}
+        <li class="chat-event"><span>{{ turn.at }}</span> The AI employee used <b>{{ turn.name }}</b>{% if not turn.ok %}: it failed{% endif %}</li>
+        {% else %}
+        <li class="chat-turn {% if turn.role == 'assistant' %}from-ai{% else %}from-person{% endif %}"{% if turn.t is not None %} data-t="{{ turn.t|stringformat:'s' }}"{% endif %}>
+          <p class="chat-meta"><b>{% if turn.role == 'assistant' %}AI employee{% else %}Person{% endif %}</b>{% if turn.at %} · {{ turn.at }}{% endif %}{% if turn.interrupted %} · <span class="flag">cut off</span>{% endif %}{% if turn.confidence is not None and turn.confidence < 0.5 %} · <span class="flag">heard unclearly</span>{% endif %}</p>
+          <p class="chat-text">{{ turn.text }}</p>
+        </li>
+        {% endif %}
+        {% endfor %}
+      </ol>
+      {% endif %}
+      <p class="help" id="transcript-note">{{ transcript_note }}</p>
+    </section>
+
 
     {% if result and result.status == 'done' %}
     <div class="two-up">
@@ -112,28 +153,8 @@
       {% if missed %}<p class="help" id="call-missed">Missed caller: {{ missed.get_reason_display|lower }}. {% if missed.handled_at %}Called back ({{ missed.handled_by.get_username|default:"someone" }}, {{ missed.handled_at|date:"j M, H:i" }}).{% else %}<a href="{% url 'inbound' %}#missed">Waiting for a call back</a>.{% endif %}</p>{% endif %}
     </section>
 
-    <section class="panel" id="conversation">
-      <div class="panel-head"><h2>Conversation</h2>{% if turns %}<span class="help">Numbers masked</span>{% endif %}</div>
-      {% if turns %}
-      <p class="notice small-note" role="note">What speech recognition heard, not a recording: the person's words may contain mistakes. The AI employee's lines are what it said.</p>
-      <ol class="chat" aria-label="The conversation, in order">
-        {% for turn in turns %}
-        {% if turn.role == 'tool' %}
-        <li class="chat-event"><span>{{ turn.at }}</span> The AI employee used <b>{{ turn.name }}</b>{% if not turn.ok %}: it failed{% endif %}</li>
-        {% else %}
-        <li class="chat-turn {% if turn.role == 'assistant' %}from-ai{% else %}from-person{% endif %}"{% if turn.t is not None %} data-t="{{ turn.t|stringformat:'s' }}"{% endif %}>
-          <p class="chat-meta"><b>{% if turn.role == 'assistant' %}AI employee{% else %}Person{% endif %}</b>{% if turn.at %} · {{ turn.at }}{% endif %}{% if turn.interrupted %} · <span class="flag">cut off</span>{% endif %}{% if turn.confidence is not None and turn.confidence < 0.5 %} · <span class="flag">heard unclearly</span>{% endif %}</p>
-          <p class="chat-text">{{ turn.text }}</p>
-        </li>
-        {% endif %}
-        {% endfor %}
-      </ol>
-      {% endif %}
-      <p class="help" id="transcript-note">{{ transcript_note }}</p>
-    </section>
-
-    <section class="panel">
-      <div class="panel-head"><h2>What happened</h2></div>
+    <details class="panel detail-disclosure" id="technical-details">
+      <summary>Technical details &amp; call timeline</summary>
       <dl class="facts-grid">
         <dt>Placed</dt><dd>{{ call.created_at|date:"H:i:s" }}</dd>
         <dt>Ringing</dt><dd>{{ call.ringing_at|date:"H:i:s"|default:"–" }}</dd>
@@ -146,15 +167,15 @@
         <dt>Response time</dt><dd>{% if call.e2e_latency_p50 is None %}–{% else %}{{ call.e2e_latency_p50|floatformat:2 }} s median{% if call.e2e_latency_max is not None %}, slowest {{ call.e2e_latency_max|floatformat:1 }} s{% endif %}{% endif %}</dd>
         <dt>Turns</dt><dd>{{ call.agent_turns|default_if_none:"–" }} by the employee, {{ call.user_turns|default_if_none:"–" }} by the person, {{ call.interruptions|default_if_none:"0" }} interruptions</dd>
       </dl>
-    </section>
+    </details>
   </div>
 
-  <div class="stack">
+  <aside class="stack" aria-label="Call context and notes">
     <section class="panel">
-      <div class="panel-head"><h2>Belongs to</h2></div>
+      <div class="panel-head"><h2>Call details</h2></div>
       <dl class="facts-grid">
-        <dt>Campus</dt><dd>{{ call.campus.name|default:"Whole organisation" }}</dd>
-        <dt>AI employee</dt><dd id="call-employee">{% if call.employee_version %}<a href="{% url 'employee-detail' call.employee_version.employee.pk %}">{{ call.employee_version.employee.name }}</a>, version {{ call.employee_version.number }}{% else %}None: this call used the Agent profile{% endif %}</dd>
+        <dt>Location</dt><dd>{{ call.campus.name|default:"Whole organisation" }}</dd>
+        <dt>AI employee</dt><dd id="call-employee">{% if call.employee_version %}{% if can_manage_employee %}<a href="{% url 'employee-detail' call.employee_version.employee.pk %}">{{ call.employee_version.employee.name }}</a>{% else %}{{ call.employee_version.employee.name }}{% endif %}, version {{ call.employee_version.number }}{% else %}None: this call used the Agent profile{% endif %}</dd>
         <dt>Person</dt><dd>{% if call.contact %}<a href="{% url 'contact-detail' call.contact.pk %}">{{ call.contact.name }}</a>{% elif call.is_rehearsal %}The test number, standing in for the contact{% else %}Not known{% endif %}</dd>
         <dt>Lead</dt><dd>{% if call.lead %}<a href="{% url 'lead-detail' call.lead.pk %}">{{ call.lead.subject }}</a>{% else %}–{% endif %}</dd>
         <dt>Recording</dt><dd id="belongs-recording"><a href="#recording">{% if rec.recording %}{{ rec.recording.get_status_display }}{% else %}Not recorded{% endif %}</a></dd>
@@ -185,15 +206,15 @@
       <div class="field"><label for="lead-name">Caller's name</label><input type="text" id="lead-name" name="name" maxlength="120" required></div>
       <div class="field"><label for="lead-subject">What they called about</label><input type="text" id="lead-subject" name="subject" maxlength="160" required value="{{ result.reason|default:''|truncatechars:160 }}"></div>
       <button class="small" type="submit">Add as a lead</button>
-      <p class="help">Their number is copied from this call without being shown.</p>
+      <p class="help">Their number is copied from this call into the new contact.</p>
     </form>
     {% endif %}
-    <form method="post" class="panel">{% csrf_token %}
-      <div class="panel-head"><h2>Staff notes</h2></div>
-      <div class="field"><label for="call-notes" class="visually-hidden">Notes about this call</label><textarea id="call-notes" name="notes" rows="5" maxlength="2000">{{ call.notes }}</textarea><p class="help">Do not write full phone numbers here.</p></div>
+    <form method="post" class="panel" id="staff-notes">{% csrf_token %}
+      <div class="panel-head"><h2>Team notes</h2></div>
+      <div class="field"><label for="call-notes" class="visually-hidden">Notes about this call</label><textarea id="call-notes" name="notes" rows="5" maxlength="2000">{{ call.notes }}</textarea><p class="help">Add useful context and the next action for your team.</p></div>
       <button class="primary small" type="submit">Save notes</button>
     </form>
-  </div>
+  </aside>
 </div>
 {% endblock %}
-{% block scripts %}{% if rec.audio_url %}<script src="{% static 'dashboard/recording.js' %}" defer></script>{% endif %}{% endblock %}
+{% block scripts %}<script src="{% static 'dashboard/call_review.js' %}" defer></script>{% if rec.audio_url %}<script src="{% static 'dashboard/recording.js' %}" defer></script>{% endif %}{% endblock %}

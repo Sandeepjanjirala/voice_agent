@@ -5,7 +5,7 @@
   <div>
     <p class="eyebrow">SETUP</p>
     <h1>Usage &amp; costs</h1>
-    <p class="muted">Calls, minutes and analyses for {{ start|date:"F Y" }}{% if not scope.all_campuses %} in your campuses{% endif %}.</p>
+    <p class="muted">Calls, minutes and analyses for {{ start|date:"F Y" }}{% if not scope.all_campuses %} in your locations{% endif %}.</p>
   </div>
   <form method="get"><select name="month" aria-label="Month" data-autosubmit>{% for month in months %}<option value="{{ month|date:'Y-m' }}"{% if month == start %} selected{% endif %}>{{ month|date:"F Y" }}</option>{% endfor %}</select><noscript><button class="small">Show</button></noscript></form>
 </section>
@@ -24,8 +24,8 @@
     <tbody>{% for row in by_employee %}<tr><td>{{ row.name }}</td><td class="num">{{ row.calls }}</td><td class="num">{{ row.answered }}</td><td class="num">{{ row.minutes }}</td><td class="num">₹{{ row.cost }}</td></tr>{% empty %}<tr><td colspan="5">No calls this month.</td></tr>{% endfor %}</tbody></table></div>
   </section>
   <section class="panel">
-    <div class="panel-head"><h2>By campus</h2></div>
-    <div class="table-scroll"><table class="data"><thead><tr><th>Campus</th><th class="num">Calls</th><th class="num">Answered</th><th class="num">Minutes</th><th class="num">Est. cost</th></tr></thead>
+    <div class="panel-head"><h2>By location</h2></div>
+    <div class="table-scroll"><table class="data"><thead><tr><th>Location</th><th class="num">Calls</th><th class="num">Answered</th><th class="num">Minutes</th><th class="num">Est. cost</th></tr></thead>
     <tbody>{% for row in by_campus %}<tr><td>{{ row.name }}</td><td class="num">{{ row.calls }}</td><td class="num">{{ row.answered }}</td><td class="num">{{ row.minutes }}</td><td class="num">₹{{ row.cost }}</td></tr>{% empty %}<tr><td colspan="5">No calls this month.</td></tr>{% endfor %}</tbody></table></div>
   </section>
 </div>

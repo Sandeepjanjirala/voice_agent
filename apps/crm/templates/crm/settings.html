@@ -1,20 +1,38 @@
 {% extends 'dashboard/base.html' %}
+{% load static %}
 {% block title %}Settings{% endblock %}
 {% block content %}
 <div class="settings-page">
 <section class="page-head">
   <div>
     <h1>Settings</h1>
-    <p class="muted">Who may not be called, what is kept from each call, and for how long.</p>
+    <p class="muted">Set up your workspace, choose what calls keep, and review your usage.</p>
   </div>
 </section>
 {% if crypto_problem %}<p class="notice" role="alert">Contacts cannot be stored yet: {{ crypto_problem }} Run <code>python manage.py contactkeys generate</code> and add the two lines to .env.local.</p>{% endif %}
 
 <nav class="settings-jump" aria-label="On this page">
+  {% if settings_tools %}<a href="#workspace-tools">Setup &amp; reports</a>{% endif %}
   {% if manage %}<a href="#organisation">Organisation</a><a href="#calls-privacy">Calls &amp; privacy</a><a href="#budget">Budget</a>{% endif %}
   <a href="#do-not-call">Do-not-call list</a>
   {% if manage %}<a href="#retention">Data retention</a><a href="{% url 'audit-log' %}">Access log</a>{% endif %}
 </nav>
+
+{% if settings_tools %}
+<section class="settings-tools" id="workspace-tools" aria-labelledby="workspace-tools-title">
+  <h2 id="workspace-tools-title">Setup &amp; reports</h2>
+  <p class="muted">Open these when you need to change your setup or check how calls are doing.</p>
+  <div class="settings-tool-grid">
+    {% for tool in settings_tools %}
+    <a class="settings-tool" href="{{ tool.url }}" aria-labelledby="settings-tool-{{ forloop.counter }}">
+      <svg class="ui-icon" aria-hidden="true"><use href="#nav-{{ tool.label|slugify }}"></use></svg>
+      <span><strong id="settings-tool-{{ forloop.counter }}">{{ tool.label }}</strong><span>{{ tool.description }}</span></span>
+      <span class="tool-arrow" aria-hidden="true">&rarr;</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 
 {% if manage %}
 <form method="post" novalidate id="organisation-form">{% csrf_token %}<input type="hidden" name="action" value="organisation">
@@ -24,22 +42,31 @@
     <div class="panel">{% include 'dashboard/_field.html' with field=organisation_form.name %}</div>
   </section>
   <section class="settings-section" id="calls-privacy">
-    <div class="settings-intro"><h2>Calls &amp; privacy</h2><p>What is kept from each call. Recording happens only after the person agrees on the call.</p></div>
+    <div class="settings-intro"><h2>Calls &amp; privacy</h2><p>Choose what your team can review after a call. Use demo mode for approved outgoing test calls without a recording question.</p></div>
     <div class="panel">
       {% include 'dashboard/_field.html' with field=organisation_form.transcripts %}
       {% include 'dashboard/_field.html' with field=organisation_form.recording %}
-      {% include 'dashboard/_field.html' with field=organisation_form.recording_notice %}
-      {% include 'dashboard/_field.html' with field=organisation_form.cloud_observability %}
+      <p class="help" data-recording-demo{% if organisation_form.recording.value != 'demo' %} hidden{% endif %}>To try a demo, open <a href="{% url 'leads' %}">Leads &amp; contacts</a>, choose a sample lead, and use <strong>Call the test number</strong>. It rings the approved test number using that lead's context.</p>
+      <div data-recording-question{% if not organisation_form.recording_notice.errors and organisation_form.recording.value != 'test' and organisation_form.recording.value != 'consent' %} hidden{% endif %}>
+        {% include 'dashboard/_field.html' with field=organisation_form.recording_notice %}
+      </div>
+      <details class="form-disclosure" id="call-diagnostics"{% if organisation_form.cloud_observability.value or organisation_form.cloud_observability.errors %} open{% endif %}>
+        <summary>Technical troubleshooting <span>Advanced</span></summary>
+        <div class="disclosure-content">{% include 'dashboard/_field.html' with field=organisation_form.cloud_observability %}</div>
+      </details>
     </div>
   </section>
   <section class="settings-section" id="budget">
     <div class="settings-intro"><h2>Budget</h2><p>A monthly limit on talk time, and your rates for the estimates on Usage &amp; costs.</p></div>
     <div class="panel">
       {% include 'dashboard/_field.html' with field=organisation_form.monthly_call_minutes %}
-      <div class="field-pair">
-        {% include 'dashboard/_field.html' with field=organisation_form.cost_per_minute %}
-        {% include 'dashboard/_field.html' with field=organisation_form.cost_per_analysis %}
-      </div>
+      <details class="form-disclosure"{% if organisation_form.cost_per_minute.errors or organisation_form.cost_per_analysis.errors %} open{% endif %}>
+        <summary>Rates for cost estimates <span>Optional</span></summary>
+        <div class="disclosure-content field-pair">
+          {% include 'dashboard/_field.html' with field=organisation_form.cost_per_minute %}
+          {% include 'dashboard/_field.html' with field=organisation_form.cost_per_analysis %}
+        </div>
+      </details>
     </div>
   </section>
   <div class="settings-save"><p class="help">Saves Organisation, Calls &amp; privacy and Budget.</p><button class="primary" type="submit">Save settings</button></div>
@@ -47,7 +74,7 @@
 {% endif %}
 
 <section class="settings-section" id="do-not-call">
-  <div class="settings-intro"><h2>Do-not-call list <span class="tag">{{ opt_outs|length }}</span></h2><p>Nobody in the organisation can call these numbers, from any campus or list. A number stays here even if the contact is erased.</p></div>
+  <div class="settings-intro"><h2>Do-not-call list <span class="tag">{{ opt_outs|length }}</span></h2><p>Nobody in the organisation can call these numbers, from any location or list. A number stays here even if the contact is erased.</p></div>
   <div class="panel">
     <form method="post" novalidate class="dnc-form">{% csrf_token %}<input type="hidden" name="action" value="opt_out">
       {% if opt_out_form.non_field_errors %}<div class="error" role="alert">{{ opt_out_form.non_field_errors|join:" " }}</div>{% endif %}
@@ -60,7 +87,7 @@
     {% if opt_outs %}
     <div class="table-scroll" style="margin-top:18px"><table class="data" id="optout-table">
       <thead><tr><th>Number</th><th>Why</th><th>Added</th><th></th></tr></thead>
-      <tbody>{% for entry in opt_outs %}<tr><td>{{ entry.phone_masked }}</td><td class="wrap">{{ entry.reason|default:entry.get_source_display }}</td><td>{{ entry.created_at|date:"j M Y" }}</td><td>{% if can_remove %}<form method="post" action="{% url 'optout-remove' entry.pk %}" data-ask="Take {{ entry.phone_masked }} off the do-not-call list? Only do this if the person asked to be called again.">{% csrf_token %}<button class="small" type="submit">Remove</button></form>{% endif %}</td></tr>{% endfor %}</tbody>
+      <tbody>{% for entry in opt_outs %}<tr><td>{{ entry.display_phone }}</td><td class="wrap">{{ entry.reason|default:entry.get_source_display }}</td><td>{{ entry.created_at|date:"j M Y" }}</td><td>{% if can_remove %}<form method="post" action="{% url 'optout-remove' entry.pk %}" data-ask="Take {{ entry.display_phone }} off the do-not-call list? Only do this if the person asked to be called again.">{% csrf_token %}<button class="small" type="submit">Remove</button></form>{% endif %}</td></tr>{% endfor %}</tbody>
     </table></div>
     {% else %}<p class="help" style="margin-top:14px">The list is empty.</p>{% endif %}
   </div>
@@ -68,7 +95,7 @@
 
 {% if manage %}
 <section class="settings-section" id="retention">
-  <div class="settings-intro"><h2>Data retention</h2><p>How many days personal data is kept before it is erased. Run <code>python manage.py retention --apply</code> on a schedule to apply it automatically.</p></div>
+  <div class="settings-intro"><h2>Data retention</h2><p>How many days personal data is kept before it is erased. Your technical administrator can schedule automatic cleanup.</p></div>
   <div class="panel">
     <form method="post" novalidate>{% csrf_token %}<input type="hidden" name="action" value="retention">
       {% if retention_form.non_field_errors %}<div class="error" role="alert">{{ retention_form.non_field_errors|join:" " }}</div>{% endif %}
@@ -93,3 +120,4 @@
 {% endif %}
 </div>
 {% endblock %}
+{% block scripts %}<script src="{% static 'dashboard/settings.js' %}" defer></script>{% endblock %}

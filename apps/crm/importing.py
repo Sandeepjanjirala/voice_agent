@@ -1,7 +1,7 @@
 """Import a list of contacts: check every row first, then store the good ones.
 
 The preview and the import run the same analysis, so what was shown is what
-happens. Numbers are shown masked even in the preview.
+happens. Authorised users see the full number when checking the preview.
 """
 
 import csv
@@ -19,7 +19,16 @@ from .phones import InvalidPhoneError, normalize
 
 MAX_ROWS = 2000
 MAX_BYTES = 512_000
-NAME_COLUMNS = ("name", "parent", "guardian", "contact")
+NAME_COLUMNS = (
+    "name",
+    "full name",
+    "contact",
+    "contact name",
+    "customer",
+    "customer name",
+    "parent",
+    "guardian",
+)
 PHONE_COLUMNS = ("phone", "mobile", "number", "phone number", "mobile number")
 SUBJECT_COLUMNS = ("subject", "enquiry", "interest", "about")
 
@@ -47,6 +56,7 @@ class Row:
     reason: str = ""
     # Present only for rows that will be stored; never rendered.
     number: str = ""
+    display_phone: str = ""
 
     @property
     def status_label(self) -> str:
@@ -94,7 +104,7 @@ def analyse(organisation, text: str) -> list[Row]:
         except InvalidPhoneError as error:
             rows.append(Row(line, name, "", subject, "invalid", str(error)))
             continue
-        row = Row(line, name, mask_phone(number), subject, NEW)
+        row = Row(line, name, mask_phone(number), subject, NEW, display_phone=number)
         lookup = crypto.lookup(number)
         if not name:
             row.status, row.reason = "invalid", "The name is empty."
