@@ -1,138 +1,143 @@
 # Production deployment pull request review
 
 This review covers the production-only changes on
-`deployment/shared-vps-production`. Earlier dashboard and workspace edits remain
-outside this change. No VPS deployment, LiveKit Cloud deployment, real call,
+`deployment/shared-vps-production` for PR #4. Existing dashboard and workspace
+edits remain outside this change. No VPS or LiveKit Cloud deployment, real call,
 paid simulation or merge is part of this review.
 
-## Scope
+**Functional validation passed. Security approval remains conditional:** the
+final images still have 13 distinct HIGH OS CVEs in the independent Trivy scan.
+Scout's zero-HIGH result is incomplete coverage, not a clean security result.
+The individual assessments and update actions are in
+[OS_SECURITY_REVIEW.md](OS_SECURITY_REVIEW.md); every remaining scanner finding
+is retained in [OS_SECURITY_FINDINGS.json](OS_SECURITY_FINDINGS.json).
 
-- A shared-VPS Compose stack with separate Django, Celery, PostgreSQL and Redis
-  processes. The voice worker remains a separate LiveKit workload.
-- Guarded configuration, health checks, deployment, update, backup, restore and
-  rollback commands, plus an opt-in host Nginx configuration helper.
-- Smaller application images, bounded resources and logs, and private data kept
-  outside the image build context.
-- Production and disaster recovery documentation, deployment regression tests,
-  and pinned CI tooling.
+## Resulting deployment behavior
 
-## Security corrections during review
+- A shared-VPS Compose stack runs Django, Celery, PostgreSQL and Redis separately;
+  the LiveKit voice worker remains a separate workload.
+- Deployment, health, update, backup, restore and rollback commands validate
+  project ownership under a lock. Failed resource enumeration stops the command.
+- Interrupted database replacement records the archive checksum and preserves a
+  safety backup. Resuming requires explicit project confirmation and stopped
+  application services.
+- Nginx configuration rejects conflicting server names even when its syntax
+  check exits successfully, and verifies the application's exact health JSON.
+- Images contain only their selected runtime dependencies and run as UID 10001.
+  Private configuration, databases, recordings and backups are excluded.
+- Redis explicitly runs unprivileged with capabilities dropped. Shared
+  application services use a read-only root, capability restrictions and bounded
+  resources; the one-off migration service needs writable application files.
 
-- Updated vulnerable aiohttp and cryptography dependencies, their required yarl
-  dependency, and the yanked Python 3.11 PyAV patch release. Linux Python 3.11 and
-  3.12 dependency audits reported no known advisories after those changes.
-- Added the available Debian PAM security update to both application images.
-- Made Redis explicitly unprivileged with capabilities dropped; the shell
-  wrapper had bypassed its entrypoint's normal privilege drop.
-- Applied Docker project ownership checks to recovery and management commands,
-  under the deployment lock. Failed resource enumeration now stops the command.
-- Added guarded recovery from an interrupted database replacement. Only a
-  recorded, unchanged archive can be resumed with explicit project confirmation
-  and application services stopped; the pre-restore backup is preserved.
-- Reject conflicting Nginx server-name warnings even when `nginx -t` exits
-  successfully, and verify the application's exact health response.
-- Pinned CI actions to verified release commits and the LiveKit CLI archive to
-  its verified checksum. Provider secrets are limited to the simulation gate
-  and execution steps, not dependency installers.
+## Security hardening
 
-## Validation status
+The earlier dependency corrections update aiohttp, cryptography, yarl and PyAV.
+CI actions and tooling are pinned, and provider secrets are scoped to the
+simulation gate/execution steps rather than dependency installers.
 
-Source candidate: `ca860b2f465902869703e9800627a37df34610ba`. Tests and builds use
-an isolated checkout with its own environment, installed by `uv 0.13.9` from the
-locked dependencies on Python 3.12.10. Subsequent report-only commits do not
-change this tested application or deployment source.
+Both application Dockerfiles now use Python 3.12 on Debian Trixie, apply available
+Debian updates, and use apt to remove seven unused nonessential packages:
+`adduser`, `passwd`, `mount`, `libbsd0`, `libsemanage-common`, `libsemanage2`
+and `libsepol2`. Essential packages, native dependencies and package inventory
+metadata remain intact. Runtime pip and its unused ensurepip bootstrap archive
+are removed as installer functionality; the build stage retains its tools.
+The Python version and locked application dependencies are unchanged.
 
-| Check | Result |
+All original 18 HIGH findings were individually checked against Debian records.
+The independent scan required nine additional HIGH reviews and assessment of
+two baseline CRITICAL matches. The report distinguishes real fixes, absent
+components, unchanged vulnerable libraries, severity disagreements and package
+mismatches. It also records Trixie-only OS feature exposure and vulnerable
+native libraries bundled inside Python wheels. No ignore file, VEX exclusion,
+severity override or `ignore-unfixed` filter was used.
+
+| Same-scanner comparison | Bookworm baseline | Final Trixie, each image |
+| --- | ---: | ---: |
+| Scout OS findings | 100; 18 HIGH, 0 CRITICAL | 27; 0 HIGH/CRITICAL, 1 MEDIUM, 26 LOW |
+| Trivy distinct OS CVEs | 170; 29 HIGH, 2 CRITICAL | 99; 13 HIGH, 0 CRITICAL |
+| Trivy binary-package matches | 374 | 213 |
+| Trivy Python-package findings | 6 in unused global pip | 0 |
+
+The eight originally reviewed source-package issues that Debian still marks
+vulnerable are retained in the assessment. Removing the mount CLI does not patch
+libmount. Native Kerberos/OpenSSL libraries bundled in psycopg and cryptography
+need their own maintenance; a zero Python-package result does not clear them.
+Remaining OS findings have no available fixed Trixie package in these scans.
+Recheck the official Debian tracker and upstream OpenSSL releases after the
+announced 1 December 2026 update window.
+
+## Exact-source validation
+
+Runtime source: `67552f18393a9030cce9d6ae1ae4e6ee62a8a3b9`.
+Both final images were rebuilt from a clean Git archive with revision labels and
+fresh base resolution. Later report-only commits do not change this source.
+The original local environment, database and existing UI/workspace files were
+fingerprinted before and after; all 31 checked files were unchanged.
+
+| Check | Verified result |
 | --- | --- |
-| Full SQLite suite | 1,125 passed; 2 Windows-specific skips |
-| Full PostgreSQL 17 suite | 1,125 passed; 2 Windows-specific skips |
-| Linux deployment checks | 148 passed, zero skips, inside the candidate backend image as UID 10001 with no network, read-only source/root and no Docker socket |
-| Ruff lint and format | Passed; 222 Python files checked for formatting |
-| Lock consistency | Passed offline |
-| CI workflow syntax | Both workflows passed actionlint; multiline shell blocks passed Bash syntax checks |
-| Deployment shell validation | All 13 scripts passed ShellCheck and Bash syntax |
-| Nginx regressions | 11 isolated Linux cases passed; actual Nginx duplicate-name warning was rejected |
-| Python dependency audits | Linux Python 3.11 and 3.12: 137 packages each, zero known advisories or adverse statuses |
-| Image builds | Backend and voice image builds passed from the candidate |
-| Voice image offline checks | Agent import, CLI help and cached model-file checks passed with networking disabled |
-| Interrupted database recovery | Passed against a fresh PostgreSQL 17.11 fixture: real restore failure, preserved safety archive/state, then successful resume from both the original and safety archives |
-| Candidate Compose startup | Fresh migrations passed; web, Celery worker, Beat, PostgreSQL and Redis were all healthy with zero restarts |
-| Runtime probes | Database, cache, migrations, worker, Beat and encrypted private storage passed; health JSON and static CSS returned HTTP 200 |
+| Complete Linux SQLite suite | 1,127 passed; zero skips |
+| Complete Linux PostgreSQL suite | 1,127 passed; zero skips |
+| Separate production image probes | Backend 6/6 categories; voice 5/5; both unprivileged, network-disabled and read-only |
+| Native library dependencies | All 39 backend and 152 voice objects resolve their shared libraries |
+| Native functionality | RTC/Sox resampling, PyAV/Opus encode/decode, ai-coustics FFI, SSL/CA trust, SQLite, compression, XML, timezones and process IPC passed |
+| Application functionality | Django WSGI/static assets, libpq, Redis encoding, Celery serialization, Fernet and XLSX round trips passed; Vobiz/LiveKit application paths imported |
+| Worker assets | Offline model-file check passed; no provider inference or real calls |
+| Fresh Compose startup | Migrations passed; web, worker, Beat, PostgreSQL and Redis all healthy with zero restarts |
+| Runtime readiness | Database, cache, migrations, worker, Beat and private storage passed; health JSON and static CSS HTTP 200 |
+| Recording recovery | Real synthetic encrypted recording, private 0600 storage, tar/gzip archive, staged recovery and populated-destination refusal passed |
+| Database recovery | Real pg_dump/pg_restore into a fresh database verified synthetic data; interrupted restore resumed from original and safety archives |
+| Deployment scripts | 13 scripts passed Bash syntax and ShellCheck; 11 Nginx regression cases passed |
+| Formatting and workflows | Ruff lint passed; 223 files formatted; both workflows passed actionlint |
+| Security scans | Both final images scanned with Docker Scout and checksum-verified Trivy 0.76.2; raw reports and hashes retained |
 
-The initial working-tree measurements in
-[DEPLOYMENT_MEASUREMENTS.md](DEPLOYMENT_MEASUREMENTS.md) predate these security
-corrections and are separate supporting evidence.
+The complete suite spans both processes, so its Linux test environment uses the
+final backend image plus the matching voice dependencies and pytest as read-only
+test overlays. Production images remain unchanged and separate. Independent
+probes run each unmodified production image to verify that separation.
 
-Each fresh-checkout full test run reported 315 WhiteNoise warnings because
-collected static files are not present in that test checkout and two warnings about short
-synthetic JWT fixture keys. Production images collect their static files during
-the build; those warnings were recorded rather than suppressed.
+Both full test runs emitted 317 existing fixture warnings: 315 missing-static
+warnings from the fresh source checkout and two short synthetic JWT key warnings.
+Production images contain collected static files; their HTTP/static checks
+passed. The warnings were recorded rather than suppressed.
 
-The recovery drill executed the frozen Bash recovery flow, pending markers,
-checksums and real `pg_dump`, `pg_restore`, `dropdb`, `createdb` and SQL operations.
-It injected a real duplicate-table restore failure. Docker lifecycle,
-configuration and application-idle checks used scoped fixture adapters, so this
-does not claim an end-to-end host deployment or a production database restore.
-Test containers were stopped and their synthetic data volumes retained. The
-Compose smoke used a fresh project, synthetic credentials, an internal-only
-network and no published ports. Its single idle snapshot totalled approximately
-443.3 MiB across five services; this is not a VPS capacity or sustained-load test.
-The original local environment and database fingerprints remained unchanged.
+Compose tests used new synthetic credentials/data, an internal-only network and
+no published ports. QA services were stopped and their synthetic volumes retained.
+The interrupted-restore drill executes the committed Bash flow and real
+PostgreSQL commands, but scopes Docker lifecycle/configuration/application-idle
+checks through fixture adapters. It is not a claim of a full host deployment or
+production-database recovery.
 
-### Candidate images
+CI now builds both production Dockerfiles and runs the native offline probes on
+pull requests, alongside the full SQLite/PostgreSQL matrix and shell tests.
+GitHub results must match the final PR head before approval.
 
-Both images run as UID 10001 and contain the PAM `1.5.2-6+deb12u3` update.
-Source/lock hashes were checked inside the images. Neither contains a local
-environment file; the backend has no runtime database or voice code, and the
-voice image has no Django application code.
+### Final images
 
-| Image | Tag | Uncompressed bytes | MiB | Runtime packages |
-| --- | --- | ---: | ---: | ---: |
-| Backend | `vaani-deploy-pr-backend:ca860b2-20261127` | 524,767,252 | 500.46 | 85 |
-| Voice worker | `vaani-deploy-pr-voice:ca860b2-20261127` | 1,037,046,684 | 989.00 | 75 |
+| Image | Tag | Uncompressed bytes | MiB |
+| --- | --- | ---: | ---: |
+| Backend | `vaani-security-final-backend:67552f18393a-20261127` | 514,017,396 | 490.21 |
+| Voice worker | `vaani-security-final-voice:67552f18393a-20261127` | 1,026,299,000 | 978.75 |
 
-The candidate backend is **62.06% smaller** than the measured original backend
-(1,383,046,491 bytes). These are local Docker image sizes, not registry transfer
-sizes or shared-VPS capacity measurements.
+Each has 80 installed Debian packages. Image IDs, Dockerfile hashes and raw scan
+hashes are in the findings JSON. These local sizes are not registry transfer
+sizes or VPS capacity measurements. The earlier load measurements in
+[DEPLOYMENT_MEASUREMENTS.md](DEPLOYMENT_MEASUREMENTS.md) predate this candidate
+and are separate historical evidence.
 
-### Remaining operating-system findings
+## Confidential information
 
-The rebuilt backend and voice Docker Scout scans each report the same **100 raw
-advisories across 20 source packages**: 0 critical, 18 high, 23 medium, 50 low and
-9 unspecified. Advisory IDs, affected package versions and fix status match
-between the images. Both PAM findings were removed; the scanner reports no
-available Bookworm fixes for the remaining matches. This is not a clean OS scan
-or a production sign-off.
+The hardening source and report changes passed Gitleaks. An exact-match review
+of all 381 candidate files against 10 locally configured secret values found no
+matches. No private environment file, database, recording, backup or
+machine-specific inventory is included. Raw evidence is retained outside the
+repository.
 
-The high matches concern Kerberos (6), OpenSSL (3), util-linux (3), SQLite (3),
-zlib (2) and glibc (1). Review found no configured Kerberos/GSS-RPC service,
-CMS/DANE API use, attacker-controlled mount configuration, SQLite FTS5/changeset
-imports or request-controlled process locale. The shared application containers
-drop capabilities and use a read-only root filesystem. These observations narrow
-attack paths; they do not prove that every native-library path is unreachable,
-and the LiveKit-hosted worker must be assessed against its own runtime controls.
+## Production approval still required
 
-One zlib match, [CVE-2026-76844](https://security-tracker.debian.org/tracker/CVE-2026-76844),
-is identified by Debian as a webpack-dev-middleware issue, which is not installed.
-The raw total above intentionally retains that scanner match. Retain the scan
-and review notes privately, monitor upstream fixes and review residual risk
-before approving production use. The PR remains a draft for this review and the
-target-environment checks below.
-
-## Confidential information review
-
-The staged changes passed Gitleaks. An exact-match check of all 378 candidate
-files against 10 locally configured secret values found no matches. No private
-environment file, database, recording or backup was committed. A full-history
-scan found three test-fixture alerts, reviewed as
-synthetic values rather than credentials. Machine-specific backup inventories
-were retained privately and removed from the new public deployment documents.
-
-## Checks reserved for an approved deployment
-
-Local tests do not establish shared-VPS capacity, public DNS/TLS correctness or
-live provider behavior. Host port ownership, existing-site compatibility,
-certificate issuance/renewal, resource headroom, approved LiveKit deployment and
-an approved end-to-end call must be verified in their target environments.
-Unfixed base-OS scanner findings require an explicit review of applicable attack
-paths; a clean Python dependency audit does not imply a clean OS scan.
+The code and container checks pass, but residual Debian and bundled-library
+risks require owner review. Local checks do not establish shared-VPS capacity,
+public DNS/TLS, compatibility with existing host sites, Cloud worker containment,
+certificate renewal or live provider behavior. Those checks require a separately
+approved target-environment deployment and end-to-end call. PR #4 remains a
+draft; do not merge or deploy on the strength of a zero-HIGH Scout report.

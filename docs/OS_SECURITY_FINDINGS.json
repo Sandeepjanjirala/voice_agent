@@ -1,0 +1,2914 @@
+{
+  "review_date": "2026-11-27",
+  "source_revision": "67552f18393a9030cce9d6ae1ae4e6ee62a8a3b9",
+  "assessment": "OS_SECURITY_REVIEW.md",
+  "scope": "Final amd64 production backend and voice images. Both have identical OS findings. Python metadata scans are not exhaustive inventories of wheel-vendored or statically linked native libraries.",
+  "coverage_warning": "Scout omits advisories reported by Trivy and the official Debian tracker. Missing scanner findings are not evidence of a fix. No ignore files, VEX exclusions, severity overrides or ignore-unfixed filters were used.",
+  "images": {
+    "backend": {
+      "tag": "vaani-security-final-backend:67552f18393a-20261127",
+      "id": "sha256:087cebe8e371246b16c04b6216a5ab1fdf7a4ddd5c31610aa01069be98bb36d5",
+      "bytes": 514017396,
+      "source_revision": "67552f18393a9030cce9d6ae1ae4e6ee62a8a3b9",
+      "dockerfile_sha256": "6b69e3dd49547d24d46ec87d4c098753c8d29d4a15c2767510fdaa94d6e14276",
+      "raw_report_sha256": {
+        "scout": "f5da99623dc5bef522310a6af3ad2268ebd16f347a277ad6e2a532f809b6b282",
+        "trivy": "2cb7e83b23272ca3e68a9e736897ea08ae7f4c9c05589df6dcd2457cfc101f28"
+      }
+    },
+    "voice": {
+      "tag": "vaani-security-final-voice:67552f18393a-20261127",
+      "id": "sha256:e03af7d41f87ade8c5bb53447c1d8500eff29ddaeb40b2de8d78def6e6f93210",
+      "bytes": 1026299000,
+      "source_revision": "67552f18393a9030cce9d6ae1ae4e6ee62a8a3b9",
+      "dockerfile_sha256": "e735e84356005c92aa6dd6a15661f80fa7989e17bdc9a32898fd7385354a7f3a",
+      "raw_report_sha256": {
+        "scout": "f5da99623dc5bef522310a6af3ad2268ebd16f347a277ad6e2a532f809b6b282",
+        "trivy": "fb65610efcca105f0411912f2ba2d4ecc6a581ccfb987da6cc0195f5ec39e8c1"
+      }
+    }
+  },
+  "original_18_high_ids": [
+    "CVE-2026-107493",
+    "CVE-2026-107496",
+    "CVE-2026-112314",
+    "CVE-2026-112320",
+    "CVE-2026-112321",
+    "CVE-2026-112322",
+    "CVE-2026-112323",
+    "CVE-2026-119079",
+    "CVE-2026-119373",
+    "CVE-2026-119374",
+    "CVE-2026-119379",
+    "CVE-2026-53613",
+    "CVE-2026-53615",
+    "CVE-2026-76844",
+    "CVE-2026-78410",
+    "CVE-2026-84243",
+    "CVE-2026-84786",
+    "CVE-2026-85091"
+  ],
+  "scanners": {
+    "docker_scout": {
+      "version": "1.28.0",
+      "count_unit": "Unique CVE/source-package rules",
+      "baseline": {
+        "source_revision": "ca860b2f465902869703e9800627a37df34610ba",
+        "findings": 100,
+        "severity_counts": {
+          "HIGH": 18,
+          "LOW": 50,
+          "MEDIUM": 23,
+          "UNSPECIFIED": 9
+        }
+      },
+      "final": {
+        "findings": 27,
+        "severity_counts": {
+          "LOW": 26,
+          "MEDIUM": 1
+        },
+        "findings_detail": [
+          {
+            "id": "CVE-2005-2541",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/tar@1.35%2Bdfsg-3.1?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2005-2541?s=debian&n=tar&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2007-5686",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/shadow@1%3A4.17.4-2%2Bdeb13u1?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2007-5686?s=debian&n=shadow&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2010-0928",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/openssl@3.5.9-1~deb13u1?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2010-0928?s=debian&n=openssl&ns=debian&t=deb&osn=debian&osv=13&vr=%3E%3D3.2.1-3"
+          },
+          {
+            "id": "CVE-2010-4756",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/glibc@2.41-12%2Bdeb13u5?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2010-4756?s=debian&n=glibc&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2011-3374",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/apt@3.0.4?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2011-3374?s=debian&n=apt&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2011-4116",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/perl@5.40.1-6%2Bdeb13u1?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2011-4116?s=debian&n=perl&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2013-4392",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/systemd@257.13-1~deb13u1?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2013-4392?s=debian&n=systemd&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2017-18018",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/coreutils@9.7-3?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2017-18018?s=debian&n=coreutils&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2018-20796",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/glibc@2.41-12%2Bdeb13u5?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2018-20796?s=debian&n=glibc&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2019-1010022",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/glibc@2.41-12%2Bdeb13u5?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2019-1010022?s=debian&n=glibc&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2019-1010023",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/glibc@2.41-12%2Bdeb13u5?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2019-1010023?s=debian&n=glibc&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2019-1010024",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/glibc@2.41-12%2Bdeb13u5?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2019-1010024?s=debian&n=glibc&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2019-1010025",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/glibc@2.41-12%2Bdeb13u5?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2019-1010025?s=debian&n=glibc&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2019-9192",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/glibc@2.41-12%2Bdeb13u5?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2019-9192?s=debian&n=glibc&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2021-45346",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/sqlite3@3.46.1-7%2Bdeb13u2?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2021-45346?s=debian&n=sqlite3&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2022-0563",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/util-linux@2.41.5-0%2Bdeb13u1?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2022-0563?s=debian&n=util-linux&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2023-31437",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/systemd@257.13-1~deb13u1?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2023-31437?s=debian&n=systemd&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2023-31438",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/systemd@257.13-1~deb13u1?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2023-31438?s=debian&n=systemd&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2023-31439",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/systemd@257.13-1~deb13u1?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2023-31439?s=debian&n=systemd&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2025-5278",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/coreutils@9.7-3?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2025-5278?s=debian&n=coreutils&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2025-70873",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/sqlite3@3.46.1-7%2Bdeb13u2?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2025-70873?s=debian&n=sqlite3&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2026-102473",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/dash@0.5.12-12?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2026-102473?s=debian&n=dash&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2026-102474",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/dash@0.5.12-12?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2026-102474?s=debian&n=dash&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2026-53910",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/diffutils@1%3A3.10-4?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2026-53910?s=debian&n=diffutils&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2026-56391",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/coreutils@9.7-3?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2026-56391?s=debian&n=coreutils&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2026-56392",
+            "severity": "LOW",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/coreutils@9.7-3?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2026-56392?s=debian&n=coreutils&ns=debian&t=deb&osn=debian&osv=13&vr=%3E0"
+          },
+          {
+            "id": "CVE-2025-45582",
+            "severity": "MEDIUM",
+            "fixed_version": "not fixed",
+            "source_package_purls": [
+              "pkg:deb/debian/tar@1.35%2Bdfsg-3.1?os_distro=trixie&os_name=debian&os_version=13"
+            ],
+            "advisory_url": "https://scout.docker.com/v/CVE-2025-45582?s=debian&n=tar&ns=debian&t=deb&osn=debian&osv=13&vr=%3E%3D1.35%2Bdfsg-3.1"
+          }
+        ]
+      }
+    },
+    "trivy": {
+      "version": "0.76.2",
+      "count_unit": "Unique CVE IDs; binary-package matches are repeated when one Debian source builds several installed packages. No findings were discarded during grouping.",
+      "baseline": {
+        "source_revision": "ca860b2f465902869703e9800627a37df34610ba",
+        "raw_report_sha256": "b7c775f257e62ba2de87795b98913d3658737b61b72743196f4ff9dca8bd26c3",
+        "os_unique": 170,
+        "os_severity_counts": {
+          "CRITICAL": 2,
+          "HIGH": 29,
+          "LOW": 60,
+          "MEDIUM": 64,
+          "UNKNOWN": 15
+        },
+        "python_unique": 6
+      },
+      "final": {
+        "os_binary_package_matches": 213,
+        "os_unique": 99,
+        "os_severity_counts": {
+          "HIGH": 13,
+          "LOW": 39,
+          "MEDIUM": 36,
+          "UNKNOWN": 11
+        },
+        "python_unique": 0,
+        "findings_detail": [
+          {
+            "id": "CVE-2005-2541",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "tar: does not properly warn the user when extracting setuid or setgid files",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2005-2541",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2005-2541",
+            "packages": [
+              {
+                "name": "tar",
+                "installed_version": "1.35+dfsg-3.1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2007-5686",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "initscripts in rPath Linux 1 sets insecure permissions for the /var/lo ...",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2007-5686",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2007-5686",
+            "packages": [
+              {
+                "name": "login.defs",
+                "installed_version": "1:4.17.4-2+deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2010-4756",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "glibc: glob implementation can cause excessive CPU and memory consumption due to crafted glob expressions",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2010-4756",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2010-4756",
+            "packages": [
+              {
+                "name": "libc-bin",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libc6",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2011-3374",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "It was found that apt-key in apt, all versions, do not correctly valid ...",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2011-3374",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2011-3374",
+            "packages": [
+              {
+                "name": "apt",
+                "installed_version": "3.0.4",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libapt-pkg7.0",
+                "installed_version": "3.0.4",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2011-4116",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "perl: File:: Temp insecure temporary file handling",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2011-4116",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2011-4116",
+            "packages": [
+              {
+                "name": "perl-base",
+                "installed_version": "5.40.1-6+deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2013-4392",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "systemd: TOCTOU race condition when updating file permissions and SELinux security contexts",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2013-4392",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2013-4392",
+            "packages": [
+              {
+                "name": "libsystemd0",
+                "installed_version": "257.13-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libudev1",
+                "installed_version": "257.13-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2017-18018",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "coreutils: race condition vulnerability in chown and chgrp",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2017-18018",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2017-18018",
+            "packages": [
+              {
+                "name": "coreutils",
+                "installed_version": "9.7-3",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2018-20796",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "glibc: uncontrolled recursion in function check_dst_limits_calc_pos_1 in posix/regexec.c",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2018-20796",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2018-20796",
+            "packages": [
+              {
+                "name": "libc-bin",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libc6",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2019-1010022",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "glibc: stack guard protection bypass",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2019-1010022",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2019-1010022",
+            "packages": [
+              {
+                "name": "libc-bin",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libc6",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2019-1010023",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "glibc: running ldd on malicious ELF leads to code execution because of wrong size computation",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2019-1010023",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2019-1010023",
+            "packages": [
+              {
+                "name": "libc-bin",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libc6",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2019-1010024",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "glibc: ASLR bypass using cache of thread stack and heap",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2019-1010024",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2019-1010024",
+            "packages": [
+              {
+                "name": "libc-bin",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libc6",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2019-1010025",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "glibc: information disclosure of heap addresses of pthread_created thread",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2019-1010025",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2019-1010025",
+            "packages": [
+              {
+                "name": "libc-bin",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libc6",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2019-9192",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "glibc: uncontrolled recursion in function check_dst_limits_calc_pos_1 in posix/regexec.c",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2019-9192",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2019-9192",
+            "packages": [
+              {
+                "name": "libc-bin",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libc6",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2021-45346",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "sqlite: crafted SQL query allows a malicious user to obtain sensitive information",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2021-45346",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2021-45346",
+            "packages": [
+              {
+                "name": "libsqlite3-0",
+                "installed_version": "3.46.1-7+deb13u2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2022-0563",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "util-linux: partial disclosure of arbitrary files in chfn and chsh when compiled with libreadline",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2022-0563",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2022-0563",
+            "packages": [
+              {
+                "name": "bsdutils",
+                "installed_version": "1:2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libblkid1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "liblastlog2-2",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libmount1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libsmartcols1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libuuid1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "login",
+                "installed_version": "1:4.16.0-2+really2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "util-linux",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2023-31437",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "An issue was discovered in systemd 253. An attacker can modify a seale ...",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2023-31437",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2023-31437",
+            "packages": [
+              {
+                "name": "libsystemd0",
+                "installed_version": "257.13-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libudev1",
+                "installed_version": "257.13-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2023-31438",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "An issue was discovered in systemd 253. An attacker can truncate a sea ...",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2023-31438",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2023-31438",
+            "packages": [
+              {
+                "name": "libsystemd0",
+                "installed_version": "257.13-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libudev1",
+                "installed_version": "257.13-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2023-31439",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "An issue was discovered in systemd 253. An attacker can modify the con ...",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2023-31439",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2023-31439",
+            "packages": [
+              {
+                "name": "libsystemd0",
+                "installed_version": "257.13-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libudev1",
+                "installed_version": "257.13-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2024-56433",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "shadow-utils: Default subordinate ID configuration in /etc/login.defs could lead to compromise",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2024-56433",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2024-56433",
+            "packages": [
+              {
+                "name": "login.defs",
+                "installed_version": "1:4.17.4-2+deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2025-5278",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "coreutils: Heap Buffer Under-Read in GNU Coreutils sort via Key Specification",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2025-5278",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2025-5278",
+            "packages": [
+              {
+                "name": "coreutils",
+                "installed_version": "9.7-3",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2025-6141",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "gnu-ncurses: ncurses Stack Buffer Overflow",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2025-6141",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2025-6141",
+            "packages": [
+              {
+                "name": "libncursesw6",
+                "installed_version": "6.5+20250216-2",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libtinfo6",
+                "installed_version": "6.5+20250216-2",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "ncurses-base",
+                "installed_version": "6.5+20250216-2",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "ncurses-bin",
+                "installed_version": "6.5+20250216-2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2025-69720",
+            "type": "debian",
+            "severity": "HIGH",
+            "severity_source": "nvd",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "ncurses: ncurses: Buffer overflow vulnerability may lead to arbitrary code execution.",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2025-69720",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2025-69720",
+            "packages": [
+              {
+                "name": "libncursesw6",
+                "installed_version": "6.5+20250216-2",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libtinfo6",
+                "installed_version": "6.5+20250216-2",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "ncurses-base",
+                "installed_version": "6.5+20250216-2",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "ncurses-bin",
+                "installed_version": "6.5+20250216-2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2025-70873",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "sqlite: SQLite: Information Disclosure via Crafted ZIP File",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2025-70873",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2025-70873",
+            "packages": [
+              {
+                "name": "libsqlite3-0",
+                "installed_version": "3.46.1-7+deb13u2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-100290",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "glibc: glibc: Denial of Service via memory allocation failure during regular expression processing",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-100290",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-100290",
+            "packages": [
+              {
+                "name": "libc-bin",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libc6",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-102010",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "gcc-toolset-15-gcc: gcc: gcc-toolset-16: gcc: Denial of Service via use-after-free in binary heap erase_if",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-102010",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-102010",
+            "packages": [
+              {
+                "name": "gcc-14-base",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libgcc-s1",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libstdc++6",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-102473",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "dash: dash: Super-polynomial backtracking in pmatch when libc fnmatch is disabled",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-102473",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-102473",
+            "packages": [
+              {
+                "name": "dash",
+                "installed_version": "0.5.12-12",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-102474",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "dash: dash: Heap out-of-bounds write in conv_escape via undersized Unicode escape reservation",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-102474",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-102474",
+            "packages": [
+              {
+                "name": "dash",
+                "installed_version": "0.5.12-12",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-107493",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "openssl: openssl: Denial of Service via malformed PEM data in PEM_X509_INFO_read_bio_ex",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-107493",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-107493",
+            "packages": [
+              {
+                "name": "libssl3t64",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl-provider-legacy",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-107494",
+            "type": "debian",
+            "severity": "HIGH",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "openssl: OpenSSL: Denial of Service via unbounded QUIC frame queueing",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-107494",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-107494",
+            "packages": [
+              {
+                "name": "libssl3t64",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl-provider-legacy",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-107496",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "openssl: openssl: Denial of Service via crafted EC certificate in CMS encryption",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-107496",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-107496",
+            "packages": [
+              {
+                "name": "libssl3t64",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl-provider-legacy",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-114690",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "gcc: Confirmed out-of-bounds read/write in libstdc++ parallel `std",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-114690",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-114690",
+            "packages": [
+              {
+                "name": "gcc-14-base",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libgcc-s1",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libstdc++6",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-114691",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "gcc: Integer wrap in `std",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-114691",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-114691",
+            "packages": [
+              {
+                "name": "gcc-14-base",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libgcc-s1",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libstdc++6",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-115455",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "gcc: Stack overflow in std::bitset on libstdc++",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-115455",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-115455",
+            "packages": [
+              {
+                "name": "gcc-14-base",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libgcc-s1",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libstdc++6",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-115456",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "gcc: Out-of-bounds read in std::from_chars",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-115456",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-115456",
+            "packages": [
+              {
+                "name": "gcc-14-base",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libgcc-s1",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libstdc++6",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-115819",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "glibc: glibc: Memory corruption via out-of-bounds write in wide scanf functions",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-115819",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-115819",
+            "packages": [
+              {
+                "name": "libc-bin",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libc6",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-119371",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "sqlite: sqlite: Denial of Service via stack exhaustion from deeply nested Common Table Expressions",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-119371",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-119371",
+            "packages": [
+              {
+                "name": "libsqlite3-0",
+                "installed_version": "3.46.1-7+deb13u2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-119372",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "sqlite: sqlite: Denial of Service via use-after-free in full-text search",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-119372",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-119372",
+            "packages": [
+              {
+                "name": "libsqlite3-0",
+                "installed_version": "3.46.1-7+deb13u2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-119373",
+            "type": "debian",
+            "severity": "HIGH",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "sqlite: sqlite: Denial of service via heap-based buffer overflow in FTS5",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-119373",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-119373",
+            "packages": [
+              {
+                "name": "libsqlite3-0",
+                "installed_version": "3.46.1-7+deb13u2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-119374",
+            "type": "debian",
+            "severity": "HIGH",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "sqlite: sqlite: Arbitrary code execution via corrupted FTS5 index",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-119374",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-119374",
+            "packages": [
+              {
+                "name": "libsqlite3-0",
+                "installed_version": "3.46.1-7+deb13u2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-119375",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "sqlite: sqlite: Information disclosure via undersized WAL page size",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-119375",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-119375",
+            "packages": [
+              {
+                "name": "libsqlite3-0",
+                "installed_version": "3.46.1-7+deb13u2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-119376",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "sqlite: sqlite: Denial of Service via stack exhaustion from chained COLLATE operators",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-119376",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-119376",
+            "packages": [
+              {
+                "name": "libsqlite3-0",
+                "installed_version": "3.46.1-7+deb13u2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-119377",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "nvd",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "sqlite: sqlite: Authorization bypass via USING clause in JOIN queries",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-119377",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-119377",
+            "packages": [
+              {
+                "name": "libsqlite3-0",
+                "installed_version": "3.46.1-7+deb13u2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-119378",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "sqlite: sqlite: Denial of Service via use-after-free in R-Tree extension",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-119378",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-119378",
+            "packages": [
+              {
+                "name": "libsqlite3-0",
+                "installed_version": "3.46.1-7+deb13u2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-119379",
+            "type": "debian",
+            "severity": "HIGH",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "sqlite: sqlite: Arbitrary code execution via crafted session changesets",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-119379",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-119379",
+            "packages": [
+              {
+                "name": "libsqlite3-0",
+                "installed_version": "3.46.1-7+deb13u2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-119591",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "sqlite: sqlite: Denial of Service via stack exhaustion in countOfViewOptimization()",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-119591",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-119591",
+            "packages": [
+              {
+                "name": "libsqlite3-0",
+                "installed_version": "3.46.1-7+deb13u2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-121481",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "openssl: openssl: Out-of-bounds write via integer overflow in EVP_EncodeBlock()",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-121481",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-121481",
+            "packages": [
+              {
+                "name": "libssl3t64",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl-provider-legacy",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-121482",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "openssl: openssl: Denial of Service via crafted CMS or PKCS#7 SignedData message",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-121482",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-121482",
+            "packages": [
+              {
+                "name": "libssl3t64",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl-provider-legacy",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-121757",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "glibc: glibc: Denial of Service via out-of-bounds read in CP949 character conversion",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-121757",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-121757",
+            "packages": [
+              {
+                "name": "libc-bin",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libc6",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-121758",
+            "type": "debian",
+            "severity": "UNKNOWN",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "Converting crafted ISO-2022-CN-EXT input in the GNU C Library version  ...",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-121758",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-121758",
+            "packages": [
+              {
+                "name": "libc-bin",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libc6",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-124024",
+            "type": "debian",
+            "severity": "UNKNOWN",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "Converting crafted input from UCS-4 to IBM1390 or IBM1399 character en ...",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-124024",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-124024",
+            "packages": [
+              {
+                "name": "libc-bin",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libc6",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-124709",
+            "type": "debian",
+            "severity": "HIGH",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "openssl: openssl: Denial of Service via memory leak in QUIC stream handling",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-124709",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-124709",
+            "packages": [
+              {
+                "name": "libssl3t64",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl-provider-legacy",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-125709",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "libstdc++: overflow leaves streambuf in inconsistent state on I/O error.",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-125709",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-125709",
+            "packages": [
+              {
+                "name": "gcc-14-base",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libgcc-s1",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libstdc++6",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-126765",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "glibc: glibc: Denial of Service via double free in glob functions",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-126765",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-126765",
+            "packages": [
+              {
+                "name": "libc-bin",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libc6",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-15059",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "systemd: systemd-oomd: Unprivileged users can terminate arbitrary processes via IPC API",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-15059",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-15059",
+            "packages": [
+              {
+                "name": "libsystemd0",
+                "installed_version": "257.13-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libudev1",
+                "installed_version": "257.13-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-15534",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "fix_deferred",
+            "fixed_version": null,
+            "title": "perl: Perl: Arbitrary code execution via out-of-bounds memory access in regular expression engine.",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-15534",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-15534",
+            "packages": [
+              {
+                "name": "perl-base",
+                "installed_version": "5.40.1-6+deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-16742",
+            "type": "debian",
+            "severity": "HIGH",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "systemd: systemd-homed: Local privilege escalation via missing home-record signature verification",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-16742",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-16742",
+            "packages": [
+              {
+                "name": "libsystemd0",
+                "installed_version": "257.13-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libudev1",
+                "installed_version": "257.13-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-18477",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "tar: tar: TOCTOU in incremental dumpdir 'X' rename handling allows restore path escape",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-18477",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-18477",
+            "packages": [
+              {
+                "name": "tar",
+                "installed_version": "1.35+dfsg-3.1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-18508",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "tar: tar: --one-top-level hardlink targets not confined to top-level directory enabling arbitrary file overwrite",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-18508",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-18508",
+            "packages": [
+              {
+                "name": "tar",
+                "installed_version": "1.35+dfsg-3.1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-3184",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": "nvd",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "util-linux: util-linux: Access control bypass due to improper hostname canonicalization",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-3184",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-3184",
+            "packages": [
+              {
+                "name": "bsdutils",
+                "installed_version": "1:2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libblkid1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "liblastlog2-2",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libmount1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libsmartcols1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libuuid1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "login",
+                "installed_version": "1:4.16.0-2+really2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "util-linux",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-35190",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "openssl: openssl: Denial of Service via out-of-bounds read during TLS key-share processing",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-35190",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-35190",
+            "packages": [
+              {
+                "name": "libssl3t64",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl-provider-legacy",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-40558",
+            "type": "debian",
+            "severity": "UNKNOWN",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "CVE-2026-40558",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-40558",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-40558",
+            "packages": [
+              {
+                "name": "perl-base",
+                "installed_version": "5.40.1-6+deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-42250",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "bzip2: bzip2: Denial of Service in bzip2recover via a specially crafted file",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-42250",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-42250",
+            "packages": [
+              {
+                "name": "libbz2-1.0",
+                "installed_version": "1.0.8-6",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-50812",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "sqlite: SQLite: Denial of Service via malformed changeset in Session Extension",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-50812",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-50812",
+            "packages": [
+              {
+                "name": "libsqlite3-0",
+                "installed_version": "3.46.1-7+deb13u2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-50813",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "sqlite: SQLite: Information disclosure via Session Extension changeset merge path",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-50813",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-50813",
+            "packages": [
+              {
+                "name": "libsqlite3-0",
+                "installed_version": "3.46.1-7+deb13u2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-53910",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "diffutils: heap‑based buffer overflow due to multiple signed integer overflows in line‑mapping calculations",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-53910",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-53910",
+            "packages": [
+              {
+                "name": "diffutils",
+                "installed_version": "1:3.10-4",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-54369",
+            "type": "debian",
+            "severity": "HIGH",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "acl: Symlink traversal privilege escalation via libacl functions",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-54369",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-54369",
+            "packages": [
+              {
+                "name": "libacl1",
+                "installed_version": "2.3.2-2+b1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-54370",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "acl: TOCTOU Symlink Traversal via getfacl/setfacl",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-54370",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-54370",
+            "packages": [
+              {
+                "name": "libacl1",
+                "installed_version": "2.3.2-2+b1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-54371",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "attr: attr: Symlink Traversal Privilege Escalation via getfattr and setfattr",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-54371",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-54371",
+            "packages": [
+              {
+                "name": "libattr1",
+                "installed_version": "1:2.5.2-3",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-54411",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "linux-pam: Plaintext password recovery via timing discrepancy in pam_userdb module",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-54411",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-54411",
+            "packages": [
+              {
+                "name": "libpam-modules",
+                "installed_version": "1.7.0-5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libpam-modules-bin",
+                "installed_version": "1.7.0-5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libpam-runtime",
+                "installed_version": "1.7.0-5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libpam0g",
+                "installed_version": "1.7.0-5",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-56391",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "coreutils: GNU coreutils uniq: Denial of Service and information disclosure via out-of-bounds read with multibyte input",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-56391",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-56391",
+            "packages": [
+              {
+                "name": "coreutils",
+                "installed_version": "9.7-3",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-56392",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "coreutils: GNU coreutils unexpand: Denial of Service via crafted tab stop values",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-56392",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-56392",
+            "packages": [
+              {
+                "name": "coreutils",
+                "installed_version": "9.7-3",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-5704",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": "nvd",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "tar: tar: Hidden file injection via crafted archives",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-5704",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-5704",
+            "packages": [
+              {
+                "name": "tar",
+                "installed_version": "1.35+dfsg-3.1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-76642",
+            "type": "debian",
+            "severity": "HIGH",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "util-linux: util-linux: failed external mount helper still runs privileged X-mount post-hooks",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-76642",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-76642",
+            "packages": [
+              {
+                "name": "bsdutils",
+                "installed_version": "1:2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libblkid1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "liblastlog2-2",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libmount1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libsmartcols1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libuuid1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "login",
+                "installed_version": "1:4.16.0-2+really2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "util-linux",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-78408",
+            "type": "debian",
+            "severity": "HIGH",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "util-linux: util-linux: nsenter --join-cgroup leaks root cgroup migration authority",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-78408",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-78408",
+            "packages": [
+              {
+                "name": "bsdutils",
+                "installed_version": "1:2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libblkid1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "liblastlog2-2",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libmount1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libsmartcols1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libuuid1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "login",
+                "installed_version": "1:4.16.0-2+really2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "util-linux",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-78409",
+            "type": "debian",
+            "severity": "HIGH",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "util-linux: util-linux: X-mount.subdir detached-tree resolution can escape via intermediate symlinks",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-78409",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-78409",
+            "packages": [
+              {
+                "name": "bsdutils",
+                "installed_version": "1:2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libblkid1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "liblastlog2-2",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libmount1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libsmartcols1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libuuid1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "login",
+                "installed_version": "1:4.16.0-2+really2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "util-linux",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-78410",
+            "type": "debian",
+            "severity": "HIGH",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "util-linux: util-linux: restricted bind mounts do not pin the source, allowing X-mount.owner/group/mode redirection",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-78410",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-78410",
+            "packages": [
+              {
+                "name": "bsdutils",
+                "installed_version": "1:2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libblkid1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "liblastlog2-2",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libmount1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libsmartcols1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libuuid1",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "login",
+                "installed_version": "1:4.16.0-2+really2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "util-linux",
+                "installed_version": "2.41.5-0+deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-82560",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "Pod::Text versions before 6.1.1 for Perl allow CPU and memory exhausti ...",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-82560",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-82560",
+            "packages": [
+              {
+                "name": "perl-base",
+                "installed_version": "5.40.1-6+deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-84243",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "glibc: glibc: Arbitrary code execution via directory traversal in LANGUAGE environment variable",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-84243",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-84243",
+            "packages": [
+              {
+                "name": "libc-bin",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libc6",
+                "installed_version": "2.41-12+deb13u5",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-84785",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "Issue summary: A QUIC peer that sends many small out-of-order STREAM f ...",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-84785",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-84785",
+            "packages": [
+              {
+                "name": "libssl3t64",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl-provider-legacy",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-84786",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "openssl: OpenSSL: Denial of Service via NULL pointer dereference during DANE TLSA record processing",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-84786",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-84786",
+            "packages": [
+              {
+                "name": "libssl3t64",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl-provider-legacy",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-88822",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "openssl: openssl: Information disclosure via uninitialized memory in QUIC peer detection",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-88822",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-88822",
+            "packages": [
+              {
+                "name": "libssl3t64",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl-provider-legacy",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-88823",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "openssl: OpenSSL: Message authentication bypass via zero-length AAD update",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-88823",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-88823",
+            "packages": [
+              {
+                "name": "libssl3t64",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl-provider-legacy",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-91094",
+            "type": "debian",
+            "severity": "UNKNOWN",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "A directory traversal bug was discovered when unpacking 3.0 (quilt) so ...",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-91094",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-91094",
+            "packages": [
+              {
+                "name": "dpkg",
+                "installed_version": "1.22.22",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-9538",
+            "type": "debian",
+            "severity": "HIGH",
+            "severity_source": "nvd",
+            "status": "fix_deferred",
+            "fixed_version": null,
+            "title": "perl-Archive-Tar: perl-Archive-Tar: Denial of Service via crafted tar header with large entry size",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-9538",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-9538",
+            "packages": [
+              {
+                "name": "perl-base",
+                "installed_version": "5.40.1-6+deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-95619",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "gcc: libstdc++ integer overflow in `new` operator",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-95619",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-95619",
+            "packages": [
+              {
+                "name": "gcc-14-base",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libgcc-s1",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "libstdc++6",
+                "installed_version": "14.2.0-19",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-95690",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "openssl: openssl: Denial of service via crafted out-of-sequence DTLS handshake fragments",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-95690",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-95690",
+            "packages": [
+              {
+                "name": "libssl3t64",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl-provider-legacy",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-95691",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "openssl: openssl: Denial of Service via overlapping QUIC CRYPTO frame processing",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-95691",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-95691",
+            "packages": [
+              {
+                "name": "libssl3t64",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl-provider-legacy",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "CVE-2026-95692",
+            "type": "debian",
+            "severity": "MEDIUM",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "openssl: OpenSSL: Denial of Service via out-of-bounds read in AES-GCM-SIV",
+            "advisory_url": "https://avd.aquasec.com/nvd/cve-2026-95692",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/CVE-2026-95692",
+            "packages": [
+              {
+                "name": "libssl3t64",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              },
+              {
+                "name": "openssl-provider-legacy",
+                "installed_version": "3.5.9-1~deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "TEMP-0000000-402D17",
+            "type": "debian",
+            "severity": "UNKNOWN",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "[GHSA-4q85-33p6-j5g6: Incorrect 64-bit comparison merge in libseccomp can weaken seccomp filters]",
+            "advisory_url": "https://security-tracker.debian.org/tracker/TEMP-0000000-402D17",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/TEMP-0000000-402D17",
+            "packages": [
+              {
+                "name": "libseccomp2",
+                "installed_version": "2.6.0-2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "TEMP-0000000-414660",
+            "type": "debian",
+            "severity": "UNKNOWN",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "[GHSA-35x7-vh54-jvqf: Incorrect accumulator reloads when comparing arguments can lead to erroneous actions]",
+            "advisory_url": "https://security-tracker.debian.org/tracker/TEMP-0000000-414660",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/TEMP-0000000-414660",
+            "packages": [
+              {
+                "name": "libseccomp2",
+                "installed_version": "2.6.0-2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "TEMP-0000000-43231F",
+            "type": "debian",
+            "severity": "UNKNOWN",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "[GHSA-2hqh-5c36-grrm: Oversized seccomp filters can trigger libseccomp heap corruption]",
+            "advisory_url": "https://security-tracker.debian.org/tracker/TEMP-0000000-43231F",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/TEMP-0000000-43231F",
+            "packages": [
+              {
+                "name": "libseccomp2",
+                "installed_version": "2.6.0-2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "TEMP-0000000-AE2C66",
+            "type": "debian",
+            "severity": "UNKNOWN",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "[GHSA-84vx-jqqr-h4f2: Unmatched seccomp transaction rejections can result in a segmentation fault]",
+            "advisory_url": "https://security-tracker.debian.org/tracker/TEMP-0000000-AE2C66",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/TEMP-0000000-AE2C66",
+            "packages": [
+              {
+                "name": "libseccomp2",
+                "installed_version": "2.6.0-2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "TEMP-0000000-ED49F3",
+            "type": "debian",
+            "severity": "UNKNOWN",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "[GHSA-q75f-27j4-2h7j: Missing syscall-number load in BPF filter can bypass seccomp restrictions]",
+            "advisory_url": "https://security-tracker.debian.org/tracker/TEMP-0000000-ED49F3",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/TEMP-0000000-ED49F3",
+            "packages": [
+              {
+                "name": "libseccomp2",
+                "installed_version": "2.6.0-2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "TEMP-0000000-F88C7E",
+            "type": "debian",
+            "severity": "UNKNOWN",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "[GHSA-qxh5-4cq9-6mjx: Crafted seccomp rules can trigger an infinite loop in libseccomp]",
+            "advisory_url": "https://security-tracker.debian.org/tracker/TEMP-0000000-F88C7E",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/TEMP-0000000-F88C7E",
+            "packages": [
+              {
+                "name": "libseccomp2",
+                "installed_version": "2.6.0-2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "TEMP-0000000-FCA4C0",
+            "type": "debian",
+            "severity": "UNKNOWN",
+            "severity_source": null,
+            "status": "affected",
+            "fixed_version": null,
+            "title": "[GHSA-46fr-jh49-xvhx: Oversized seccomp filters can trigger libseccomp double free]",
+            "advisory_url": "https://security-tracker.debian.org/tracker/TEMP-0000000-FCA4C0",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/TEMP-0000000-FCA4C0",
+            "packages": [
+              {
+                "name": "libseccomp2",
+                "installed_version": "2.6.0-2",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "TEMP-0290435-0B57B5",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "[tar's rmt command may have undesired side effects]",
+            "advisory_url": "https://security-tracker.debian.org/tracker/TEMP-0290435-0B57B5",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/TEMP-0290435-0B57B5",
+            "packages": [
+              {
+                "name": "tar",
+                "installed_version": "1.35+dfsg-3.1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "TEMP-0517018-A83CE6",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "[sysvinit: no-root option in expert installer exposes locally exploitable security flaw]",
+            "advisory_url": "https://security-tracker.debian.org/tracker/TEMP-0517018-A83CE6",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/TEMP-0517018-A83CE6",
+            "packages": [
+              {
+                "name": "sysvinit-utils",
+                "installed_version": "3.14-4",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "TEMP-0628843-DBAD28",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "[more related to CVE-2005-4890]",
+            "advisory_url": "https://security-tracker.debian.org/tracker/TEMP-0628843-DBAD28",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/TEMP-0628843-DBAD28",
+            "packages": [
+              {
+                "name": "login.defs",
+                "installed_version": "1:4.17.4-2+deb13u1",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          },
+          {
+            "id": "TEMP-0841856-B18BAF",
+            "type": "debian",
+            "severity": "LOW",
+            "severity_source": "debian",
+            "status": "affected",
+            "fixed_version": null,
+            "title": "[Privilege escalation possible to other user than root]",
+            "advisory_url": "https://security-tracker.debian.org/tracker/TEMP-0841856-B18BAF",
+            "debian_tracker_url": "https://security-tracker.debian.org/tracker/TEMP-0841856-B18BAF",
+            "packages": [
+              {
+                "name": "bash",
+                "installed_version": "5.2.37-2+b10",
+                "source_name": null,
+                "source_version": null
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
