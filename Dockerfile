@@ -4,7 +4,7 @@
 # The glibc base and fixed start command follow LiveKit's container requirements:
 # https://docs.livekit.io/deploy/agents/builds/
 ARG PYTHON_VERSION=3.12
-FROM python:${PYTHON_VERSION}-slim-bookworm AS build
+FROM python:${PYTHON_VERSION}-slim-trixie AS build
 COPY --from=ghcr.io/astral-sh/uv:0.13.9 /uv /bin/uv
 ENV PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy \
     HF_HOME=/app/.cache/huggingface TORCH_HOME=/app/.cache/torch
@@ -18,19 +18,26 @@ RUN .venv/bin/python -m livekit.agents download-files
 COPY voice_agent ./voice_agent
 COPY dialing ./dialing
 
-FROM python:${PYTHON_VERSION}-slim-bookworm
-# Apply the available Bookworm PAM security fix even when the base image lags.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends --only-upgrade \
-        libpam0g libpam-modules libpam-modules-bin libpam-runtime \
-    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libpam0g)" ge '1.5.2-6+deb12u3' \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:${PYTHON_VERSION}-slim-trixie
 LABEL io.vaani.application="voice-agent" io.vaani.component="voice-worker"
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH="/app/.venv/bin:$PATH" \
     HF_HOME=/app/.cache/huggingface TORCH_HOME=/app/.cache/torch
 ARG UID=10001
 RUN adduser --disabled-password --gecos "" --home /app --shell /sbin/nologin \
     --uid "${UID}" appuser
+# Refresh Debian security fixes, then remove unused mount/account-management
+# tools after creating the runtime user. Apt retains Essential/protected packages
+# and all required native libraries; keep dpkg metadata for vulnerability scans.
+# Immutable runtimes never install dependencies. Remove pip and its ensurepip
+# bootstrap archive as functionality, not just scanner metadata; the build stage
+# retains its installers and the locked application environment is unchanged.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get purge -y --auto-remove mount passwd \
+    && apt-get check \
+    && python -m pip uninstall -y pip \
+    && python -c "import ensurepip, pathlib, shutil, sysconfig; bootstrap = pathlib.Path(ensurepip.__file__).resolve().parent; stdlib = pathlib.Path(sysconfig.get_path('stdlib')).resolve(); assert bootstrap == stdlib / 'ensurepip' and bootstrap.is_dir(); shutil.rmtree(bootstrap)" \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build --chown=appuser:appuser /app /app
 WORKDIR /app
 USER appuser

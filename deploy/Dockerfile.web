@@ -3,7 +3,7 @@
 # Django, Gunicorn and Celery only. LiveKit's audio/ML stack belongs in ../Dockerfile.
 # Build from the repository root; no host Python is needed on the VPS.
 ARG PYTHON_VERSION=3.12
-FROM python:${PYTHON_VERSION}-slim-bookworm AS build
+FROM python:${PYTHON_VERSION}-slim-trixie AS build
 COPY --from=ghcr.io/astral-sh/uv:0.13.9 /uv /bin/uv
 ENV PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 WORKDIR /app
@@ -25,20 +25,26 @@ RUN DJANGO_SECRET_KEY=collectstatic-only DJANGO_DEBUG=false \
     DJANGO_ALLOWED_HOSTS=localhost DATABASE_URL=sqlite://:memory: \
     .venv/bin/python manage.py collectstatic --noinput
 
-FROM python:${PYTHON_VERSION}-slim-bookworm
-# Bookworm's base can lag its security repository. Reject the incomplete PAM
-# fix in deb12u2 (CVE-2025-6020 / CVE-2024-22365) without upgrading unrelated OS packages.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends --only-upgrade \
-        libpam0g libpam-modules libpam-modules-bin libpam-runtime \
-    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libpam0g)" ge '1.5.2-6+deb12u3' \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:${PYTHON_VERSION}-slim-trixie
 ARG APP_PROJECT=voice-agent
 LABEL io.vaani.application="voice-agent" io.vaani.component="backend" io.vaani.project="${APP_PROJECT}"
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH="/app/.venv/bin:$PATH"
 ARG UID=10001
 RUN adduser --disabled-password --gecos "" --home /app --shell /sbin/nologin \
     --uid "${UID}" appuser
+# Refresh Debian security fixes, then remove unused mount/account-management
+# tools after creating the runtime user. Apt retains Essential/protected packages
+# and all required native libraries; keep dpkg metadata for vulnerability scans.
+# Immutable runtimes never install dependencies. Remove pip and its ensurepip
+# bootstrap archive as functionality, not just scanner metadata; the build stage
+# retains its installers and the locked application environment is unchanged.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get purge -y --auto-remove mount passwd \
+    && apt-get check \
+    && python -m pip uninstall -y pip \
+    && python -c "import ensurepip, pathlib, shutil, sysconfig; bootstrap = pathlib.Path(ensurepip.__file__).resolve().parent; stdlib = pathlib.Path(sysconfig.get_path('stdlib')).resolve(); assert bootstrap == stdlib / 'ensurepip' and bootstrap.is_dir(); shutil.rmtree(bootstrap)" \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build --chown=appuser:appuser /app /app
 RUN mkdir -p /app/private_recordings /app/staticfiles-public \
     && chown appuser:appuser /app/private_recordings /app/staticfiles-public \

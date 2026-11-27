@@ -73,3 +73,33 @@ jobs:
       run: shellcheck -x scripts/*.sh scripts/lib/*.sh deploy/*.sh
     - name: Test isolated Nginx configuration and rollback
       run: bash tests/deployment/test_nginx.sh
+
+  production-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - runtime: backend
+          dockerfile: deploy/Dockerfile.web
+        - runtime: voice
+          dockerfile: Dockerfile
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Build production runtime
+      env:
+        RUNTIME: ${{ matrix.runtime }}
+        DOCKERFILE: ${{ matrix.dockerfile }}
+      run: docker build --pull --file "$DOCKERFILE" --tag "vaani-ci-$RUNTIME" .
+    - name: Verify native libraries and application offline
+      env:
+        RUNTIME: ${{ matrix.runtime }}
+      run: |
+        docker run --rm --network none --read-only --cap-drop ALL \
+          --security-opt no-new-privileges:true --memory 1g --cpus 2 \
+          --pids-limit 128 --tmpfs /tmp:size=64m,mode=1777 \
+          --mount "type=bind,source=$PWD/tests/deployment/image_compatibility.py,target=/probe.py,readonly" \
+          --entrypoint python "vaani-ci-$RUNTIME" /probe.py "$RUNTIME"
