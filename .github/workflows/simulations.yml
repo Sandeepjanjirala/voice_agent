@@ -15,12 +15,6 @@ permissions:
 jobs:
   simulate:
     runs-on: ubuntu-latest
-    env:
-      LIVEKIT_URL: ${{ secrets.LIVEKIT_URL }}
-      LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
-      LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
-      # The worker refuses to start without it, even though text runs skip STT/TTS.
-      SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
 
     steps:
     # Simulations need a LiveKit Cloud project and a Sarvam key. Without them, a run after a merge
@@ -29,6 +23,11 @@ jobs:
     # fail the job.
     - name: Check the secrets
       id: secrets
+      env:
+        LIVEKIT_URL: ${{ secrets.LIVEKIT_URL }}
+        LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+        LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+        SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
       run: |
         missing=""
         for name in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET SARVAM_API_KEY; do
@@ -44,34 +43,54 @@ jobs:
           echo "ready=false" >> "$GITHUB_OUTPUT"
         fi
 
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       if: steps.secrets.outputs.ready == 'true'
+      with:
+        persist-credentials: false
 
     - name: Install uv
       if: steps.secrets.outputs.ready == 'true'
-      uses: astral-sh/setup-uv@v1
+      uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       with:
-        version: "latest"
+        version: "0.13.9"
 
     - name: Set up Python
       if: steps.secrets.outputs.ready == 'true'
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
       with:
         python-version: "3.12"
 
     - name: Install dependencies
       if: steps.secrets.outputs.ready == 'true'
-      run: UV_GIT_LFS=1 uv sync
+      run: UV_GIT_LFS=1 uv sync --locked
 
     # The installed plugins' model files, as the Dockerfile does; it needs no API keys.
     - name: Download model files
       if: steps.secrets.outputs.ready == 'true'
-      run: uv run --module livekit.agents download-files
+      run: uv run --no-sync --module livekit.agents download-files
 
     - name: Install LiveKit CLI
       if: steps.secrets.outputs.ready == 'true'
-      run: curl -sSL https://get.livekit.io/cli | bash
+      # Same CLI version verified locally. Digest matches the official v2.19.3
+      # checksums.txt and GitHub release asset digest; never execute a remote installer.
+      run: |
+        archive="$RUNNER_TEMP/lk_2.19.3_linux_amd64.tar.gz"
+        curl --fail --show-error --silent --location --proto '=https' --tlsv1.2 \
+          https://github.com/livekit/livekit-cli/releases/download/v2.19.3/lk_2.19.3_linux_amd64.tar.gz \
+          --output "$archive"
+        printf '%s  %s\n' b35cb7f09c611104eb2678377de725378c8e257ecbc1deb88a8beade13de9f03 "$archive" | sha256sum --check --strict
+        install -d "$RUNNER_TEMP/livekit-cli"
+        tar -xzf "$archive" -C "$RUNNER_TEMP/livekit-cli" lk
+        chmod 0755 "$RUNNER_TEMP/livekit-cli/lk"
+        echo "$RUNNER_TEMP/livekit-cli" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/livekit-cli/lk" --version
 
     - name: Run simulations
       if: steps.secrets.outputs.ready == 'true'
+      env:
+        LIVEKIT_URL: ${{ secrets.LIVEKIT_URL }}
+        LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+        LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+        # Startup validates this key even though text runs skip STT/TTS.
+        SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
       run: lk agent simulate text --scenarios scenarios.yaml --concurrency 1 voice_agent/agent.py

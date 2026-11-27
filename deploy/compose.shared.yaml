@@ -1,0 +1,179 @@
+# Shared Ubuntu VPS: existing host Nginx owns ports 80/443. No voice/audio process
+# runs here. Use scripts/deploy.sh to validate, lock, migrate and check this stack.
+name: ${COMPOSE_PROJECT_NAME:-voice-agent}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-app: &app
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile.web
+    args:
+      APP_PROJECT: ${COMPOSE_PROJECT_NAME:-voice-agent}
+  image: ${APP_IMAGE:-voice-agent-web}:${APP_IMAGE_TAG:-local}
+  labels:
+    io.vaani.application: voice-agent
+  restart: unless-stopped
+  init: true
+  env_file: ${APP_ENV_FILE:-./.env.production}
+  environment:
+    DJANGO_DEBUG: "false"
+    DJANGO_BEHIND_PROXY: "true"
+    DJANGO_SECURE_COOKIES: "true"
+    DATABASE_URL: postgres://${POSTGRES_USER:-vaani}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-vaani}
+    REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD}@redis:6379/0
+    CELERY_TASK_ALWAYS_EAGER: "false"
+    INTEGRATIONS_ALLOW_LOCAL: "false"
+    RECORDING_LOCAL_DIR: /app/private_recordings
+  volumes:
+    - private_recordings:/app/private_recordings
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging: *logging
+  stop_grace_period: 90s
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    labels:
+      io.vaani.application: voice-agent
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vaani}
+      POSTGRES_USER: ${POSTGRES_USER:-vaani}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "work_mem=4MB", "-c", "maintenance_work_mem=64MB", "-c", "max_connections=40", "-c", "max_parallel_workers=0"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-384m}
+    cpus: ${POSTGRES_CPUS:-0.50}
+    pids_limit: 100
+    shm_size: 64m
+    logging: *logging
+    stop_grace_period: 60s
+
+  redis:
+    image: redis:7-alpine
+    # The shell wrapper below bypasses the image entrypoint's redis-server-only
+    # privilege drop, so select the unprivileged image user explicitly.
+    user: redis
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    labels:
+      io.vaani.application: voice-agent
+    # Reconciliation reconstructs work from PostgreSQL. Keep the existing
+    # ephemeral broker design; never silently evict queued jobs at its bound.
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --save '' --appendonly no --maxmemory \"$$REDIS_MAXMEMORY\" --maxmemory-policy noeviction"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-96mb}
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: ${REDIS_MEMORY_LIMIT:-160m}
+    cpus: ${REDIS_CPUS:-0.15}
+    pids_limit: 40
+    logging: *logging
+
+  migrate:
+    <<: *app
+    restart: "no"
+    read_only: false
+    command: ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py deploycheck --prepare-storage"]
+    healthcheck:
+      disable: true
+    mem_limit: ${MIGRATE_MEMORY_LIMIT:-512m}
+    cpus: ${MIGRATE_CPUS:-0.75}
+    pids_limit: 64
+
+  web:
+    <<: *app
+    ports:
+      - "127.0.0.1:${APP_PORT:-8003}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: ${WEB_MEMORY_LIMIT:-512m}
+    cpus: ${WEB_CPUS:-0.75}
+    pids_limit: 100
+
+  worker:
+    <<: *app
+    command: ["sh", "-c", "exec celery -A config worker --loglevel INFO --concurrency \"$${CELERY_CONCURRENCY:-1}\" --max-tasks-per-child 100 --prefetch-multiplier 1"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "deploycheck", "--check", "worker"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+    mem_limit: ${WORKER_MEMORY_LIMIT:-512m}
+    cpus: ${WORKER_CPUS:-0.50}
+    pids_limit: 100
+
+  # One scheduler for this project. Deployment scripts always enforce scale=1.
+  beat:
+    <<: *app
+    command: ["celery", "-A", "config", "beat", "--loglevel", "INFO", "--schedule", "/tmp/celerybeat-schedule"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      replicas: 1
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "deploycheck", "--check", "beat"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 90s
+    mem_limit: ${BEAT_MEMORY_LIMIT:-192m}
+    cpus: ${BEAT_CPUS:-0.15}
+    pids_limit: 50
+
+networks:
+  default:
+    labels:
+      io.vaani.application: voice-agent
+
+volumes:
+  pgdata:
+    labels:
+      io.vaani.application: voice-agent
+  private_recordings:
+    labels:
+      io.vaani.application: voice-agent

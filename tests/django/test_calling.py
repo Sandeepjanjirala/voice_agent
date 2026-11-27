@@ -501,6 +501,29 @@ def test_saved_analysis_actions_recover_even_without_a_transcript(world):
     assert result.actions_applied_at is not None
 
 
+def test_analysis_is_reconstructed_from_database_after_lost_queue(world, monkeypatch):
+    """No queued message remains; the periodic DB scan recovers exactly once."""
+    from django.core.cache import cache
+
+    from apps.operations import tasks
+
+    lead = world.lead(world.admin_a, world.north)
+    record = _ended_call(world, lead=lead)
+    record.status = "completed"
+    record.save()
+    CallResult.objects.create(call=record)
+    CallTranscript.objects.create(call=record, turns=TRANSCRIPT[:2])
+    monkeypatch.setattr(llm, "complete_json", canned())
+    cache.clear()
+    tasks.analyse_calls()
+    assert CallResult.objects.get(call=record).actions_applied_at is not None
+    assert FollowUp.objects.filter(lead=lead).count() == 1
+    cache.clear()
+    tasks.analyse_calls()
+    assert FollowUp.objects.filter(lead=lead).count() == 1
+    assert len(canned.prompts) == 1
+
+
 def test_actions_not_switched_on_are_logged_as_not_done(world, monkeypatch):
     lead = world.lead(world.admin_a, world.north)
     world.org_a.transcripts = "keep"
@@ -867,6 +890,8 @@ def test_new_pages_are_real_and_scoped(world, name, client):
 
 def test_old_transcripts_are_deleted_by_the_retention_policy(world):
     record = _ended_call(world)
+    record.status = CallRecord.Status.COMPLETED
+    record.save(update_fields=["status"])
     old = CallTranscript.objects.create(call=record, turns=TRANSCRIPT[:2])
     CallTranscript.objects.filter(pk=old.pk).update(
         created_at=timezone.now() - timedelta(days=40)

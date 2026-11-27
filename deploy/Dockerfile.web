@@ -1,50 +1,51 @@
 # syntax=docker/dockerfile:1
 
-# Image for the Django backend: the web server (gunicorn), the Celery worker and
-# Celery Beat all run from it with different commands (deploy/compose.yaml).
-# The LiveKit voice worker has its own image (../Dockerfile) and is deployed to
-# LiveKit Cloud separately. Build from the repository root:
-#   docker build -f deploy/Dockerfile.web -t telugu-agent-web .
+# Django, Gunicorn and Celery only. LiveKit's audio/ML stack belongs in ../Dockerfile.
+# Build from the repository root; no host Python is needed on the VPS.
 ARG PYTHON_VERSION=3.12
-FROM ghcr.io/astral-sh/uv:python${PYTHON_VERSION}-bookworm-slim AS build
-
+FROM python:${PYTHON_VERSION}-slim-bookworm AS build
+COPY --from=ghcr.io/astral-sh/uv:0.13.9 /uv /bin/uv
 ENV PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 WORKDIR /app
 
-# Dependencies first, for layer caching. No dev tools (pytest, ruff) in production.
 COPY pyproject.toml uv.lock ./
-RUN mkdir -p voice_agent apps config dialing && uv sync --locked --no-dev --no-install-project
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-default-groups --group backend --no-install-project
 
 COPY manage.py ./
 COPY config ./config
 COPY apps ./apps
 COPY dialing ./dialing
-RUN uv sync --locked --no-dev
+COPY deploy/gunicorn.conf.py deploy/container_health.py ./deploy/
 
-# Static files are collected at build time and served by Caddy from a volume.
-# The throwaway key exists only for this command; it is not in the final image's
-# environment and is never used to sign anything.
+# Immutable, compressed static assets are included in every release image and
+# served by WhiteNoise. The migration container repeats collection as validation.
+# This throwaway key never becomes a runtime environment variable or secret.
 RUN DJANGO_SECRET_KEY=collectstatic-only DJANGO_DEBUG=false \
     DJANGO_ALLOWED_HOSTS=localhost DATABASE_URL=sqlite://:memory: \
-    uv run --no-sync python manage.py collectstatic --noinput
+    .venv/bin/python manage.py collectstatic --noinput
 
-FROM ghcr.io/astral-sh/uv:python${PYTHON_VERSION}-bookworm-slim
-
-ENV PYTHONUNBUFFERED=1 PATH="/app/.venv/bin:$PATH"
+FROM python:${PYTHON_VERSION}-slim-bookworm
+# Bookworm's base can lag its security repository. Reject the incomplete PAM
+# fix in deb12u2 (CVE-2025-6020 / CVE-2024-22365) without upgrading unrelated OS packages.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade \
+        libpam0g libpam-modules libpam-modules-bin libpam-runtime \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libpam0g)" ge '1.5.2-6+deb12u3' \
+    && rm -rf /var/lib/apt/lists/*
+ARG APP_PROJECT=voice-agent
+LABEL io.vaani.application="voice-agent" io.vaani.component="backend" io.vaani.project="${APP_PROJECT}"
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH="/app/.venv/bin:$PATH"
 ARG UID=10001
 RUN adduser --disabled-password --gecos "" --home /app --shell /sbin/nologin \
     --uid "${UID}" appuser
 COPY --from=build --chown=appuser:appuser /app /app
-# Mount point for the static-files volume shared with Caddy; a new volume takes
-# this folder's owner, so the app user can fill it.
-RUN mkdir -p /app/staticfiles-public && chown appuser:appuser /app/staticfiles-public
+RUN mkdir -p /app/private_recordings /app/staticfiles-public \
+    && chown appuser:appuser /app/private_recordings /app/staticfiles-public \
+    && chmod 700 /app/private_recordings
 WORKDIR /app
 USER appuser
-
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD ["python", "-c", "import os, sys, urllib.request as u; host = os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost').split(',')[0].strip(); r = u.Request('http://127.0.0.1:8000/api/health/', headers={'Host': host}); sys.exit(0 if u.urlopen(r, timeout=4).status == 200 else 1)"]
-
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", \
-     "--workers", "3", "--timeout", "60", "--access-logfile", "-", \
-     "--forwarded-allow-ips", "*"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD ["python", "/app/deploy/container_health.py"]
+CMD ["gunicorn", "--config", "/app/deploy/gunicorn.conf.py", "config.wsgi:application"]

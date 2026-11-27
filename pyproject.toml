@@ -9,19 +9,27 @@ description = "Vaani universal voice-agent workspace: LiveKit Agents voice worke
 requires-python = ">=3.11, <3.14"
 
 dependencies = [
-    # --- voice worker (voice_agent/) ---
+    # Lightweight shared configuration + LiveKit control-plane client.
+    "python-dotenv",
+    "livekit-api~=1.2",
+]
+
+[dependency-groups]
+# Production images select exactly one runtime group. A normal `uv run` keeps
+# both processes and development tools available for the existing test suite.
+voice = [
     "livekit-agents[sarvam,openai]~=1.8",
     "livekit-plugins-ai-coustics~=0.3",
-    "python-dotenv",
-    # --- Django backend (config/, apps/) ---
-    "livekit-api~=1.2",
+]
+backend = [
     "django~=5.2",
     "djangorestframework~=3.16",
     "dj-database-url~=3.0",
     "psycopg[binary]~=3.2",
-    "cryptography>=45,<47",
+    "cryptography>=50,<51",
     "celery[redis]>=5.5,<6",
     "gunicorn>=23,<24",
+    "whitenoise>=6.8,<7",
     # Call recordings in private S3-compatible storage (apps/calling/recordings.py).
     "boto3>=1.35,<2",
     # Excel (.xlsx) lists of numbers to call (apps/calling/calllists.py).
@@ -29,7 +37,6 @@ dependencies = [
     "langgraph>=1.0,<2",
 ]
 
-[dependency-groups]
 dev = [
     "pytest",
     "pytest-asyncio",
@@ -38,9 +45,14 @@ dev = [
 ]
 
 [tool.uv]
-# yarl 1.24.1 was published with only a cp310 wheel and no sdist, so it can't
-# install on Python 3.11+. Remove this once upstream uploads the remaining wheels.
-constraint-dependencies = ["yarl<1.24"]
+default-groups = ["backend", "voice", "dev"]
+# Security floor for the HTTP client shared by LiveKit's control-plane and voice
+# runtimes. Its yarl>=1.25.1 dependency has supported Python 3.12 wheels.
+constraint-dependencies = [
+    "aiohttp>=3.14.4",
+    # 18.1.0 was yanked for audio-decoder memory corruption (Python 3.11 branch).
+    "av!=18.1.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["voice_agent*", "apps*", "config*", "dialing*"]

@@ -51,14 +51,18 @@ def _due(organisation, now=None) -> dict:
         due["transcripts"] = CallTranscript.objects.filter(
             call__organisation=organisation,
             created_at__lt=now - timedelta(days=policy.transcript_days),
-        )
+        ).exclude(call__status__in=CallRecord.ACTIVE)
     if policy.recording_days:
         # Kept separately from transcripts: a recording can be kept for less
         # (or more) time than the words.
-        due["recordings"] = CallRecording.objects.filter(
-            organisation=organisation,
-            created_at__lt=now - timedelta(days=policy.recording_days),
-        ).exclude(status=CallRecording.Status.DELETED)
+        due["recordings"] = (
+            CallRecording.objects.filter(
+                organisation=organisation,
+                created_at__lt=now - timedelta(days=policy.recording_days),
+            )
+            .exclude(status=CallRecording.Status.DELETED)
+            .exclude(call__status__in=CallRecord.ACTIVE)
+        )
     if policy.audit_days:
         due["audit"] = AuditEvent.objects.filter(
             organisation=organisation,

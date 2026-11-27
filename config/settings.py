@@ -48,8 +48,9 @@ if DEBUG and not ALLOWED_HOSTS:
 # With DJANGO_DEBUG=false the site is HTTPS only: plain requests are redirected and
 # cookies are sent over HTTPS alone. The health checks stay reachable over plain
 # HTTP so a container or load balancer can probe them. Behind a proxy that ends
-# TLS (deploy/Caddyfile), set DJANGO_BEHIND_PROXY=true so Django trusts the
-# proxy's X-Forwarded-Proto header; never set it when Django faces the internet.
+# TLS, set DJANGO_BEHIND_PROXY=true only behind the supplied trusted proxy.
+# The shared VPS binds Gunicorn to host loopback; Nginx replaces forwarded
+# headers instead of passing client-supplied values through to Django.
 SECURE_SSL_REDIRECT = _env_bool("DJANGO_SSL_REDIRECT", not DEBUG)
 SECURE_REDIRECT_EXEMPT = [r"^api/health/"]
 SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = _env_bool(
@@ -96,6 +97,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -151,6 +153,10 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
+}
 
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "home"
@@ -261,6 +267,11 @@ CELERY_TASK_TIME_LIMIT = 300
 CELERY_TASK_SOFT_TIME_LIMIT = 240
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_BEAT_SCHEDULE = {
+    "deployment-heartbeat": {
+        "task": "operations.deployment_heartbeat",
+        "schedule": 30.0,
+        "options": {"expires": 60},
+    },
     "analyse-calls": {"task": "operations.analyse_calls", "schedule": 120.0},
     "advance-call-lists": {"task": "operations.advance_call_lists", "schedule": 15.0},
     "follow-up-reminders": {

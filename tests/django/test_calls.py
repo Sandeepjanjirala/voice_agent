@@ -773,6 +773,7 @@ def test_signed_report_is_applied_without_csrf(gateway) -> None:
     [
         ({"secret": "wrong-secret-wrong-secret-wrong-secret"}, 403),
         ({"timestamp": str(int(time.time()) - 3600)}, 403),
+        ({"timestamp": str(int(time.time()) + 3600)}, 403),
         ({"timestamp": "not-a-time"}, 403),
         ({"raw": b"not json"}, 400),
         ({"raw": b"[1, 2]"}, 400),

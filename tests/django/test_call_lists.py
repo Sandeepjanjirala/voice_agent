@@ -428,6 +428,28 @@ def test_two_steps_at_once_never_work_on_the_same_list(world, gateway, monkeypat
     assert entry.status == "failed" and "not placed" in entry.reason
 
 
+def test_lost_redis_cache_and_repeated_scheduler_delivery_do_not_redial(world, gateway):
+    """Model Redis loss and Beat recovery with persisted DB state; fake gateway only."""
+    admin = world.client(world.admin_a)
+    call_list, step = _started(admin, world, numbers="Asha, 9876543210")
+    admin.post(step)
+    record = CallRecord.objects.get()
+    assert len(gateway.dispatches) == 1
+    for _ in range(2):
+        cache.clear()
+        calllists.advance_running(gateway=gateway)
+    assert len(gateway.dispatches) == 1
+    post_event(
+        Client(), {"room": record.room, "event": "ended", "outcome": "completed"}
+    )
+    for _ in range(2):
+        cache.clear()
+        calllists.advance_running(gateway=gateway)
+    call_list.refresh_from_db()
+    assert call_list.status == "done"
+    assert len(gateway.dispatches) == 1
+
+
 def test_campus_staff_see_the_test_calls_they_place(world, gateway):
     world.staff_north.is_staff = True
     world.staff_north.save()
