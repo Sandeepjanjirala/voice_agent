@@ -3,8 +3,21 @@ same work runs from Beat, from a management command and from tests."""
 
 from celery import shared_task
 from django.core.cache import cache
+from django.utils import timezone
 
 from . import jobs
+
+
+@shared_task(name="operations.deployment_heartbeat", ignore_result=True)
+def deployment_heartbeat() -> None:
+    """Prove that Beat delivered a recent task and a worker consumed it.
+
+    Messages expire after 60 seconds so a backlog cannot make a long-stopped
+    scheduler appear healthy. No provider, database or calling side effects.
+    """
+    from .deployment import BEAT_HEARTBEAT_KEY, BEAT_MAX_AGE
+
+    cache.set(BEAT_HEARTBEAT_KEY, timezone.now().timestamp(), timeout=BEAT_MAX_AGE)
 
 
 @shared_task(name="operations.analyse_call", ignore_result=True)

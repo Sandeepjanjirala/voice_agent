@@ -56,7 +56,9 @@ another account for each restart.
 | Document | What it covers |
 | :--- | :--- |
 | [docs/DASHBOARD.md](docs/DASHBOARD.md) | The staff dashboard: AI employees, making calls, call records and how the worker reports them |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production setup (not deployed): services, HTTPS, secrets, monitoring, what LiveKit Cloud keeps |
+| [docs/VPS_DEPLOYMENT.md](docs/VPS_DEPLOYMENT.md) | Shared Ubuntu VPS: automated deployment beside EduNexa, Nginx/SSL, updates and separate LiveKit worker |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Deployment architecture and dedicated-server alternative |
+| [docs/DEPLOYMENT_MEASUREMENTS.md](docs/DEPLOYMENT_MEASUREMENTS.md) | Initial local image sizes, container tests and workload results |
 | [docs/DISASTER_RECOVERY.md](docs/DISASTER_RECOVERY.md) | Backups, restore drill and recovery runbooks |
 | [docs/INBOUND.md](docs/INBOUND.md) | Inbound routing, call lifecycle, and the transfer design |
 | [docs/OUTBOUND_TEST.md](docs/OUTBOUND_TEST.md) | The first real call: one outbound test call to your own mobile |
@@ -415,9 +417,9 @@ apps/crm/             encrypted contacts, leads, follow-ups, import, reports, re
 apps/calling/         Make calls lists, numbers, inbound routing, knowledge, call results, recordings
 apps/integrations/    outside-request safety (transport, safety); old integration tables, kept for their data
 apps/operations/      background jobs, notifications, usage, operations, readiness
-deploy/               production compose, web image, Caddy (HTTPS), backups
+deploy/               shared Nginx / dedicated Caddy compose, production images
 scenarios/            proposed scenarios that are not yet run in CI
-scripts/              latency_report.py, llm_bakeoff.py
+scripts/              deployment, health, backup/recovery, latency and LLM reports
 tests/                django/, voice/, test_process_boundary.py
 scenarios.yaml        LiveKit simulation scenarios
 docs/                 audit, verification report, ADR

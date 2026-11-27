@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 from typing import ClassVar
+from unittest.mock import AsyncMock
 
 import pytest
 from livekit.agents import llm
@@ -123,6 +124,23 @@ async def test_delivery_problems_never_reach_the_call(caplog) -> None:
         assert await reporter().send("answered") is False
     assert "rejected by Django" in caplog.text
     assert SECRET not in caplog.text
+
+
+@pytest.mark.parametrize("event", ["ended", "recording"])
+@pytest.mark.parametrize("status,attempts", [(503, 3), (403, 1)])
+async def test_critical_callbacks_retry_server_failures_but_not_refusals(
+    event, status, attempts, monkeypatch
+):
+    wait = AsyncMock()
+    monkeypatch.setattr("voice_agent.call_reporting.asyncio.sleep", wait)
+    FakeSession.status = status
+    assert await reporter().send(event) is False
+    assert len(FakeSession.sent) == attempts
+    assert wait.await_count == attempts - 1
+    for sent in FakeSession.sent:
+        assert sent["headers"][SIGNATURE_HEADER] == sign(
+            SECRET, sent["headers"][TIMESTAMP_HEADER], sent["body"]
+        )
 
 
 def _message(role: str, *, interrupted=False, **metrics) -> llm.ChatMessage:

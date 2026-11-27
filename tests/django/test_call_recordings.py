@@ -571,6 +571,23 @@ def test_retention_deletes_recordings_on_their_own_schedule(
     assert "Deleted under the organisation" in page and "<audio" not in page
 
 
+def test_retention_preserves_active_call_audio_and_transcript(
+    world, ogg, private_storage
+):
+    record = recorded(world, ogg)
+    policy = retention.policy_for(world.org_a)
+    policy.recording_days = policy.transcript_days = 1
+    policy.save()
+    CallRecord.objects.filter(pk=record.pk).update(status="answered")
+    old = timezone.now() - timedelta(days=3)
+    CallRecording.objects.filter(call=record).update(created_at=old)
+    record.transcript.__class__.objects.filter(call=record).update(created_at=old)
+    counts = retention.apply(world.org_a)
+    assert counts["recordings"] == counts["transcripts"] == 0
+    assert list(private_storage.rglob("*.enc"))
+    assert record.transcript.__class__.objects.filter(call=record).exists()
+
+
 def test_deleting_the_call_deletes_the_file(world, ogg, private_storage):
     record = recorded(world, ogg)
     assert list(private_storage.rglob("*.enc"))

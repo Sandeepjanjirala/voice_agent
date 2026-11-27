@@ -7,7 +7,8 @@ Run alongside Django (never inside the voice worker):
 
 Jobs are listed in settings.CELERY_BEAT_SCHEDULE. Each is idempotent and
 records its runs (apps/operations), so a retry or an overlap is harmless.
-No job dials a phone: real outbound calling stays switched off.
+Call-list jobs may dispatch calls only under the existing consent, destination,
+calling-hours and activation controls. Deployment probes never run these jobs.
 """
 
 import os

@@ -1,91 +1,44 @@
 # syntax=docker/dockerfile:1
 
-# Image for the LiveKit voice worker only; Django is deployed separately.
-# Use the official UV Python base image with Python 3.12 on Debian Bookworm
-# UV is a fast Python package manager that provides better performance than pip
-# We use the slim variant to keep the image size smaller while still having essential tools
+# LiveKit Cloud worker only. Django/Celery are built with deploy/Dockerfile.web.
+# The glibc base and fixed start command follow LiveKit's container requirements:
+# https://docs.livekit.io/deploy/agents/builds/
 ARG PYTHON_VERSION=3.12
-FROM ghcr.io/astral-sh/uv:python${PYTHON_VERSION}-bookworm-slim AS base
-
-# Keeps Python from buffering stdout and stderr to avoid situations where
-# the application crashes without emitting any logs due to buffering.
-ENV PYTHONUNBUFFERED=1
-
-# Compile Python source to bytecode (.pyc) during install so the first import
-# doesn't pay the compilation cost. This reduces agent cold-start time at the
-# expense of a slightly longer build.
-ENV UV_COMPILE_BYTECODE=1
-
-# Ensure local models are downloaded to a shared directory accessible by all stages.
-ENV HF_HOME=/app/.cache/huggingface
-ENV TORCH_HOME=/app/.cache/torch
-
-# --- Build stage ---
-# Install dependencies, build native extensions, and prepare the application
-FROM base AS build
-
-# Install build dependencies required for Python packages with native extensions
-# gcc: C compiler needed for building Python packages with C extensions
-# g++: C++ compiler needed for building Python packages with C++ extensions
-# python3-dev: Python development headers needed for compilation
-# We clean up the apt cache after installation to keep the image size down
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    python3-dev \
-  && rm -rf /var/lib/apt/lists/*
-
-# Create a new directory for our application code
-# And set it as the working directory
+FROM python:${PYTHON_VERSION}-slim-trixie AS build
+COPY --from=ghcr.io/astral-sh/uv:0.13.9 /uv /bin/uv
+ENV PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy \
+    HF_HOME=/app/.cache/huggingface TORCH_HOME=/app/.cache/torch
 WORKDIR /app
-
-# Copy just the dependency files first, for more efficient layer caching
 COPY pyproject.toml uv.lock ./
-RUN mkdir -p voice_agent apps config
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-default-groups --group voice --no-install-project
+# Download only installed voice-plugin assets, once at build time. No credentials
+# or provider inference calls are used. The backend never contains these assets.
+RUN .venv/bin/python -m livekit.agents download-files
+COPY voice_agent ./voice_agent
+COPY dialing ./dialing
 
-# Install Python dependencies using UV's lock file
-# --locked ensures we use exact versions from uv.lock for reproducible builds
-# This creates a virtual environment and installs all dependencies
-# Ensure your uv.lock file is checked in for consistency across environments
-RUN uv sync --locked
-
-# Pre-download any ML models or files the agent needs
-# This runs before COPY . . so the download layer is cached across code-only changes.
-# The module-level command discovers installed livekit-plugins-* packages without
-# loading your agent code.
-RUN uv run --module livekit.agents download-files
-
-# Copy all remaining application files into the container
-# This includes source code, configuration files, and dependency specifications
-# (Excludes files specified in .dockerignore)
-COPY . .
-
-# --- Production stage ---
-# Build tools (gcc, g++, python3-dev) are not included in the final image
-FROM base
-
-# Create a non-privileged user that the app will run under.
-# See https://docs.docker.com/build/building/best-practices/#user
+FROM python:${PYTHON_VERSION}-slim-trixie
+LABEL io.vaani.application="voice-agent" io.vaani.component="voice-worker"
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH="/app/.venv/bin:$PATH" \
+    HF_HOME=/app/.cache/huggingface TORCH_HOME=/app/.cache/torch
 ARG UID=10001
-RUN adduser \
-    --disabled-password \
-    --gecos "" \
-    --home "/app" \
-    --shell "/sbin/nologin" \
-    --uid "${UID}" \
-    appuser
-
-# Copy the application and virtual environment with correct ownership in a single layer
-# This avoids expensive recursive chown and excludes build tools from the final image
+RUN adduser --disabled-password --gecos "" --home /app --shell /sbin/nologin \
+    --uid "${UID}" appuser
+# Refresh Debian security fixes, then remove unused mount/account-management
+# tools after creating the runtime user. Apt retains Essential/protected packages
+# and all required native libraries; keep dpkg metadata for vulnerability scans.
+# Immutable runtimes never install dependencies. Remove pip and its ensurepip
+# bootstrap archive as functionality, not just scanner metadata; the build stage
+# retains its installers and the locked application environment is unchanged.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get purge -y --auto-remove mount passwd \
+    && apt-get check \
+    && python -m pip uninstall -y pip \
+    && python -c "import ensurepip, pathlib, shutil, sysconfig; bootstrap = pathlib.Path(ensurepip.__file__).resolve().parent; stdlib = pathlib.Path(sysconfig.get_path('stdlib')).resolve(); assert bootstrap == stdlib / 'ensurepip' and bootstrap.is_dir(); shutil.rmtree(bootstrap)" \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build --chown=appuser:appuser /app /app
-
 WORKDIR /app
-
-# Switch to the non-privileged user for all subsequent operations
-# This improves security by not running as root
 USER appuser
-
-# Run the AgentServer using UV
-# UV will activate the virtual environment and run the agent.
-# The "start" command tells the AgentServer to connect to LiveKit and begin waiting for jobs.
-CMD ["uv", "run", "voice_agent/agent.py", "start"]
+CMD ["python", "-m", "voice_agent.agent", "start"]
